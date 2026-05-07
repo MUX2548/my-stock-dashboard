@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 from datetime import datetime
+import requests
 
 # 1. ตั้งค่าหน้าเพจ
 st.set_page_config(page_title="ระบบวิเคราะห์หุ้นอัตโนมัติ", layout="wide")
@@ -17,16 +18,25 @@ with st.sidebar:
     st.markdown("---")
     ticker = st.text_input("🔎 ใส่ชื่อหุ้นที่ต้องการ", value="NVTS").upper()
 
-@st.cache_data
+@st.cache_data(ttl=300)
 def load_data(ticker_symbol):
-    stock = yf.Ticker(ticker_symbol)
-    df = stock.history(period="6mo", interval="1d")
+    session = requests.Session()
+    session.headers.update(
+        {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'}
+    )
+    
+    stock = yf.Ticker(ticker_symbol, session=session)
+    
+    # ดึงข้อมูลกราฟ (ถ้าดึงไม่ได้ให้ข้าม)
+    try:
+        df = stock.history(period="6mo", interval="1d")
+    except:
+        return pd.DataFrame(), "N/A"
     
     if df.empty:
         return df, "N/A"
         
     df['EMA_10'] = df['Close'].ewm(span=10, adjust=False).mean()
-    # 🌟 เพิ่มการคำนวณ EMA 20
     df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
     
@@ -42,17 +52,22 @@ def load_data(ticker_symbol):
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    info = stock.info
-    ps_ratio = info.get('priceToSalesTrailing12Months', 'N/A')
-    if isinstance(ps_ratio, float):
-        ps_ratio = round(ps_ratio, 2)
+    # 🌟 ใส่เกราะป้องกันตรงนี้! ถ้าดึง P/S Ratio แล้วโดนบล็อก จะได้ไม่พัง
+    ps_ratio = "N/A"
+    try:
+        info = stock.info
+        ps_val = info.get('priceToSalesTrailing12Months', 'N/A')
+        if isinstance(ps_val, float):
+            ps_ratio = round(ps_val, 2)
+    except:
+        pass # ปล่อยผ่านไปเลย
         
     return df, ps_ratio
 
 df, ps_ratio = load_data(ticker)
 
 # ==========================================
-# 4. ฟังก์ชันคำนวณข้อมูล (เพิ่ม EMA 20)
+# 4. ฟังก์ชันคำนวณข้อมูล
 # ==========================================
 def auto_analyze(df):
     if df.empty:
@@ -60,7 +75,7 @@ def auto_analyze(df):
         
     last_close = df['Close'].iloc[-1]
     ema10 = df['EMA_10'].iloc[-1]
-    ema20 = df['EMA_20'].iloc[-1] # 🌟 ดึงค่า EMA 20 ล่าสุด
+    ema20 = df['EMA_20'].iloc[-1] 
     ema50 = df['EMA_50'].iloc[-1]
     rsi = df['RSI'].iloc[-1]
     macd_hist = df['MACD_Hist'].iloc[-1]
@@ -86,7 +101,6 @@ def auto_analyze(df):
         summary += "❌ MACD โมเมนตัมเป็นลบ (แรงขายกดดัน)\n"
 
     res = f"{recent_high:.2f} / {(recent_high * 1.05):.2f}"
-    # 🌟 เพิ่ม EMA 20 เข้าไปในแนวรับ
     sup = f"{ema10:.2f} (EMA10) / {ema20:.2f} (EMA20) / {ema50:.2f} (EMA50)"
 
     if last_close > ema50 and rsi < 70:
@@ -96,7 +110,6 @@ def auto_analyze(df):
     else:
         plan = "🔴 แผนเด้งขาย / Wait & See: กราฟเสียทรง รอให้สร้างฐานใหม่หรือมีสัญญาณกลับตัวชัดเจนก่อน\nจุดหนี: หากมีของ ให้ลดพอร์ตเมื่อเด้งไม่ผ่านแนวต้าน"
 
-    # --- ส่วนที่ 2: สรุปสั้นๆ ---
     if last_close > ema50: 
         trend = "ขาขึ้น 📈"
         buy_zone = f"โซน {ema10:.2f} ถึง {ema20:.2f} (รับลึก {ema50:.2f})"
@@ -133,9 +146,8 @@ def create_chart(df, ticker_symbol):
     
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'), row=1, col=1)
     
-    # 🌟 วาดเส้น EMA 10, 20, 50 ลงในกราฟ
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_10'], line=dict(color='#2962FF', width=1.5), name='EMA 10'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#00E676', width=1.5), name='EMA 20'), row=1, col=1) # เส้นสีเขียว
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#00E676', width=1.5), name='EMA 20'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_50'], line=dict(color='#FF6D00', width=1.5), name='EMA 50'), row=1, col=1)
 
     macd_colors = ['#26A69A' if val >= 0 else '#EF5350' for val in df['MACD_Hist']]
@@ -171,7 +183,6 @@ if not df.empty:
 
     with col2:
         st.metric(label="💵 ราคาปัจจุบัน (USD)", value=f"${last_price:.2f}", delta=f"{price_change:.2f} ({pct_change:.2f}%)")
-        
         st.success(action_short)
         st.markdown("---")
         
@@ -196,4 +207,4 @@ if not df.empty:
         else:
             st.error(plan_text)
 else:
-    st.error("ไม่พบข้อมูลหุ้นที่ค้นหา กรุณาตรวจสอบชื่อหุ้นอีกครั้งครับ")
+    st.error("ไม่พบข้อมูลหุ้นที่ค้นหา กรุณาตรวจสอบชื่อหุ้นอีกครั้ง หรือระบบอาจถูกจำกัดการดึงข้อมูลชั่วคราวครับ")
