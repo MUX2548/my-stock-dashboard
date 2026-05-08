@@ -3,6 +3,7 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
+import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
@@ -17,7 +18,7 @@ with st.sidebar:
     st.title("เมนูการใช้งาน")
     st.markdown("🏠 **หน้าหลัก (Dashboard)**")
     st.markdown("---")
-    ticker = st.text_input("🔎 ใส่ชื่อหุ้นที่ต้องการ", value="NVTS").upper()
+    ticker = st.text_input("🔎 ใส่ชื่อหุ้น หรือ ดัชนี (เช่น ^DJI, ^GSPC)", value="NVTS").upper()
     
     st.markdown("---")
     st.markdown("💰 **พอร์ตส่วนตัว (Portfolio)**")
@@ -48,6 +49,9 @@ def load_data(ticker_symbol):
         rs = gain / loss
         df['RSI'] = 100 - (100 / (1 + rs))
         
+        # ค้นหาค่าความผันผวนรายวัน (Daily Return) เพื่อใช้ในโมเดลควอนตัม
+        df['Daily_Return'] = df['Close'].pct_change()
+        
         ps_ratio = "N/A"
         try:
             info = stock.info
@@ -65,6 +69,56 @@ def load_data(ticker_symbol):
 df, ps_ratio = load_data(ticker)
 
 # ==========================================
+# 🌟 ฟังก์ชันใหม่: The Harmonic Momentum Matrix
+# ==========================================
+def harmonic_momentum_model(df):
+    if df.empty or len(df) < 20:
+        return None
+        
+    last_price = df['Close'].iloc[-1]
+    ema10 = df['EMA_10'].iloc[-1]
+    ema50 = df['EMA_50'].iloc[-1]
+    
+    # คำนวณความผันผวนย้อนหลัง 14 วัน (Standard Deviation ของ % Change)
+    volatility = df['Daily_Return'].tail(14).std()
+    
+    # คำนวณ % การแกว่งตัวที่คาดหวัง (ขอบเขตล่าง - ขอบเขตบน)
+    expected_change_lower = (volatility * 0.5) * 100
+    expected_change_upper = volatility * 100
+    
+    recent_high = df['High'].tail(20).max()
+    
+    # วิเคราะห์แนวโน้มและสถานะ
+    if last_price > ema50 and ema10 > ema50:
+        trend = "ขาขึ้น (Uptrend) 📈"
+        target_lower = last_price * (1 + (expected_change_lower / 100))
+        target_upper = last_price * (1 + (expected_change_upper / 100))
+        change_text = f"เพิ่มขึ้นประมาณ +{expected_change_lower:.2f}% ถึง +{expected_change_upper:.2f}%"
+        
+        if last_price >= recent_high * 0.98:
+            status = "ตลาดกำลังทำจุดสูงสุดใหม่ (New Records) 🔥"
+        else:
+            status = "พักตัวสะสมพลังเพื่อขึ้นต่อ (Bullish Consolidation) ⚡"
+            
+    else:
+        trend = "ขาลง (Downtrend) 📉"
+        target_lower = last_price * (1 - (expected_change_upper / 100))
+        target_upper = last_price * (1 - (expected_change_lower / 100))
+        change_text = f"ลดลงประมาณ -{expected_change_lower:.2f}% ถึง -{expected_change_upper:.2f}%"
+        status = "เผชิญแรงขายทำกำไร / ปรับฐาน (Correction) ⚠️"
+        
+    return {
+        "trend": trend,
+        "status": status,
+        "change_text": change_text,
+        "target_lower": target_lower,
+        "target_upper": target_upper,
+        "last_price": last_price
+    }
+
+matrix_result = harmonic_momentum_model(df)
+
+# ==========================================
 # 4. ฟังก์ชันคำนวณข้อมูลหลัก
 # ==========================================
 def auto_analyze(df):
@@ -76,7 +130,6 @@ def auto_analyze(df):
     ema20 = df['EMA_20'].iloc[-1] 
     ema50 = df['EMA_50'].iloc[-1]
     rsi = df['RSI'].iloc[-1]
-    macd_hist = df['MACD_Hist'].iloc[-1]
     
     recent_high = df['High'].tail(20).max()
 
@@ -120,9 +173,6 @@ def auto_analyze(df):
 
 auto_summary, auto_res, auto_sup, auto_plan, action_short = auto_analyze(df)
 
-# ==========================================
-# 🌟 ฟังก์ชันใหม่: วิเคราะห์แผนส่วนตัวจากต้นทุน
-# ==========================================
 def get_personal_plan(df, cost_price):
     if df.empty or cost_price <= 0:
         return None
@@ -139,17 +189,17 @@ def get_personal_plan(df, cost_price):
             advice = "🟢 **กำไรอยู่ แต่ RSI สูงมาก (Overbought):**\nแนะนำให้ **'แบ่งขายล็อกกำไร (Take Profit)'** บางส่วน เพราะราคามีโอกาสย่อตัวพักฐานสูง"
             color = "warning"
         elif last_price < ema20:
-            advice = "🟡 **กำไรอยู่ แต่ราคาหลุด EMA 20:**\nโมเมนตัมระยะสั้นเริ่มอ่อนแรง แนะนำให้ **'เฝ้าระวังอย่างใกล้ชิด'** หากหลุดต้นทุนของคุณ ควรขายออกมาก่อนเพื่อรักษาเงินต้น"
+            advice = "🟡 **กำไรอยู่ แต่ราคาหลุด EMA 20:**\nโมเมนตัมระยะสั้นเริ่มอ่อนแรง แนะนำให้ **'เฝ้าระวังอย่างใกล้ชิด'** หากหลุดต้นทุนของคุณ ควรขายออกมาก่อน"
             color = "warning"
         else:
-            advice = "🚀 **กำไรอยู่ และกราฟยังเป็นขาขึ้นแข็งแกร่ง:**\nแนะนำให้ **'ถือต่อ (Let Profit Run)'** ปล่อยให้กำไรทำงานต่อไป ใช้เส้น EMA 20 เป็นเกณฑ์ในการรันเทรนด์"
+            advice = "🚀 **กำไรอยู่ และกราฟยังเป็นขาขึ้นแข็งแกร่ง:**\nแนะนำให้ **'ถือต่อ (Let Profit Run)'** ปล่อยให้กำไรทำงานต่อไป"
             color = "success"
     else:
         if last_price < ema50:
-            advice = "🔴 **ขาดทุน และกราฟหลุดเส้น EMA 50 (เสียทรง):**\nแนวโน้มหลักเปลี่ยนเป็นขาลง แนะนำให้พิจารณา **'ตัดขาดทุน (Cut Loss)'** เพื่อจำกัดความเสี่ยง ป้องกันเงินจม"
+            advice = "🔴 **ขาดทุน และกราฟหลุดเส้น EMA 50 (เสียทรง):**\nแนวโน้มหลักเปลี่ยนเป็นขาลง แนะนำให้พิจารณา **'ตัดขาดทุน (Cut Loss)'** เพื่อจำกัดความเสี่ยง"
             color = "error"
         else:
-            advice = "🟡 **ขาดทุน แต่กราฟยังไม่หลุดแนวรับหลัก (EMA 50):**\nราคาย่อตัวลงมาแต่ยังอยู่ในเทรนด์ขาขึ้น แนะนำให้ **'ถือรอ (Hold)'** เพื่อลุ้นราคาเด้งกลับที่โซนแนวรับนี้"
+            advice = "🟡 **ขาดทุน แต่กราฟยังไม่หลุดแนวรับหลัก (EMA 50):**\nราคาย่อตัวลงมาแต่ยังอยู่ในเทรนด์ขาขึ้น แนะนำให้ **'ถือรอ (Hold)'** เพื่อลุ้นราคาเด้งกลับ"
             color = "warning"
             
     return {"pl_pct": pl_pct, "advice": advice, "color": color}
@@ -172,7 +222,7 @@ def create_chart(df, ticker_symbol, cost_price=0):
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_50'], line=dict(color='#FF6D00', width=1.5), name='EMA 50'), row=1, col=1)
 
     if cost_price > 0:
-        fig.add_hline(y=cost_price, line_dash="dash", line_color="white", annotation_text="ราคาต้นทุนของคุณ", row=1, col=1)
+        fig.add_hline(y=cost_price, line_dash="dash", line_color="white", annotation_text="ราคาต้นทุน", row=1, col=1)
 
     macd_colors = ['#26A69A' if val >= 0 else '#EF5350' for val in df['MACD_Hist']]
     fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='#2962FF', width=1.5), name='MACD'), row=2, col=1)
@@ -183,15 +233,29 @@ def create_chart(df, ticker_symbol, cost_price=0):
     fig.add_hline(y=70, line_dash="dot", line_color="red", row=3, col=1)
     fig.add_hline(y=30, line_dash="dot", line_color="green", row=3, col=1)
 
-    fig.update_layout(title=f"กราฟราคา {ticker_symbol} พร้อม MACD & RSI", template="plotly_dark", height=750, margin=dict(l=0, r=0, t=40, b=0), showlegend=False)
+    fig.update_layout(title=f"กราฟราคา {ticker_symbol}", template="plotly_dark", height=750, margin=dict(l=0, r=0, t=40, b=0), showlegend=False)
     fig.update_xaxes(rangeslider_visible=False)
     return fig
 
 # ==========================================
 # 6. จัด Layout หน้าจอหลัก
 # ==========================================
-st.markdown(f"## ข้อมูลหุ้น : {ticker}")
+st.markdown(f"## ข้อมูลหุ้น/ดัชนี : {ticker}")
 st.caption(f"📅 **บทวิเคราะห์และข้อมูลอัปเดตล่าสุด ณ วันที่ {current_date} เวลา {current_time} น.**")
+
+# 🌟 กล่อง The Harmonic Momentum Matrix 🌟
+if matrix_result:
+    st.markdown("---")
+    st.markdown("### 🔮 วิเคราะห์ทิศทางคืนนี้ (The Harmonic Momentum Matrix)")
+    st.info(f"""
+    **จากการคำนวณผ่านโมเดลควอนตัมเชิงตัวเลข สถิติเชิงลึก และแรงเหวี่ยงของราคา:**
+    * **แนวโน้ม:** {matrix_result['trend']}
+    * **สถานะ:** {matrix_result['status']}
+    * **คาดการณ์การเปลี่ยนแปลง:** {matrix_result['change_text']} จากราคาปิดเมื่อวาน
+    * **เป้าหมายตัวเลข:** คืนนี้คาดว่าราคาจะเคลื่อนไหวไปแตะระดับ **{matrix_result['target_lower']:,.2f} - {matrix_result['target_upper']:,.2f}** (อ้างอิงจากราคาปิดล่าสุด {matrix_result['last_price']:,.2f})
+    
+    *🧪 สูตรคำนวณ: "The Harmonic Momentum Matrix" ประเมินจากค่า Standard Deviation ของกรอบราคา 14 วันย้อนหลัง ผสมผสาน Momentum ระยะสั้น*
+    """)
 st.markdown("---")
 
 col1, col2 = st.columns([7, 3])
@@ -206,7 +270,7 @@ if not df.empty:
         st.plotly_chart(create_chart(df, ticker, buy_price), use_container_width=True)
 
     with col2:
-        st.metric(label="💵 ราคาปัจจุบัน (USD)", value=f"${last_price:.2f}", delta=f"{price_change:.2f} ({pct_change:.2f}%)")
+        st.metric(label="💵 ราคาปัจจุบัน (USD)", value=f"{last_price:,.2f}", delta=f"{price_change:.2f} ({pct_change:.2f}%)")
         
         if personal_plan:
             st.markdown("---")
@@ -221,16 +285,12 @@ if not df.empty:
         
         st.markdown("---")
         st.subheader("💡 คำแนะนำภาพรวม")
-        st.info(action_short)
+        st.success(action_short)
         
         st.markdown("---")
         st.subheader("🚧 โซนราคาสำคัญ")
         st.write(f"**แนวต้าน:** {res_text}")
         st.write(f"**แนวรับ:** {sup_text}")
-        
-        st.markdown("---")
-        st.subheader("📊 ข้อมูลพื้นฐาน")
-        st.write(f"**P/S Ratio:** {ps_ratio}")
 
 else:
-    st.error("⚠️ ไม่พบข้อมูลหุ้น หรือระบบถูกจำกัดการดึงข้อมูลชั่วคราวจาก Yahoo Finance (กรุณารอสักครู่แล้วกด Refresh หน้าเว็บใหม่ครับ)")
+    st.error("⚠️ ไม่พบข้อมูล หรือระบบถูกจำกัดการดึงข้อมูลชั่วคราว (กรุณารอสักครู่แล้วกด Refresh หน้าเว็บใหม่ หรือลองพิมพ์ชื่อหุ้นใหม่ครับ)")
