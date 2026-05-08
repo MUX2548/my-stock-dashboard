@@ -16,11 +16,15 @@ with st.sidebar:
     st.markdown("🏠 **หน้าหลัก (Dashboard)**")
     st.markdown("---")
     ticker = st.text_input("🔎 ใส่ชื่อหุ้นที่ต้องการ", value="NVTS").upper()
+    
+    # 🌟 เพิ่มช่องกรอกราคาต้นทุนตรงนี้
+    st.markdown("---")
+    st.markdown("💰 **พอร์ตส่วนตัว (Portfolio)**")
+    buy_price = st.number_input("ใส่ราคาต้นทุนของคุณ (USD) \n*ใส่ 0 หากยังไม่มีของ", min_value=0.0, value=0.0, step=0.1)
 
 @st.cache_data(ttl=300)
 def load_data(ticker_symbol):
     try:
-        # 🌟 ดึงข้อมูลแบบปกติเลย ไม่ต้องใส่ Session จำลองแล้ว
         stock = yf.Ticker(ticker_symbol)
         df = stock.history(period="6mo", interval="1d")
         
@@ -55,13 +59,12 @@ def load_data(ticker_symbol):
         return df, ps_ratio
         
     except Exception as e:
-        # ถ้าดึงไม่ได้ ให้ส่งค่าว่างกลับไป แอปจะไม่พัง
         return pd.DataFrame(), "N/A"
 
 df, ps_ratio = load_data(ticker)
 
 # ==========================================
-# 4. ฟังก์ชันคำนวณข้อมูล
+# 4. ฟังก์ชันคำนวณข้อมูลหลัก
 # ==========================================
 def auto_analyze(df):
     if df.empty:
@@ -89,25 +92,20 @@ def auto_analyze(df):
     else:
         summary += "✅ RSI แกว่งตัวระดับกลาง มีพื้นที่ให้ไปต่อ\n"
 
-    if macd_hist > 0:
-        summary += "✅ MACD โมเมนตัมเป็นบวก (แรงซื้อหนุน)\n"
-    else:
-        summary += "❌ MACD โมเมนตัมเป็นลบ (แรงขายกดดัน)\n"
-
     res = f"{recent_high:.2f} / {(recent_high * 1.05):.2f}"
     sup = f"{ema10:.2f} (EMA10) / {ema20:.2f} (EMA20) / {ema50:.2f} (EMA50)"
 
     if last_close > ema50 and rsi < 70:
         plan = "🟢 แผนย่อซื้อ: ทรงกราฟยังดี หาจังหวะเข้าเมื่อราคาย่อมาใกล้แนวรับ EMA 10 หรือ EMA 20\nจุดหนี: หลุดแนวรับ EMA 50"
     elif last_close > ema50 and rsi >= 70:
-        plan = "🟡 แผนถือรันเทรนด์: มีของให้ถือต่อ ใช้ EMA 20 เป็นจุดขยับตัดขาดทุน (Trailing Stop)\nระวัง: อย่าเพิ่งไล่ราคา รอให้ย่อพักตัวก่อน"
+        plan = "🟡 แผนถือรันเทรนด์: มีของให้ถือต่อ ใช้ EMA 20 เป็นจุดขยับตัดขาดทุน (Trailing Stop)"
     else:
-        plan = "🔴 แผนเด้งขาย / Wait & See: กราฟเสียทรง รอให้สร้างฐานใหม่หรือมีสัญญาณกลับตัวชัดเจนก่อน\nจุดหนี: หากมีของ ให้ลดพอร์ตเมื่อเด้งไม่ผ่านแนวต้าน"
+        plan = "🔴 แผนเด้งขาย / Wait & See: กราฟเสียทรง รอให้สร้างฐานใหม่หรือมีสัญญาณกลับตัวก่อน"
 
     if last_close > ema50: 
         trend = "ขาขึ้น 📈"
-        buy_zone = f"โซน {ema10:.2f} ถึง {ema20:.2f} (รับลึก {ema50:.2f})"
-        hold_zone = f"ถ้าราคายืนเหนือ {ema20:.2f} (จุดหนีสุดท้าย {ema50:.2f})"
+        buy_zone = f"โซน {ema10:.2f} ถึง {ema20:.2f}"
+        hold_zone = f"ถ้าราคายืนเหนือ {ema20:.2f} (หนีที่ {ema50:.2f})"
     else: 
         trend = "ขาลง 📉"
         buy_zone = "ยังไม่แนะนำ (รอสัญญาณกลับตัว)"
@@ -115,34 +113,67 @@ def auto_analyze(df):
         
     sell_zone = f"โซน {recent_high:.2f} ขึ้นไป"
 
-    action_short = f"""
-**📈 แนวโน้ม:** {trend}
-**🟢 ซื้อราคา:** {buy_zone}
-**🔴 ขายราคา:** {sell_zone}
-**🟡 ถือต่อในราคา:** {hold_zone}
-    """
+    action_short = f"**📈 แนวโน้ม:** {trend}\n**🟢 ซื้อ:** {buy_zone}\n**🔴 ขาย:** {sell_zone}\n**🟡 ถือต่อ:** {hold_zone}"
 
     return summary, res, sup, plan, action_short
 
 auto_summary, auto_res, auto_sup, auto_plan, action_short = auto_analyze(df)
 
+# ==========================================
+# 🌟 ฟังก์ชันใหม่: วิเคราะห์แผนส่วนตัวจากต้นทุน
+# ==========================================
+def get_personal_plan(df, cost_price):
+    if df.empty or cost_price <= 0:
+        return None
+        
+    last_price = df['Close'].iloc[-1]
+    ema20 = df['EMA_20'].iloc[-1]
+    ema50 = df['EMA_50'].iloc[-1]
+    rsi = df['RSI'].iloc[-1]
+    
+    pl_pct = ((last_price - cost_price) / cost_price) * 100
+    
+    # แบ่งวิเคราะห์เป็น กำไร vs ขาดทุน
+    if last_price > cost_price:
+        if rsi >= 70:
+            advice = "🟢 **กำไรอยู่ แต่ RSI สูงมาก (Overbought):**\nแนะนำให้ **'แบ่งขายล็อกกำไร (Take Profit)'** บางส่วน เพราะราคามีโอกาสย่อตัวพักฐานสูง"
+            color = "warning"
+        elif last_price < ema20:
+            advice = "🟡 **กำไรอยู่ แต่ราคาหลุด EMA 20:**\nโมเมนตัมระยะสั้นเริ่มอ่อนแรง แนะนำให้ **'เฝ้าระวังอย่างใกล้ชิด'** หากหลุดต้นทุนของคุณ ควรขายออกมาก่อนเพื่อรักษาเงินต้น"
+            color = "warning"
+        else:
+            advice = "🚀 **กำไรอยู่ และกราฟยังเป็นขาขึ้นแข็งแกร่ง:**\nแนะนำให้ **'ถือต่อ (Let Profit Run)'** ปล่อยให้กำไรทำงานต่อไป ใช้เส้น EMA 20 เป็นเกณฑ์ในการรันเทรนด์"
+            color = "success"
+    else:
+        if last_price < ema50:
+            advice = "🔴 **ขาดทุน และกราฟหลุดเส้น EMA 50 (เสียทรง):**\nแนวโน้มหลักเปลี่ยนเป็นขาลง แนะนำให้พิจารณา **'ตัดขาดทุน (Cut Loss)'** เพื่อจำกัดความเสี่ยง ป้องกันเงินจม"
+            color = "error"
+        else:
+            advice = "🟡 **ขาดทุน แต่กราฟยังไม่หลุดแนวรับหลัก (EMA 50):**\nราคาย่อตัวลงมาแต่ยังอยู่ในเทรนด์ขาขึ้น แนะนำให้ **'ถือรอ (Hold)'** เพื่อลุ้นราคาเด้งกลับที่โซนแนวรับนี้"
+            color = "warning"
+            
+    return {"pl_pct": pl_pct, "advice": advice, "color": color}
+
+personal_plan = get_personal_plan(df, buy_price)
+
 with st.sidebar:
     st.markdown("---")
     st.subheader("📝 บันทึกวิเคราะห์หุ้น")
-    st.caption(f"อัปเดตข้อมูลล่าสุดเมื่อ: {current_time} น.")
     summary_text = st.text_area("📌 สรุปภาพรวมตอนนี้", value=auto_summary, height=120)
     res_text = st.text_input("🚧 แนวต้าน (Resistance)", value=auto_res)
     sup_text = st.text_input("🚧 แนวรับ (Support)", value=auto_sup)
-    plan_text = st.text_area("🎯 แผนการเทรด", value=auto_plan, height=100)
 
-def create_chart(df, ticker_symbol):
+def create_chart(df, ticker_symbol, cost_price=0):
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.6, 0.2, 0.2])
     
     fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Price'), row=1, col=1)
-    
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_10'], line=dict(color='#2962FF', width=1.5), name='EMA 10'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#00E676', width=1.5), name='EMA 20'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_50'], line=dict(color='#FF6D00', width=1.5), name='EMA 50'), row=1, col=1)
+
+    # 🌟 วาดเส้นราคาต้นทุนลงบนกราฟให้เห็นชัดๆ (ถ้ามีการกรอกข้อมูล)
+    if cost_price > 0:
+        fig.add_hline(y=cost_price, line_dash="dash", line_color="white", annotation_text="ราคาต้นทุนของคุณ", row=1, col=1)
 
     macd_colors = ['#26A69A' if val >= 0 else '#EF5350' for val in df['MACD_Hist']]
     fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='#2962FF', width=1.5), name='MACD'), row=2, col=1)
@@ -173,19 +204,26 @@ if not df.empty:
     pct_change = (price_change / prev_price) * 100
 
     with col1:
-        st.plotly_chart(create_chart(df, ticker), use_container_width=True)
+        st.plotly_chart(create_chart(df, ticker, buy_price), use_container_width=True)
 
     with col2:
         st.metric(label="💵 ราคาปัจจุบัน (USD)", value=f"${last_price:.2f}", delta=f"{price_change:.2f} ({pct_change:.2f}%)")
-        st.success(action_short)
-        st.markdown("---")
         
-        st.subheader("📊 ข้อมูลพื้นฐาน")
-        st.write(f"**P/S Ratio:** {ps_ratio}")
-        st.markdown("---")
+        # 🌟 โชว์ผลวิเคราะห์พอร์ตส่วนตัว (ถ้ามีการกรอกต้นทุน)
+        if personal_plan:
+            st.markdown("---")
+            st.subheader("💼 แผนสำหรับพอร์ตของคุณ")
+            st.write(f"**กำไร/ขาดทุน:** {personal_plan['pl_pct']:.2f}%")
+            if personal_plan['color'] == "success":
+                st.success(personal_plan['advice'])
+            elif personal_plan['color'] == "warning":
+                st.warning(personal_plan['advice'])
+            else:
+                st.error(personal_plan['advice'])
         
-        st.subheader("📌 สรุปภาพรวมตอนนี้")
-        st.info(summary_text) 
+        st.markdown("---")
+        st.subheader("💡 คำแนะนำภาพรวม")
+        st.info(action_short)
         
         st.markdown("---")
         st.subheader("🚧 โซนราคาสำคัญ")
@@ -193,12 +231,8 @@ if not df.empty:
         st.write(f"**แนวรับ:** {sup_text}")
         
         st.markdown("---")
-        st.subheader("🎯 แผนการเทรด (ละเอียด)")
-        if "ย่อซื้อ" in plan_text:
-            st.success(plan_text)
-        elif "ถือรันเทรนด์" in plan_text:
-            st.warning(plan_text)
-        else:
-            st.error(plan_text)
+        st.subheader("📊 ข้อมูลพื้นฐาน")
+        st.write(f"**P/S Ratio:** {ps_ratio}")
+
 else:
     st.error("⚠️ ไม่พบข้อมูลหุ้น หรือระบบถูกจำกัดการดึงข้อมูลชั่วคราวจาก Yahoo Finance (กรุณารอสักครู่แล้วกด Refresh หน้าเว็บใหม่ครับ)")
