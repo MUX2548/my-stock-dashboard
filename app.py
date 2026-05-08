@@ -4,7 +4,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 from datetime import datetime
-import requests
 
 # 1. ตั้งค่าหน้าเพจ
 st.set_page_config(page_title="ระบบวิเคราะห์หุ้นอัตโนมัติ", layout="wide")
@@ -20,49 +19,44 @@ with st.sidebar:
 
 @st.cache_data(ttl=300)
 def load_data(ticker_symbol):
-    session = requests.Session()
-    session.headers.update(
-        {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'}
-    )
-    
-    stock = yf.Ticker(ticker_symbol, session=session)
-    
-    # ดึงข้อมูลกราฟ (ถ้าดึงไม่ได้ให้ข้าม)
     try:
+        # 🌟 ดึงข้อมูลแบบปกติเลย ไม่ต้องใส่ Session จำลองแล้ว
+        stock = yf.Ticker(ticker_symbol)
         df = stock.history(period="6mo", interval="1d")
-    except:
+        
+        if df.empty:
+            return pd.DataFrame(), "N/A"
+            
+        df['EMA_10'] = df['Close'].ewm(span=10, adjust=False).mean()
+        df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+        df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
+        
+        ema_12 = df['Close'].ewm(span=12, adjust=False).mean()
+        ema_26 = df['Close'].ewm(span=26, adjust=False).mean()
+        df['MACD'] = ema_12 - ema_26
+        df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+        df['MACD_Hist'] = df['MACD'] - df['Signal']
+        
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+        loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+        rs = gain / loss
+        df['RSI'] = 100 - (100 / (1 + rs))
+        
+        ps_ratio = "N/A"
+        try:
+            info = stock.info
+            ps_val = info.get('priceToSalesTrailing12Months', 'N/A')
+            if isinstance(ps_val, float):
+                ps_ratio = round(ps_val, 2)
+        except:
+            pass 
+            
+        return df, ps_ratio
+        
+    except Exception as e:
+        # ถ้าดึงไม่ได้ ให้ส่งค่าว่างกลับไป แอปจะไม่พัง
         return pd.DataFrame(), "N/A"
-    
-    if df.empty:
-        return df, "N/A"
-        
-    df['EMA_10'] = df['Close'].ewm(span=10, adjust=False).mean()
-    df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
-    df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
-    
-    ema_12 = df['Close'].ewm(span=12, adjust=False).mean()
-    ema_26 = df['Close'].ewm(span=26, adjust=False).mean()
-    df['MACD'] = ema_12 - ema_26
-    df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-    df['MACD_Hist'] = df['MACD'] - df['Signal']
-    
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
-    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
-    rs = gain / loss
-    df['RSI'] = 100 - (100 / (1 + rs))
-    
-    # 🌟 ใส่เกราะป้องกันตรงนี้! ถ้าดึง P/S Ratio แล้วโดนบล็อก จะได้ไม่พัง
-    ps_ratio = "N/A"
-    try:
-        info = stock.info
-        ps_val = info.get('priceToSalesTrailing12Months', 'N/A')
-        if isinstance(ps_val, float):
-            ps_ratio = round(ps_val, 2)
-    except:
-        pass # ปล่อยผ่านไปเลย
-        
-    return df, ps_ratio
 
 df, ps_ratio = load_data(ticker)
 
@@ -207,4 +201,4 @@ if not df.empty:
         else:
             st.error(plan_text)
 else:
-    st.error("ไม่พบข้อมูลหุ้นที่ค้นหา กรุณาตรวจสอบชื่อหุ้นอีกครั้ง หรือระบบอาจถูกจำกัดการดึงข้อมูลชั่วคราวครับ")
+    st.error("⚠️ ไม่พบข้อมูลหุ้น หรือระบบถูกจำกัดการดึงข้อมูลชั่วคราวจาก Yahoo Finance (กรุณารอสักครู่แล้วกด Refresh หน้าเว็บใหม่ครับ)")
