@@ -3,13 +3,15 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
 st.set_page_config(page_title="ระบบวิเคราะห์หุ้นอัตโนมัติ", layout="wide")
 
-current_date = datetime.now().strftime("%d/%m/%Y")
-current_time = datetime.now().strftime("%H:%M")
+# 🌟 บังคับตั้งค่าเป็นเวลาประเทศไทย (UTC+7) เสมอ
+tz_th = timezone(timedelta(hours=7))
+current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
+current_time = datetime.now(tz_th).strftime("%H:%M")
 
 with st.sidebar:
     st.title("เมนูการใช้งาน")
@@ -17,7 +19,6 @@ with st.sidebar:
     st.markdown("---")
     ticker = st.text_input("🔎 ใส่ชื่อหุ้นที่ต้องการ", value="NVTS").upper()
     
-    # 🌟 เพิ่มช่องกรอกราคาต้นทุนตรงนี้
     st.markdown("---")
     st.markdown("💰 **พอร์ตส่วนตัว (Portfolio)**")
     buy_price = st.number_input("ใส่ราคาต้นทุนของคุณ (USD) \n*ใส่ 0 หากยังไม่มีของ", min_value=0.0, value=0.0, step=0.1)
@@ -133,7 +134,6 @@ def get_personal_plan(df, cost_price):
     
     pl_pct = ((last_price - cost_price) / cost_price) * 100
     
-    # แบ่งวิเคราะห์เป็น กำไร vs ขาดทุน
     if last_price > cost_price:
         if rsi >= 70:
             advice = "🟢 **กำไรอยู่ แต่ RSI สูงมาก (Overbought):**\nแนะนำให้ **'แบ่งขายล็อกกำไร (Take Profit)'** บางส่วน เพราะราคามีโอกาสย่อตัวพักฐานสูง"
@@ -171,7 +171,6 @@ def create_chart(df, ticker_symbol, cost_price=0):
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#00E676', width=1.5), name='EMA 20'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_50'], line=dict(color='#FF6D00', width=1.5), name='EMA 50'), row=1, col=1)
 
-    # 🌟 วาดเส้นราคาต้นทุนลงบนกราฟให้เห็นชัดๆ (ถ้ามีการกรอกข้อมูล)
     if cost_price > 0:
         fig.add_hline(y=cost_price, line_dash="dash", line_color="white", annotation_text="ราคาต้นทุนของคุณ", row=1, col=1)
 
@@ -209,7 +208,6 @@ if not df.empty:
     with col2:
         st.metric(label="💵 ราคาปัจจุบัน (USD)", value=f"${last_price:.2f}", delta=f"{price_change:.2f} ({pct_change:.2f}%)")
         
-        # 🌟 โชว์ผลวิเคราะห์พอร์ตส่วนตัว (ถ้ามีการกรอกต้นทุน)
         if personal_plan:
             st.markdown("---")
             st.subheader("💼 แผนสำหรับพอร์ตของคุณ")
