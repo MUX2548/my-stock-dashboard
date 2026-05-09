@@ -104,19 +104,25 @@ if not df.empty:
 
     col_chart, col_plan = st.columns([7, 3])
     
-    # 🌟 ฝั่งซ้าย: กราฟ + ข้อมูลพื้นฐาน (ย้ายมาอุดช่องโหว่ตรงนี้ค่ะ)
     with col_chart:
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.25, 0.25])
+        
+        # 🌟 ปรับปรุงความคมชัดของกราฟ (เพิ่ม width เป็น 2.5 และ 2.0 ให้เส้นดูหนาและชัดขึ้น)
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['Trendline'], line=dict(color='rgba(255, 255, 255, 0.3)', dash='dot'), name="Trendline"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#00E676', width=1.5), name="EMA 20"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['EMA_50'], line=dict(color='#FF6D00', width=1.5), name="EMA 50"), row=1, col=1)
-        if buy_price > 0: fig.add_hline(y=buy_price, line_dash="dash", line_color="cyan", annotation_text="ต้นทุน", row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['Trendline'], line=dict(color='rgba(255, 255, 255, 0.5)', dash='dot', width=2), name="Trendline"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#00E676', width=2.5), name="EMA 20"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['EMA_50'], line=dict(color='#FF6D00', width=2.5), name="EMA 50"), row=1, col=1)
+        
+        if buy_price > 0: 
+            fig.add_hline(y=buy_price, line_dash="dash", line_color="cyan", line_width=2, annotation_text="ต้นทุน", row=1, col=1)
+            
         colors = ['#00E676' if df['Close'].iloc[i] > df['Open'].iloc[i] else '#FF6D00' for i in range(len(df))]
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name="Volume"), row=2, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#BA68C8'), name="RSI"), row=3, col=1)
+        
+        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#BA68C8', width=2), name="RSI"), row=3, col=1)
         fig.add_hline(y=70, line_dash="dot", line_color="red", row=3, col=1)
         fig.add_hline(y=30, line_dash="dot", line_color="green", row=3, col=1)
+        
         fig.update_layout(template="plotly_dark", height=650, margin=dict(l=0,r=0,t=0,b=0), showlegend=False)
         fig.update_xaxes(rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
@@ -136,11 +142,16 @@ if not df.empty:
             
         st.info("💡 **ทริค:** เซียนหุ้นจะดูแท่ง Volume ควบคู่ไปด้วย หากราคาทะลุแนวต้านพร้อม Volume สีเขียวสูงปรี๊ด แสดงว่าเป็นขาขึ้นของจริงค่ะ!")
 
-    # 🌟 ฝั่งขวา: คำแนะนำแผนการเทรด และการจัดการความเสี่ยง
     with col_plan:
         last_p = df['Close'].iloc[-1]
         change = last_p - df['Close'].iloc[-2] if len(df) > 1 else 0
+        
+        # 🌟 ตัวเลขราคาปัจจุบัน
         st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{change:.2f}")
+        
+        # 🌟 เพิ่มวันที่/เวลา ของแท่งเทียนล่าสุด ไว้ใต้ราคาปัจจุบัน (เป็นตัวหนังสือเล็กๆ)
+        last_trade_date = df.index[-1].strftime("%d/%m/%Y")
+        st.caption(f"🕒 ดึงข้อมูล ณ: {last_trade_date} | {current_time} น.")
         
         if buy_price > 0:
             pl = ((last_p - buy_price) / buy_price) * 100
