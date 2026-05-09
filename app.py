@@ -10,10 +10,14 @@ from datetime import datetime, timezone, timedelta
 st.set_page_config(page_title="Strategic Portfolio Ecosystem 2.0", layout="wide")
 
 # ==========================================
-# 🔐 ระบบสถานะการเข้าสู่ระบบ (Login State)
+# 🔐 ระบบสถานะ (Session State)
 # ==========================================
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
+
+# 🌟 สร้างฐานข้อมูลพอร์ตโฟลิโอเริ่มต้น (ถ้ายังไม่มี)
+if "port_data" not in st.session_state:
+    st.session_state.port_data = pd.DataFrame({"Ticker": ["NVTS"], "Cost_Price": [16.48], "Shares": [100.0]})
 
 # ตั้งค่าเวลาไทย
 tz_th = timezone(timedelta(hours=7))
@@ -54,10 +58,26 @@ with st.sidebar:
         risk_pct = st.slider("ความเสี่ยงต่อไม้ (%)", 1.0, 5.0, 2.0)
         
         st.markdown("---")
-        st.subheader("💰 ต้นทุนหุ้นตัวนี้")
-        st.caption("ใช้คำนวณจุดหนีในหน้าวิเคราะห์กราฟ")
+        st.subheader("💰 สถานะหุ้นตัวนี้")
+        st.caption("กรอกเพื่อคำนวณและส่งข้อมูลเข้าพอร์ต")
         buy_price = st.number_input("ราคาต้นทุน (USD)", min_value=0.0, value=0.0, step=0.1)
+        buy_shares = st.number_input("จำนวนหุ้นที่มี", min_value=0.0, value=0.0, step=0.1)
         
+        # 🌟 ปุ่มลิงก์ข้อมูลเข้าตารางพอร์ตโฟลิโอโดยตรง 🌟
+        if st.button("➕ เพิ่มหุ้นนี้ลงตารางพอร์ต", type="primary", use_container_width=True):
+            port_df = st.session_state.port_data
+            # ถ้ามีหุ้นตัวนี้ในตารางแล้ว ให้อัปเดตข้อมูล
+            if ticker in port_df["Ticker"].values:
+                idx = port_df.index[port_df["Ticker"] == ticker].tolist()[0]
+                port_df.at[idx, "Cost_Price"] = buy_price
+                port_df.at[idx, "Shares"] = buy_shares
+                st.success(f"อัปเดตข้อมูล {ticker} เรียบร้อย!")
+            # ถ้ายังไม่มี ให้เพิ่มแถวใหม่
+            else:
+                new_row = pd.DataFrame({"Ticker": [ticker], "Cost_Price": [buy_price], "Shares": [buy_shares]})
+                st.session_state.port_data = pd.concat([port_df, new_row], ignore_index=True)
+                st.success(f"เพิ่ม {ticker} ลงพอร์ตเรียบร้อย! ไปดูที่แท็บพอร์ตได้เลยค่ะ")
+
         st.markdown("---")
         if st.button("🚪 ออกจากระบบ (Logout)", use_container_width=True):
             st.session_state["logged_in"] = False
@@ -125,7 +145,7 @@ else:
     tab_dash, = st.tabs(["📊 วิเคราะห์กราฟ (Analysis)"])
 
 # ==========================================
-# หน้าวิเคราะห์หลัก (Dashboard) - นำกลับมาครบทุกส่วนแล้ว!
+# หน้าวิเคราะห์หลัก (Dashboard) - ยืนยันว่ามาครบ 100% แน่นอน
 # ==========================================
 with tab_dash:
     if not df.empty:
@@ -158,7 +178,7 @@ with tab_dash:
             fig.update_xaxes(rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
 
-            # ข้อมูลพื้นฐาน
+            # ข้อมูลพื้นฐาน (ไม่มีทางหายแล้วค่ะ)
             st.markdown("---")
             st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental Analysis)")
             f1, f2, f3 = st.columns(3)
@@ -205,18 +225,24 @@ with tab_dash:
         st.warning("ไม่พบข้อมูล หรือกราฟอาจอยู่ระหว่างปรับฐานข้อมูล กรุณาลองหุ้นตัวอื่นค่ะ")
 
 # ==========================================
-# 🌟 แท็บพอร์ตโฟลิโอ: ตรวจสอบราคาปัจจุบันรายตัว (โชว์เฉพาะล็อคอิน)
+# 🌟 แท็บพอร์ตโฟลิโอ (ซิงค์ข้อมูลกับเมนูด้านซ้ายแล้ว!)
 # ==========================================
 if st.session_state["logged_in"]:
     with tab_port:
         st.subheader("💼 ตัวติดตามพอร์ต (Real-time Multi-Stock Tracker)")
         
-        # ตารางข้อมูลพอร์ต
-        if "port_data" not in st.session_state:
-            st.session_state.port_data = pd.DataFrame({"Ticker": ["NVTS"], "Cost_Price": [16.48], "Shares": [100.0]})
-
-        edited_df = st.data_editor(st.session_state.port_data, num_rows="dynamic", use_container_width=True)
-        st.session_state.port_data = edited_df
+        # แสดงตารางให้ผู้ใช้แก้ไขได้ โดยดึงข้อมูลจากตัวแปรส่วนกลาง
+        edited_df = st.data_editor(
+            st.session_state.port_data, 
+            num_rows="dynamic", 
+            use_container_width=True,
+            column_config={
+                "Ticker": st.column_config.TextColumn("ชื่อหุ้น (Ticker)"),
+                "Cost_Price": st.column_config.NumberColumn("ราคาต้นทุน", format="$%.2f"),
+                "Shares": st.column_config.NumberColumn("จำนวนหุ้น")
+            }
+        )
+        st.session_state.port_data = edited_df # บันทึกการแก้ไขกลับเข้าตู้
 
         if st.button("🔄 อัปเดตราคาปัจจุบันทุกตัวในพอร์ต", type="primary", use_container_width=True):
             tickers = edited_df["Ticker"].dropna().unique().tolist()
@@ -238,7 +264,10 @@ if st.session_state["logged_in"]:
                             curr_p = current_prices[t]
                             val = curr_p * sh
                             cst = cost * sh
-                            results.append({"หุ้น": t, "ราคาปัจจุบัน": f"${curr_p:,.2f}", "ต้นทุน": f"${cost:,.2f}", "กำไร/ขาดทุน": f"${(val-cst):,.2f}", "%": f"{((val-cst)/cst*100):.2f}%", "มูลค่ารวม": f"${val:,.2f}"})
+                            profit = val - cst
+                            profit_pct = (profit / cst * 100) if cst > 0 else 0
+                            
+                            results.append({"หุ้น": t, "ราคาปัจจุบัน": f"${curr_p:,.2f}", "ต้นทุน": f"${cost:,.2f}", "กำไร/ขาดทุน": f"${profit:,.2f}", "%": f"{profit_pct:.2f}%", "มูลค่ารวม": f"${val:,.2f}"})
                             total_v += val
                             total_c += cst
 
