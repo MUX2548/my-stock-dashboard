@@ -103,6 +103,8 @@ if not df.empty:
         st.info(f"🔮 **ทิศทางคืนนี้:** {matrix['trend']} | **เป้าหมาย:** {matrix['l']:,.2f} - {matrix['u']:,.2f} (Harmonic Matrix)")
 
     col_chart, col_plan = st.columns([7, 3])
+    
+    # 🌟 ฝั่งซ้าย: กราฟ + ข้อมูลพื้นฐาน (ย้ายมาอุดช่องโหว่ตรงนี้ค่ะ)
     with col_chart:
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.25, 0.25])
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
@@ -119,23 +121,36 @@ if not df.empty:
         fig.update_xaxes(rangeslider_visible=False)
         st.plotly_chart(fig, use_container_width=True)
 
+        st.markdown("---")
+        st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental Analysis)")
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            st.metric("P/S Ratio", fund['ps'])
+            st.caption("ราคาเทียบรายได้ (<3 = ถูก)")
+        with f2:
+            st.metric("P/E Ratio", fund['pe'])
+            st.caption("จุดคืนทุน (N/A = ยังไม่มีกำไร)")
+        with f3:
+            st.metric("ROE", fund['roe'])
+            st.caption("ความเก่งบริหาร (>15% = ดี)")
+            
+        st.info("💡 **ทริค:** เซียนหุ้นจะดูแท่ง Volume ควบคู่ไปด้วย หากราคาทะลุแนวต้านพร้อม Volume สีเขียวสูงปรี๊ด แสดงว่าเป็นขาขึ้นของจริงค่ะ!")
+
+    # 🌟 ฝั่งขวา: คำแนะนำแผนการเทรด และการจัดการความเสี่ยง
     with col_plan:
         last_p = df['Close'].iloc[-1]
         change = last_p - df['Close'].iloc[-2] if len(df) > 1 else 0
         st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{change:.2f}")
         
-        # 🌟 1. ดึง % กำไร/ขาดทุน กลับมาแล้ว!
         if buy_price > 0:
             pl = ((last_p - buy_price) / buy_price) * 100
             st.write(f"**กำไร/ขาดทุน:** {pl:.2f}%")
             if pl > 0: st.success("✅ ถือต่อเพื่อรันกำไร")
             else: st.error("⚠️ ระวัง! กราฟเริ่มเสียทรง")
         
-        # 🛡️ ส่วนการคำนวณตัดขาดทุนและขนาดไม้
         sl_price = df['EMA_50'].iloc[-1] * 0.99 if buy_price == 0 else buy_price * 0.92
         st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl_price:.2f}**")
         
-        # 🌟 2. แก้บั๊ก Position Sizing (แสดงทศนิยม 2 ตำแหน่ง)
         risk_per_trade = total_capital * (risk_pct / 100)
         risk_per_share = last_p - sl_price
         if risk_per_share > 0:
@@ -149,26 +164,10 @@ if not df.empty:
         st.write(f"**🔴 ขาย:** {analysis['sell']}")
         st.write(f"**🟡 ถือต่อ:** {analysis['hold']}")
 
-        # 🌟 3. ดึง โซนราคาสำคัญ (แนวรับ-แนวต้าน) กลับมาแล้ว!
         st.markdown("---")
         st.subheader("🚧 โซนราคาสำคัญ")
         st.write(f"**แนวต้าน:** {df['High'].tail(20).max():.2f}")
         st.write(f"**แนวรับ:** {df['EMA_50'].iloc[-1]:.2f}")
-
-    st.markdown("---")
-    st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental Analysis)")
-    f1, f2, f3 = st.columns(3)
-    with f1:
-        st.metric("P/S Ratio", fund['ps'])
-        st.caption("ราคาเทียบรายได้ (<3 = ถูก)")
-    with f2:
-        st.metric("P/E Ratio", fund['pe'])
-        st.caption("จุดคืนทุน (N/A = ยังไม่มีกำไร)")
-    with f3:
-        st.metric("ROE", fund['roe'])
-        st.caption("ความเก่งบริหาร (>15% = ดี)")
-        
-    st.info("💡 **ทริค:** เซียนหุ้นจะดูแท่ง Volume ควบคู่ไปด้วย หากราคาทะลุแนวต้านพร้อม Volume สีเขียวสูงปรี๊ด แสดงว่าเป็นขาขึ้นของจริงค่ะ!")
 
 else:
     st.warning("กรุณาตรวจสอบชื่อหุ้นอีกครั้งค่ะ")
