@@ -27,9 +27,10 @@ def load_data(ticker_symbol):
         df = stock.history(period="6mo", interval="1d")
         if df.empty: return pd.DataFrame(), {}
         
-        # 🌟 เคลียร์ข้อมูลที่แหว่ง (NaN) ป้องกันกราฟพัง
+        # เคลียร์ข้อมูลที่แหว่ง (NaN) ป้องกันกราฟพัง
         df = df.dropna(subset=['Close']) 
             
+        df['EMA_10'] = df['Close'].ewm(span=10, adjust=False).mean()
         df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
         df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
         
@@ -46,7 +47,7 @@ def load_data(ticker_symbol):
         loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
         df['RSI'] = 100 - (100 / (1 + gain/loss))
         
-        # 🌟 แก้บั๊ก Trendline คำนวณเฉพาะตอนข้อมูลสมบูรณ์
+        # Trendline
         if len(df) > 1:
             y = df['Close'].values
             x = np.arange(len(y))
@@ -71,6 +72,9 @@ def load_data(ticker_symbol):
 
 df, fund = load_data(ticker)
 
+# ==========================================
+# 🌟 ฟังก์ชัน: The Harmonic Momentum Matrix
+# ==========================================
 def get_matrix(df):
     if df.empty or len(df) < 14: return None
     last = df['Close'].iloc[-1]
@@ -81,6 +85,37 @@ def get_matrix(df):
 
 matrix = get_matrix(df)
 
+# ==========================================
+# 🌟 ฟังก์ชัน: คำแนะนำภาพรวม (ที่หายไป เอากลับมาแล้ว!)
+# ==========================================
+def auto_analyze(df):
+    if df.empty: return ""
+    last_close = df['Close'].iloc[-1]
+    ema10 = df['EMA_10'].iloc[-1]
+    ema20 = df['EMA_20'].iloc[-1] 
+    ema50 = df['EMA_50'].iloc[-1]
+    recent_high = df['High'].tail(20).max()
+
+    if last_close > ema50: 
+        trend = "ขาขึ้น 📈 🟢"
+        buy_zone = f"โซน {ema10:.2f} ถึง {ema20:.2f} 🔴"
+        hold_zone = f"ถ้าราคายืนเหนือ {ema20:.2f} (หนีที่ {ema50:.2f})"
+    else: 
+        trend = "ขาลง 📉 🔴"
+        buy_zone = "ยังไม่แนะนำ (รอสัญญาณกลับตัว) ⚠️"
+        hold_zone = f"ระวัง! หลุด Low ควรคัททิ้ง 🟡"
+        
+    sell_zone = f"โซน {recent_high:.2f} ขึ้นไป 🟡"
+    return f"**📈 แนวโน้ม:** {trend}\n\n**🟢 ซื้อ:** {buy_zone}\n\n**🔴 ขาย:** {sell_zone}\n\n**🟡 ถือต่อ:** {hold_zone}"
+
+if not df.empty:
+    action_short = auto_analyze(df)
+else:
+    action_short = ""
+
+# ==========================================
+# 6. จัด Layout หน้าจอหลัก
+# ==========================================
 st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
 st.caption(f"📅 ข้อมูลล่าสุด: {current_date} | {current_time} น.")
 
@@ -91,7 +126,6 @@ if not df.empty:
     col_chart, col_plan = st.columns([7, 3])
     
     with col_chart:
-        # 🌟 เพิ่มแถวสำหรับ Volume เป็น 3 แถว
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.25, 0.25])
         
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
@@ -102,7 +136,7 @@ if not df.empty:
         if buy_price > 0:
             fig.add_hline(y=buy_price, line_dash="dash", line_color="cyan", annotation_text="ต้นทุน", row=1, col=1)
             
-        # 🌟 แท่ง Volume
+        # แท่ง Volume
         colors = ['#00E676' if df['Close'].iloc[i] > df['Open'].iloc[i] else '#FF6D00' for i in range(len(df))]
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name="Volume"), row=2, col=1)
         
@@ -126,21 +160,28 @@ if not df.empty:
             if pl > 0: st.success("✅ ถือต่อเพื่อรันกำไร")
             else: st.error("⚠️ ระวัง! กราฟเริ่มเสียทรง")
         
+        # 🌟 กล่องคำแนะนำภาพรวมที่นำกลับมา 🌟
+        st.markdown("---")
+        st.subheader("💡 คำแนะนำภาพรวม")
+        st.success(action_short)
+        
         st.markdown("---")
         st.subheader("🚧 โซนราคาสำคัญ")
         st.write(f"**แนวต้าน:** {df['High'].tail(20).max():.2f}")
         st.write(f"**แนวรับ:** {df['EMA_50'].iloc[-1]:.2f}")
 
     st.markdown("---")
-    st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
-    # 🌟 ปรับให้ตัวเลขเป็น String ที่จัด Format แล้ว จะได้ไม่โดนย่อเป็น 1...
+    st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental Analysis)")
     f1, f2, f3 = st.columns(3)
     with f1:
         st.metric("P/S Ratio", fund['ps'])
+        st.caption("ราคาเทียบรายได้ (<3 = ถูก)")
     with f2:
         st.metric("P/E Ratio", fund['pe'])
+        st.caption("จุดคืนทุน (N/A = ยังไม่มีกำไร)")
     with f3:
         st.metric("ROE", fund['roe'])
+        st.caption("ความเก่งบริหาร (>15% = ดี)")
     
     st.info("💡 **ทริค:** เซียนหุ้นจะดูแท่ง Volume ควบคู่ไปด้วย หากราคาทะลุแนวต้านพร้อม Volume สีเขียวสูงปรี๊ด แสดงว่าเป็นขาขึ้นของจริงค่ะ!")
 
