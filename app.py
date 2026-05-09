@@ -109,7 +109,7 @@ if not df.empty:
         fig.add_trace(go.Scatter(x=df.index, y=df['Trendline'], line=dict(color='rgba(255, 255, 255, 0.3)', dash='dot'), name="Trendline"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#00E676', width=1.5), name="EMA 20"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['EMA_50'], line=dict(color='#FF6D00', width=1.5), name="EMA 50"), row=1, col=1)
-        if buy_price > 0: fig.add_hline(y=buy_price, line_dash="dash", line_color="cyan", row=1, col=1)
+        if buy_price > 0: fig.add_hline(y=buy_price, line_dash="dash", line_color="cyan", annotation_text="ต้นทุน", row=1, col=1)
         colors = ['#00E676' if df['Close'].iloc[i] > df['Open'].iloc[i] else '#FF6D00' for i in range(len(df))]
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors, name="Volume"), row=2, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#BA68C8'), name="RSI"), row=3, col=1)
@@ -124,16 +124,23 @@ if not df.empty:
         change = last_p - df['Close'].iloc[-2] if len(df) > 1 else 0
         st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{change:.2f}")
         
+        # 🌟 1. ดึง % กำไร/ขาดทุน กลับมาแล้ว!
+        if buy_price > 0:
+            pl = ((last_p - buy_price) / buy_price) * 100
+            st.write(f"**กำไร/ขาดทุน:** {pl:.2f}%")
+            if pl > 0: st.success("✅ ถือต่อเพื่อรันกำไร")
+            else: st.error("⚠️ ระวัง! กราฟเริ่มเสียทรง")
+        
         # 🛡️ ส่วนการคำนวณตัดขาดทุนและขนาดไม้
         sl_price = df['EMA_50'].iloc[-1] * 0.99 if buy_price == 0 else buy_price * 0.92
         st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl_price:.2f}**")
         
-        # สูตร Position Sizing
+        # 🌟 2. แก้บั๊ก Position Sizing (แสดงทศนิยม 2 ตำแหน่ง)
         risk_per_trade = total_capital * (risk_pct / 100)
         risk_per_share = last_p - sl_price
         if risk_per_share > 0:
             shares_to_buy = risk_per_trade / risk_per_share
-            st.success(f"🧮 **ควรซื้อ:** {int(shares_to_buy)} หุ้น\n\n(ใช้เงิน: ${shares_to_buy * last_p:,.2f})")
+            st.success(f"🧮 **ควรซื้อ:** {shares_to_buy:.2f} หุ้น\n\n(ใช้เงิน: ${(shares_to_buy * last_p):,.2f})")
             st.caption(f"*ถ้าคัทลอสที่จุดหนี คุณจะเสียเงิน ${risk_per_trade:,.2f} ({risk_pct}% ของพอร์ต)")
         
         st.markdown("---")
@@ -142,11 +149,26 @@ if not df.empty:
         st.write(f"**🔴 ขาย:** {analysis['sell']}")
         st.write(f"**🟡 ถือต่อ:** {analysis['hold']}")
 
+        # 🌟 3. ดึง โซนราคาสำคัญ (แนวรับ-แนวต้าน) กลับมาแล้ว!
+        st.markdown("---")
+        st.subheader("🚧 โซนราคาสำคัญ")
+        st.write(f"**แนวต้าน:** {df['High'].tail(20).max():.2f}")
+        st.write(f"**แนวรับ:** {df['EMA_50'].iloc[-1]:.2f}")
+
     st.markdown("---")
-    st.subheader("📊 ข้อมูลพื้นฐาน")
+    st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental Analysis)")
     f1, f2, f3 = st.columns(3)
-    with f1: st.metric("P/S Ratio", fund['ps'])
-    with f2: st.metric("P/E Ratio", fund['pe'])
-    with f3: st.metric("ROE", fund['roe'])
+    with f1:
+        st.metric("P/S Ratio", fund['ps'])
+        st.caption("ราคาเทียบรายได้ (<3 = ถูก)")
+    with f2:
+        st.metric("P/E Ratio", fund['pe'])
+        st.caption("จุดคืนทุน (N/A = ยังไม่มีกำไร)")
+    with f3:
+        st.metric("ROE", fund['roe'])
+        st.caption("ความเก่งบริหาร (>15% = ดี)")
+        
+    st.info("💡 **ทริค:** เซียนหุ้นจะดูแท่ง Volume ควบคู่ไปด้วย หากราคาทะลุแนวต้านพร้อม Volume สีเขียวสูงปรี๊ด แสดงว่าเป็นขาขึ้นของจริงค่ะ!")
+
 else:
     st.warning("กรุณาตรวจสอบชื่อหุ้นอีกครั้งค่ะ")
