@@ -31,7 +31,7 @@ def load_data(ticker_symbol):
         df = stock.history(period="6mo", interval="1d")
         
         if df.empty:
-            return pd.DataFrame(), "N/A"
+            return pd.DataFrame(), {"ps": "N/A", "pe": "N/A", "roe": "N/A"}
             
         df['EMA_10'] = df['Close'].ewm(span=10, adjust=False).mean()
         df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
@@ -51,21 +51,26 @@ def load_data(ticker_symbol):
         
         df['Daily_Return'] = df['Close'].pct_change()
         
-        ps_ratio = "N/A"
+        # 🌟 ดึงข้อมูลพื้นฐาน 3 ทหารเสือ
+        fund_data = {"ps": "N/A", "pe": "N/A", "roe": "N/A"}
         try:
             info = stock.info
             ps_val = info.get('priceToSalesTrailing12Months', 'N/A')
-            if isinstance(ps_val, float):
-                ps_ratio = round(ps_val, 2)
+            pe_val = info.get('trailingPE', 'N/A')
+            roe_val = info.get('returnOnEquity', 'N/A')
+            
+            if isinstance(ps_val, float): fund_data["ps"] = round(ps_val, 2)
+            if isinstance(pe_val, float): fund_data["pe"] = round(pe_val, 2)
+            if isinstance(roe_val, float): fund_data["roe"] = round(roe_val * 100, 2) # แปลงเป็นเปอร์เซ็นต์
         except:
             pass 
             
-        return df, ps_ratio
+        return df, fund_data
         
     except Exception as e:
-        return pd.DataFrame(), "N/A"
+        return pd.DataFrame(), {"ps": "N/A", "pe": "N/A", "roe": "N/A"}
 
-df, ps_ratio = load_data(ticker)
+df, fund_data = load_data(ticker)
 
 # ==========================================
 # 🌟 ฟังก์ชัน: The Harmonic Momentum Matrix
@@ -281,19 +286,37 @@ if not df.empty:
         st.write(f"**แนวต้าน:** {res_text}")
         st.write(f"**แนวรับ:** {sup_text}")
 
-        # 🌟 กล่องข้อมูลพื้นฐาน P/S Ratio (พร้อมสีสันแจ้งเตือน) 🌟
+        # 🌟 กล่องข้อมูลพื้นฐาน (Fundamental) พร้อมความหมาย 🌟
         st.markdown("---")
-        st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
+        st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental Analysis)")
         
-        if ps_ratio != "N/A":
-            if ps_ratio > 10:
-                st.error(f"🚨 **P/S Ratio: {ps_ratio}** (สูงมาก) \n\n⚠️ **ข้อควรระวัง:** ราคาหุ้นค่อนข้างแพงเมื่อเทียบกับรายได้ มีความเสี่ยงหากงบการเงินไม่โตตามเป้า")
-            elif ps_ratio < 3:
-                st.success(f"🌟 **P/S Ratio: {ps_ratio}** (ราคาถูก) \n\n✅ **จุดเด่น:** ราคาหุ้นยังถูก คุ้มค่าเมื่อเทียบกับรายได้ของบริษัท ถือเป็นจุดที่น่าสนใจสะสม")
-            else:
-                st.warning(f"💡 **P/S Ratio: {ps_ratio}** (ระดับกลาง) \n\nสมเหตุสมผลตามมาตรฐานหุ้นเติบโตทั่วไป")
-        else:
-            st.info("ไม่พบข้อมูล P/S Ratio สำหรับหุ้น/ดัชนีตัวนี้")
+        f_col1, f_col2, f_col3 = st.columns(3)
+        with f_col1:
+            st.metric("P/S Ratio", fund_data['ps'])
+        with f_col2:
+            st.metric("P/E Ratio", fund_data['pe'])
+        with f_col3:
+            roe_val = f"{fund_data['roe']}%" if fund_data['roe'] != "N/A" else "N/A"
+            st.metric("ROE", roe_val)
+
+        st.info("""
+        **💡 ความหมายและวิธีอ่านค่า (ใช้ช่วยตัดสินใจ):**
+
+        * **P/S Ratio (Price-to-Sales):** ราคาหุ้นคิดเป็นกี่เท่าของยอดขายบริษัท
+          * 🟢 **ต่ำกว่า 3:** ราคาถูก น่าเก็บสะสม
+          * 🔴 **สูงกว่า 10:** เริ่มแพงเกินไป
+          * *ทริค:* ใช้ดูหุ้นกลุ่มเทคโนโลยีที่เติบโตเร็วแต่ยังไม่มีกำไรเป็นชิ้นเป็นอัน
+
+        * **P/E Ratio (Price-to-Earnings):** จุดคุ้มทุน (ซื้อราคานี้ กี่ปีคืนทุนจากกำไร)
+          * 🟢 **10 ถึง 20 เท่า:** ราคาสมเหตุสมผล ได้มาตรฐาน
+          * 🔴 **สูงกว่า 30 เท่า:** ราคาเริ่มแพง ต้องมั่นใจว่าอนาคตกำไรจะโตกระโดดจริงๆ
+          * *ทริค:* ใช้ประเมินหุ้นปัจจัยพื้นฐานทั่วไปที่มีกำไรสม่ำเสมอ
+
+        * **ROE (Return on Equity):** ผลตอบแทนที่บริษัททำได้จากเงินทุน
+          * 🟢 **มากกว่า 15%:** ผู้บริหารเก่งมาก สร้างผลกำไรให้บริษัทได้ยอดเยี่ยม
+          * 🔴 **น้อยกว่า 5% หรือติดลบ:** ประสิทธิภาพต่ำ ต้องระวังความเสี่ยง
+          * *ทริค:* ยิ่งตัวเลขนี้สูงและสม่ำเสมอ ยิ่งสะท้อนถึงความแข็งแกร่งของบริษัท
+        """)
 
 else:
     st.error("⚠️ ไม่พบข้อมูล หรือระบบถูกจำกัดการดึงข้อมูลชั่วคราว (กรุณารอสักครู่แล้วกด Refresh หน้าเว็บใหม่ หรือลองพิมพ์ชื่อหุ้นใหม่ครับ)")
