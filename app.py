@@ -18,13 +18,14 @@ if "logged_in" not in st.session_state:
 if "port_data" not in st.session_state:
     st.session_state.port_data = pd.DataFrame({"Ticker": ["NVTS"], "Cost_Price": [16.48], "Shares": [100.0]})
 
+# 🌟 ปรับปรุงฐานข้อมูลเริ่มต้นให้มีตัวอย่างการ "โอนออก" และ "โอนเข้า" เพื่อแสดงการหักล้าง
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = pd.DataFrame({
-        "Date": [datetime.now().date()],
-        "Direction": ["นำเงินเข้า (Inward)"],
-        "Category": ["กำไร/ปันผล (Taxable)"],
-        "Amount_USD": [1000.0],
-        "FX_Rate": [36.50]
+        "Date": [datetime.now().date(), datetime.now().date()],
+        "Direction": ["โอนออก (Outward)", "นำเงินเข้า (Inward)"],
+        "Category": ["เงินลงทุน (Principal)", "ดึงเงินกลับ (Withdrawal)"],
+        "Amount_USD": [5000.0, 6000.0],
+        "FX_Rate": [35.00, 36.50]
     })
 
 tz_th = timezone(timedelta(hours=7))
@@ -135,12 +136,12 @@ matrix = get_matrix(df)
 # 🌟 ระบบแท็บ
 # ==========================================
 if st.session_state["logged_in"]:
-    tab_dash, tab_port, tab_tax, tab_strat = st.tabs(["📊 วิเคราะห์กราฟ (Analysis)", "💼 ติดตามพอร์ต (Portfolio)", "🧾 คำนวณภาษี (Tax & Transfer)", "📚 กลยุทธ์ (Strategy)"])
+    tab_dash, tab_port, tab_tax, tab_strat = st.tabs(["📊 วิเคราะห์กราฟ (Analysis)", "💼 ติดตามพอร์ต (Portfolio)", "🧾 คำนวณภาษี (Tax & Cash Flow)", "📚 กลยุทธ์ (Strategy)"])
 else:
     tab_dash, = st.tabs(["📊 วิเคราะห์กราฟ (Analysis)"])
 
 # ==========================================
-# หน้า 1: วิเคราะห์หลัก (Dashboard) - ข้อมูลอยู่ครบ 100% แน่นอน
+# หน้า 1: วิเคราะห์หลัก (Dashboard)
 # ==========================================
 with tab_dash:
     if not df.empty:
@@ -173,7 +174,6 @@ with tab_dash:
             fig.update_xaxes(rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
 
-            # 🌟 ส่วนที่เคยกู้คืนมาแล้ว ยืนยันว่ายังอยู่ครบถ้วนค่ะ
             st.markdown("---")
             st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental Analysis)")
             f1, f2, f3 = st.columns(3)
@@ -194,7 +194,6 @@ with tab_dash:
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - prev_p:.2f}")
             st.caption(f"🕒 อัปเดต: {df.index[-1].strftime('%d/%m/%Y')} | {current_time} น.")
             
-            # 🌟 P/L ของหุ้นรายตัว กลับมาครบถ้วน
             if st.session_state["logged_in"] and buy_price > 0:
                 pl = ((last_p - buy_price) / buy_price) * 100
                 st.write(f"**กำไร/ขาดทุน (หุ้นนี้):** {pl:.2f}%")
@@ -219,9 +218,6 @@ with tab_dash:
             st.subheader("🚧 แนวรับ-ต้าน")
             st.write(f"**ต้าน:** {df['High'].tail(20).max():.2f}")
             st.write(f"**รับ:** {df['EMA_50'].iloc[-1]:.2f}")
-
-    else:
-        st.warning("ไม่พบข้อมูล กรุณาลองหุ้นตัวอื่นค่ะ")
 
 # ==========================================
 # พื้นที่เฉพาะ Owner
@@ -261,22 +257,22 @@ if st.session_state["logged_in"]:
                     p3.metric("กำไร/ขาดทุนรวม", f"${(total_v-total_c):,.2f}", f"{((total_v-total_c)/total_c*100 if total_c>0 else 0):.2f}%")
                     st.dataframe(pd.DataFrame(results), use_container_width=True)
 
-    # หน้า 3: คำนวณภาษี
+    # 🌟 หน้า 3: คำนวณภาษี และ แดชบอร์ดกระแสเงินสด
     with tab_tax:
-        st.subheader("🧾 ระบบประเมินและติดตามกระแสเงินสดข้ามประเทศ")
-        with st.expander("📖 กฎหมายภาษีเงินได้สรรพากร (อัปเดต 1 ม.ค. 2567) - คลิกเพื่ออ่านข้อกำหนด"):
+        st.subheader("🧾 ระบบจัดการกระแสเงินสดและประเมินภาษีข้ามชาติ")
+        
+        with st.expander("📖 หลักการหักล้างเงินเข้า-ออก (Principal Offset Rule) - อ้างอิงสรรพากร"):
             st.markdown("""
-            **หลักการพิจารณาภาษีเงินได้จากการลงทุนต่างประเทศ (ใหม่):**
-            1. **เกณฑ์ด้านเวลา (Tax Resident):** คุณต้องอาศัยอยู่ในไทยรวมแล้วถึง 180 วันในปีภาษีนั้นๆ จึงจะเข้าเกณฑ์เสียภาษี
-            2. **เกณฑ์การนำเข้าข้ามปี:** เงินได้ (กำไร/ปันผล) ที่เกิดขึ้นตั้งแต่วันที่ 1 ม.ค. 2567 หากนำกลับเข้าไทย **ไม่ว่าในปีใดก็ตาม** ต้องนำมาเสียภาษีในปีที่นำเงินเข้า
-            3. **ข้อยกเว้น:** เงินได้ที่เกิดขึ้น **ก่อน** 1 ม.ค. 2567 แม้นำเข้ามาในปี 2567 เป็นต้นไป จะได้รับยกเว้นภาษี
-            4. **เงินต้น VS กำไร:** สรรพากรจะเก็บภาษีเฉพาะส่วนที่เป็น "กำไร (Capital Gain)" หรือ "เงินปันผล (Dividend)" เท่านั้น หากพิสูจน์ได้ว่าเป็น **"เงินต้น (Principal)"** จะไม่เสียภาษี
-            5. **อัตราแลกเปลี่ยน:** ใช้อัตราแลกเปลี่ยนอ้างอิง ณ วันที่นำเงินเข้าประเทศในแต่ละครั้ง
+            **การพิจารณา 'กำไร' ด้วยหลักเงินเข้าลบเงินออก:**
+            - **เงินโอนออก (Outward):** คือ **"เงินต้น"** ที่เราส่งออกไปลงทุนต่างประเทศ
+            - **เงินโอนเข้า (Inward):** คือ เงินที่เราดึงกลับไทย
+            - **กฎการหักล้าง:** สรรพากรจะเก็บภาษีเฉพาะ "กำไร (Capital Gain)" หรือ "ปันผล" เท่านั้น หากเรามีหลักฐานการโอนเงินออกไปลงทุน เราสามารถยึดหลักได้ว่า **การโอนเงินกลับไทยในช่วงแรกคือการดึง "เงินต้น" กลับมา ซึ่งจะได้รับการยกเว้นภาษี**
+            - **จุดที่ต้องเริ่มเสียภาษี:** เราจะเริ่มเสียภาษีก็ต่อเมื่อ **ยอดสะสมของเงินโอนเข้า (Total Inward) มีมูลค่าสูงกว่า ยอดสะสมของเงินโอนออก (Total Outward)** ส่วนต่างที่เกินมานี้ถึงจะนับเป็นกำไรที่ต้องนำไปประเมินภาษีตามฐานรายได้ค่ะ
             """)
         
         st.markdown("---")
         st.markdown("### 📝 1. บันทึกประวัติการทำรายการ (โอนเข้า-โอนออก)")
-        st.caption("ระบบจะคำนวณภาษีเฉพาะรายการที่เป็น 'นำเงินเข้า' และหมวดหมู่ 'กำไร/ปันผล' เท่านั้น")
+        st.caption("ระบบจะคำนวณมูลค่าเงินบาท (THB) ให้โดยอัตโนมัติ ตามอัตราแลกเปลี่ยนแต่ละรายการ")
         
         edited_transfer = st.data_editor(
             st.session_state.transfer_data,
@@ -284,25 +280,40 @@ if st.session_state["logged_in"]:
             use_container_width=True,
             column_config={
                 "Date": st.column_config.DateColumn("วันที่ทำรายการ", format="DD/MM/YYYY"),
-                "Direction": st.column_config.SelectboxColumn("ประเภทรายการ", options=["นำเงินเข้า (Inward)", "โอนออก (Outward)"]),
-                "Category": st.column_config.SelectboxColumn("หมวดหมู่เงิน", options=["กำไร/ปันผล (Taxable)", "เงินต้น (Principal)"]),
+                "Direction": st.column_config.SelectboxColumn("ประเภทรายการ", options=["โอนออก (Outward)", "นำเงินเข้า (Inward)"]),
+                "Category": st.column_config.SelectboxColumn("หมวดหมู่เงิน", options=["เงินลงทุน (Principal)", "ดึงเงินกลับ (Withdrawal)"]),
                 "Amount_USD": st.column_config.NumberColumn("จำนวนเงิน (USD)", format="$%.2f"),
                 "FX_Rate": st.column_config.NumberColumn("อัตราแลกเปลี่ยน (THB/USD)", format="%.4f")
             }
         )
         st.session_state.transfer_data = edited_transfer
         
-        total_taxable_thb = 0.0
-        for _, row in edited_transfer.iterrows():
-            if row["Direction"] == "นำเงินเข้า (Inward)" and row["Category"] == "กำไร/ปันผล (Taxable)":
-                usd = row["Amount_USD"] if pd.notna(row["Amount_USD"]) else 0
-                fx = row["FX_Rate"] if pd.notna(row["FX_Rate"]) else 0
-                total_taxable_thb += (usd * fx)
+        # 🌟 คำนวณยอดเงินรวมและหักล้าง (Inflow vs Outflow)
+        total_out_thb = 0.0
+        total_in_thb = 0.0
         
-        st.info(f"💵 **ยอดรวมกำไรนำเข้าที่ต้องเสียภาษี:** {total_taxable_thb:,.2f} บาท")
+        for _, row in edited_transfer.iterrows():
+            usd = row["Amount_USD"] if pd.notna(row["Amount_USD"]) else 0
+            fx = row["FX_Rate"] if pd.notna(row["FX_Rate"]) else 0
+            amt_thb = usd * fx
+            
+            if row["Direction"] == "โอนออก (Outward)":
+                total_out_thb += amt_thb
+            elif row["Direction"] == "นำเงินเข้า (Inward)":
+                total_in_thb += amt_thb
+                
+        # หา "กำไรสุทธิ" (เงินเข้า ลบ เงินออก) ถ้าค่าน้อยกว่า 0 แปลว่ายังดึงเงินต้นกลับมาไม่หมด ให้ถือเป็น 0
+        net_taxable_gain = max(0, total_in_thb - total_out_thb)
+        
+        # 🌟 แดชบอร์ดสรุปกระแสเงินสด
+        st.markdown("### 📊 แดชบอร์ดสถานะกระแสเงินสด (Cash Flow Offset)")
+        cf1, cf2, cf3 = st.columns(3)
+        cf1.metric("📤 ยอดรวมโอนออก (เงินต้น)", f"฿{total_out_thb:,.2f}")
+        cf2.metric("📥 ยอดรวมโอนเข้าไทย", f"฿{total_in_thb:,.2f}")
+        cf3.metric("🚨 กำไรสุทธิที่ต้องประเมินภาษี", f"฿{net_taxable_gain:,.2f}", "หักล้างเงินต้นแล้ว", delta_color="inverse")
         
         st.markdown("---")
-        st.markdown("### 🧮 2. ข้อมูลผู้เสียภาษีและประเมินฐานภาษี")
+        st.markdown("### 🧮 2. ประเมินภาระภาษี (Tax Assessment)")
         
         c1, c2 = st.columns(2)
         with c1:
@@ -310,11 +321,13 @@ if st.session_state["logged_in"]:
         with c2:
             other_income = st.number_input("รายได้อื่นๆ ในไทยต่อปี (บาท) *เช่น เงินเดือน เพื่อหาฐานภาษีก้าวหน้า*", min_value=0.0, value=0.0, step=50000.0)
 
-        if st.button("📊 ประเมินภาษีที่ต้องเตรียมจ่าย", type="primary", use_container_width=True):
+        if st.button("📊 คำนวณภาษีที่ต้องจ่ายเพิ่ม", type="primary", use_container_width=True):
             if "ไม่ถึง" in is_resident:
                 st.success("🎉 คุณได้รับยกเว้นภาษี เนื่องจากอาศัยอยู่ในประเทศไทยไม่ถึง 180 วันในปีภาษีที่มีการโอนเงินกลับค่ะ")
+            elif net_taxable_gain == 0:
+                st.success("🎉 คุณยังไม่มีภาระภาษีจากการลงทุนต่างประเทศ เนื่องจากยอดดึงเงินกลับ (Inward) ยังไม่เกินยอดเงินต้นที่ส่งออกไป (Outward) ค่ะ")
             else:
-                total_income_all = total_taxable_thb + other_income
+                total_income_all = net_taxable_gain + other_income
                 
                 def calculate_tax(income):
                     tax = 0
@@ -333,11 +346,11 @@ if st.session_state["logged_in"]:
                 
                 st.subheader("ผลการคำนวณฐานภาษี")
                 r1, r2, r3 = st.columns(3)
-                r1.metric("กำไรนำเข้าสุทธิ", f"฿{total_taxable_thb:,.2f}")
+                r1.metric("กำไรนำเข้าสุทธิ (หักทุนแล้ว)", f"฿{net_taxable_gain:,.2f}")
                 r2.metric("ฐานรายได้รวมทั้งหมดปีนี้", f"฿{total_income_all:,.2f}")
                 r3.metric("🚨 ภาษีที่เพิ่มขึ้นจากพอร์ต ตปท.", f"฿{additional_tax:,.2f}")
                 
-                st.caption("*โปรแกรมนี้คำนวณภาษีแบบขั้นบันได (Progressive Tax Rate) อิงจากรายได้สุทธิเพื่อประกอบการตัดสินใจเบื้องต้น (ยังไม่ได้หักค่าลดหย่อน)*")
+                st.caption("*โปรแกรมนี้ประเมินจากยอดรายได้สุทธิเพื่อประกอบการตัดสินใจเบื้องต้น (ยังไม่ได้หักค่าลดหย่อนส่วนบุคคล)*")
 
     # หน้า 4: กลยุทธ์
     with tab_strat:
