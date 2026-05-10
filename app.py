@@ -18,7 +18,7 @@ if "logged_in" not in st.session_state:
 if "port_data" not in st.session_state:
     st.session_state.port_data = pd.DataFrame({"Ticker": ["NVTS"], "Cost_Price": [16.48], "Shares": [100.0]})
 
-# 🌟 ปรับปรุงฐานข้อมูลเริ่มต้นให้มีตัวอย่างการ "โอนออก" และ "โอนเข้า" เพื่อแสดงการหักล้าง
+# ฐานข้อมูลสำหรับบันทึกการโอนเงินเข้า-ออก
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = pd.DataFrame({
         "Date": [datetime.now().date(), datetime.now().date()],
@@ -257,7 +257,7 @@ if st.session_state["logged_in"]:
                     p3.metric("กำไร/ขาดทุนรวม", f"${(total_v-total_c):,.2f}", f"{((total_v-total_c)/total_c*100 if total_c>0 else 0):.2f}%")
                     st.dataframe(pd.DataFrame(results), use_container_width=True)
 
-    # 🌟 หน้า 3: คำนวณภาษี และ แดชบอร์ดกระแสเงินสด
+    # 🌟 หน้า 3: คำนวณภาษี (เพิ่มปุ่มดาวน์โหลด Excel)
     with tab_tax:
         st.subheader("🧾 ระบบจัดการกระแสเงินสดและประเมินภาษีข้ามชาติ")
         
@@ -267,13 +267,13 @@ if st.session_state["logged_in"]:
             - **เงินโอนออก (Outward):** คือ **"เงินต้น"** ที่เราส่งออกไปลงทุนต่างประเทศ
             - **เงินโอนเข้า (Inward):** คือ เงินที่เราดึงกลับไทย
             - **กฎการหักล้าง:** สรรพากรจะเก็บภาษีเฉพาะ "กำไร (Capital Gain)" หรือ "ปันผล" เท่านั้น หากเรามีหลักฐานการโอนเงินออกไปลงทุน เราสามารถยึดหลักได้ว่า **การโอนเงินกลับไทยในช่วงแรกคือการดึง "เงินต้น" กลับมา ซึ่งจะได้รับการยกเว้นภาษี**
-            - **จุดที่ต้องเริ่มเสียภาษี:** เราจะเริ่มเสียภาษีก็ต่อเมื่อ **ยอดสะสมของเงินโอนเข้า (Total Inward) มีมูลค่าสูงกว่า ยอดสะสมของเงินโอนออก (Total Outward)** ส่วนต่างที่เกินมานี้ถึงจะนับเป็นกำไรที่ต้องนำไปประเมินภาษีตามฐานรายได้ค่ะ
+            - **จุดที่ต้องเริ่มเสียภาษี:** เราจะเริ่มเสียภาษีก็ต่อเมื่อ **ยอดสะสมของเงินโอนเข้า (Total Inward) มีมูลค่าสูงกว่า ยอดสะสมของเงินโอนออก (Total Outward)**
             """)
         
         st.markdown("---")
         st.markdown("### 📝 1. บันทึกประวัติการทำรายการ (โอนเข้า-โอนออก)")
-        st.caption("ระบบจะคำนวณมูลค่าเงินบาท (THB) ให้โดยอัตโนมัติ ตามอัตราแลกเปลี่ยนแต่ละรายการ")
         
+        # ตารางกรอกข้อมูล
         edited_transfer = st.data_editor(
             st.session_state.transfer_data,
             num_rows="dynamic",
@@ -288,7 +288,17 @@ if st.session_state["logged_in"]:
         )
         st.session_state.transfer_data = edited_transfer
         
-        # 🌟 คำนวณยอดเงินรวมและหักล้าง (Inflow vs Outflow)
+        # 🌟 ปุ่มดาวน์โหลดเป็น Excel (CSV Format ที่รองรับภาษาไทย)
+        csv_data = edited_transfer.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 ดาวน์โหลดข้อมูลเป็นไฟล์ Excel (CSV)",
+            data=csv_data,
+            file_name="tax_transfer_record.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        
+        # คำนวณยอดเงินรวมและหักล้าง
         total_out_thb = 0.0
         total_in_thb = 0.0
         
@@ -302,10 +312,8 @@ if st.session_state["logged_in"]:
             elif row["Direction"] == "นำเงินเข้า (Inward)":
                 total_in_thb += amt_thb
                 
-        # หา "กำไรสุทธิ" (เงินเข้า ลบ เงินออก) ถ้าค่าน้อยกว่า 0 แปลว่ายังดึงเงินต้นกลับมาไม่หมด ให้ถือเป็น 0
         net_taxable_gain = max(0, total_in_thb - total_out_thb)
         
-        # 🌟 แดชบอร์ดสรุปกระแสเงินสด
         st.markdown("### 📊 แดชบอร์ดสถานะกระแสเงินสด (Cash Flow Offset)")
         cf1, cf2, cf3 = st.columns(3)
         cf1.metric("📤 ยอดรวมโอนออก (เงินต้น)", f"฿{total_out_thb:,.2f}")
