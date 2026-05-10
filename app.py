@@ -18,7 +18,6 @@ if "logged_in" not in st.session_state:
 if "port_data" not in st.session_state:
     st.session_state.port_data = pd.DataFrame({"Ticker": ["NVTS"], "Cost_Price": [16.48], "Shares": [100.0]})
 
-# ฐานข้อมูลสำหรับบันทึกการโอนเงินเข้า-ออก
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = pd.DataFrame({
         "Date": [datetime.now().date(), datetime.now().date()],
@@ -224,9 +223,27 @@ with tab_dash:
 # ==========================================
 if st.session_state["logged_in"]:
     
-    # หน้า 2: พอร์ตโฟลิโอ 
+    # 🌟 หน้า 2: พอร์ตโฟลิโอ (เพิ่มสรุปกระแสเงินสดตามคำขอ)
     with tab_port:
-        st.subheader("💼 ตัวติดตามพอร์ต (Real-time Multi-Stock Tracker)")
+        st.subheader("💸 สรุปกระแสเงินสดเข้า-ออกพอร์ต (Cash Flow Summary)")
+        
+        # คำนวณยอดเงินสดจากตาราง Transfer Data
+        port_out = 0.0
+        port_in = 0.0
+        for _, r in st.session_state.transfer_data.iterrows():
+            usd_val = r["Amount_USD"] if pd.notna(r["Amount_USD"]) else 0
+            fx_val = r["FX_Rate"] if pd.notna(r["FX_Rate"]) else 0
+            thb_val = usd_val * fx_val
+            if r["Direction"] == "โอนออก (Outward)": port_out += thb_val
+            elif r["Direction"] == "นำเงินเข้า (Inward)": port_in += thb_val
+                
+        c_flow1, c_flow2, c_flow3 = st.columns(3)
+        c_flow1.metric("ยอดเงินส่งออกไปลงทุน", f"฿{port_out:,.2f}")
+        c_flow2.metric("ยอดเงินดึงกลับเข้าไทย", f"฿{port_in:,.2f}")
+        c_flow3.metric("เงินลงทุนสุทธิคงเหลือใน ตปท.", f"฿{max(0, port_out - port_in):,.2f}")
+        
+        st.markdown("---")
+        st.subheader("💼 ตัวติดตามสถานะหุ้น (Real-time Multi-Stock Tracker)")
         edited_df = st.data_editor(st.session_state.port_data, num_rows="dynamic", use_container_width=True, column_config={"Ticker": "ชื่อหุ้น", "Cost_Price": "ราคาต้นทุน ($)", "Shares": "จำนวนหุ้น"})
         st.session_state.port_data = edited_df 
 
@@ -252,12 +269,12 @@ if st.session_state["logged_in"]:
                             total_c += cst
                     st.markdown("---")
                     p1, p2, p3 = st.columns(3)
-                    p1.metric("มูลค่ารวมปัจจุบัน", f"${total_v:,.2f}")
-                    p2.metric("เงินต้นทั้งหมด", f"${total_c:,.2f}")
+                    p1.metric("มูลค่าหุ้นรวมปัจจุบัน", f"${total_v:,.2f}")
+                    p2.metric("ต้นทุนหุ้นทั้งหมด", f"${total_c:,.2f}")
                     p3.metric("กำไร/ขาดทุนรวม", f"${(total_v-total_c):,.2f}", f"{((total_v-total_c)/total_c*100 if total_c>0 else 0):.2f}%")
                     st.dataframe(pd.DataFrame(results), use_container_width=True)
 
-    # 🌟 หน้า 3: คำนวณภาษี (เพิ่มปุ่มดาวน์โหลด Excel)
+    # 🌟 หน้า 3: คำนวณภาษี (เพิ่มระบบอัปโหลดไฟล์หลักฐาน)
     with tab_tax:
         st.subheader("🧾 ระบบจัดการกระแสเงินสดและประเมินภาษีข้ามชาติ")
         
@@ -267,13 +284,11 @@ if st.session_state["logged_in"]:
             - **เงินโอนออก (Outward):** คือ **"เงินต้น"** ที่เราส่งออกไปลงทุนต่างประเทศ
             - **เงินโอนเข้า (Inward):** คือ เงินที่เราดึงกลับไทย
             - **กฎการหักล้าง:** สรรพากรจะเก็บภาษีเฉพาะ "กำไร (Capital Gain)" หรือ "ปันผล" เท่านั้น หากเรามีหลักฐานการโอนเงินออกไปลงทุน เราสามารถยึดหลักได้ว่า **การโอนเงินกลับไทยในช่วงแรกคือการดึง "เงินต้น" กลับมา ซึ่งจะได้รับการยกเว้นภาษี**
-            - **จุดที่ต้องเริ่มเสียภาษี:** เราจะเริ่มเสียภาษีก็ต่อเมื่อ **ยอดสะสมของเงินโอนเข้า (Total Inward) มีมูลค่าสูงกว่า ยอดสะสมของเงินโอนออก (Total Outward)**
             """)
         
         st.markdown("---")
         st.markdown("### 📝 1. บันทึกประวัติการทำรายการ (โอนเข้า-โอนออก)")
         
-        # ตารางกรอกข้อมูล
         edited_transfer = st.data_editor(
             st.session_state.transfer_data,
             num_rows="dynamic",
@@ -288,40 +303,37 @@ if st.session_state["logged_in"]:
         )
         st.session_state.transfer_data = edited_transfer
         
-        # 🌟 ปุ่มดาวน์โหลดเป็น Excel (CSV Format ที่รองรับภาษาไทย)
         csv_data = edited_transfer.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label="📥 ดาวน์โหลดข้อมูลเป็นไฟล์ Excel (CSV)",
-            data=csv_data,
-            file_name="tax_transfer_record.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+        st.download_button(label="📥 ดาวน์โหลดข้อมูลเป็นไฟล์ Excel (CSV)", data=csv_data, file_name="tax_transfer_record.csv", mime="text/csv", use_container_width=True)
+        
+        # 🌟 ฟีเจอร์ใหม่: ช่องแนบไฟล์หลักฐาน
+        st.markdown("---")
+        st.markdown("### 📎 2. แนบเอกสารหลักฐานอ้างอิง (e-Tax / Bank Statement)")
+        uploaded_files = st.file_uploader("อัปโหลดไฟล์ PDF หรือรูปภาพ (JPG, PNG) เพื่อใช้เป็นหลักฐานประกอบการยื่นสรรพากร", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
+        if uploaded_files:
+            st.success(f"✅ สำเร็จ! รับรองไฟล์หลักฐานจำนวน {len(uploaded_files)} รายการ (ไฟล์จะถูกเก็บไว้สำหรับอ้างอิงในเซสชันนี้ค่ะ)")
         
         # คำนวณยอดเงินรวมและหักล้าง
         total_out_thb = 0.0
         total_in_thb = 0.0
-        
         for _, row in edited_transfer.iterrows():
             usd = row["Amount_USD"] if pd.notna(row["Amount_USD"]) else 0
             fx = row["FX_Rate"] if pd.notna(row["FX_Rate"]) else 0
             amt_thb = usd * fx
-            
-            if row["Direction"] == "โอนออก (Outward)":
-                total_out_thb += amt_thb
-            elif row["Direction"] == "นำเงินเข้า (Inward)":
-                total_in_thb += amt_thb
+            if row["Direction"] == "โอนออก (Outward)": total_out_thb += amt_thb
+            elif row["Direction"] == "นำเงินเข้า (Inward)": total_in_thb += amt_thb
                 
         net_taxable_gain = max(0, total_in_thb - total_out_thb)
         
-        st.markdown("### 📊 แดชบอร์ดสถานะกระแสเงินสด (Cash Flow Offset)")
+        st.markdown("---")
+        st.markdown("### 📊 3. แดชบอร์ดสถานะกระแสเงินสด (Cash Flow Offset)")
         cf1, cf2, cf3 = st.columns(3)
         cf1.metric("📤 ยอดรวมโอนออก (เงินต้น)", f"฿{total_out_thb:,.2f}")
         cf2.metric("📥 ยอดรวมโอนเข้าไทย", f"฿{total_in_thb:,.2f}")
         cf3.metric("🚨 กำไรสุทธิที่ต้องประเมินภาษี", f"฿{net_taxable_gain:,.2f}", "หักล้างเงินต้นแล้ว", delta_color="inverse")
         
         st.markdown("---")
-        st.markdown("### 🧮 2. ประเมินภาระภาษี (Tax Assessment)")
+        st.markdown("### 🧮 4. ประเมินภาระภาษี (Tax Assessment)")
         
         c1, c2 = st.columns(2)
         with c1:
@@ -357,7 +369,6 @@ if st.session_state["logged_in"]:
                 r1.metric("กำไรนำเข้าสุทธิ (หักทุนแล้ว)", f"฿{net_taxable_gain:,.2f}")
                 r2.metric("ฐานรายได้รวมทั้งหมดปีนี้", f"฿{total_income_all:,.2f}")
                 r3.metric("🚨 ภาษีที่เพิ่มขึ้นจากพอร์ต ตปท.", f"฿{additional_tax:,.2f}")
-                
                 st.caption("*โปรแกรมนี้ประเมินจากยอดรายได้สุทธิเพื่อประกอบการตัดสินใจเบื้องต้น (ยังไม่ได้หักค่าลดหย่อนส่วนบุคคล)*")
 
     # หน้า 4: กลยุทธ์
