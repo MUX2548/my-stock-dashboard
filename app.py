@@ -15,9 +15,18 @@ st.set_page_config(page_title="Strategic Portfolio Ecosystem 2.0", layout="wide"
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
-if "port_data" not in st.session_state:
-    st.session_state.port_data = pd.DataFrame({"Ticker": ["NVTS"], "Cost_Price": [16.48], "Shares": [100.0]})
+# 🌟 ฐานข้อมูลบัญชีหลักทรัพย์ (บันทึกประวัติทุกอย่าง)
+if "trade_ledger" not in st.session_state:
+    st.session_state.trade_ledger = pd.DataFrame({
+        "Date": [datetime.now().date(), datetime.now().date()],
+        "Action": ["ฝากเงินเข้าพอร์ต (Deposit)", "ซื้อหุ้น (Buy)"],
+        "Ticker": ["", "NVTS"],
+        "Price": [0.0, 16.48],
+        "Shares": [0.0, 100.0],
+        "Amount": [10000.0, 0.0] # Amount ใช้กรอกเฉพาะตอนฝาก/ถอนเงิน
+    })
 
+# ฐานข้อมูลสำหรับบันทึกการโอนเงินข้ามประเทศ (ภาษี)
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = pd.DataFrame({
         "Date": [datetime.now().date(), datetime.now().date()],
@@ -67,17 +76,18 @@ with st.sidebar:
         buy_price = st.number_input("ราคาต้นทุน (USD)", min_value=0.0, value=0.0, step=0.1)
         buy_shares = st.number_input("จำนวนหุ้นที่มี", min_value=0.0, value=0.0, step=0.1)
         
-        if st.button("➕ เพิ่มหุ้นนี้ลงตารางพอร์ต", type="primary", use_container_width=True):
-            port_df = st.session_state.port_data
-            if ticker in port_df["Ticker"].values:
-                idx = port_df.index[port_df["Ticker"] == ticker].tolist()[0]
-                port_df.at[idx, "Cost_Price"] = buy_price
-                port_df.at[idx, "Shares"] = buy_shares
-                st.success(f"อัปเดตข้อมูล {ticker} เรียบร้อย!")
-            else:
-                new_row = pd.DataFrame({"Ticker": [ticker], "Cost_Price": [buy_price], "Shares": [buy_shares]})
-                st.session_state.port_data = pd.concat([port_df, new_row], ignore_index=True)
-                st.success(f"เพิ่ม {ticker} ลงพอร์ตเรียบร้อย!")
+        # 🌟 ปรับปรุงปุ่มให้บันทึกลง "สมุดบัญชีประวัติ (Trade Ledger)" แทน
+        if st.button("➕ บันทึกประวัติซื้อหุ้นนี้ลงพอร์ต", type="primary", use_container_width=True):
+            new_trade = pd.DataFrame({
+                "Date": [datetime.now().date()],
+                "Action": ["ซื้อหุ้น (Buy)"],
+                "Ticker": [ticker],
+                "Price": [buy_price],
+                "Shares": [buy_shares],
+                "Amount": [0.0]
+            })
+            st.session_state.trade_ledger = pd.concat([st.session_state.trade_ledger, new_trade], ignore_index=True)
+            st.success(f"บันทึกประวัติการซื้อ {ticker} ลงบัญชีเรียบร้อย! ระบบจะคำนวณต้นทุนเฉลี่ยให้อัตโนมัติค่ะ")
 
         st.markdown("---")
         if st.button("🚪 ออกจากระบบ (Logout)", use_container_width=True):
@@ -135,12 +145,12 @@ matrix = get_matrix(df)
 # 🌟 ระบบแท็บ
 # ==========================================
 if st.session_state["logged_in"]:
-    tab_dash, tab_port, tab_tax, tab_strat = st.tabs(["📊 วิเคราะห์กราฟ (Analysis)", "💼 ติดตามพอร์ต (Portfolio)", "🧾 คำนวณภาษี (Tax & Cash Flow)", "📚 กลยุทธ์ (Strategy)"])
+    tab_dash, tab_port, tab_tax, tab_strat = st.tabs(["📊 วิเคราะห์กราฟ", "💼 บัญชีและพอร์ตโฟลิโอ", "🧾 ภาษีสรรพากร", "📚 กลยุทธ์"])
 else:
     tab_dash, = st.tabs(["📊 วิเคราะห์กราฟ (Analysis)"])
 
 # ==========================================
-# หน้า 1: วิเคราะห์หลัก (Dashboard)
+# หน้า 1: วิเคราะห์หลัก (Dashboard) - ปลอดภัย 100%
 # ==========================================
 with tab_dash:
     if not df.empty:
@@ -223,61 +233,118 @@ with tab_dash:
 # ==========================================
 if st.session_state["logged_in"]:
     
-    # 🌟 หน้า 2: พอร์ตโฟลิโอ (เพิ่มสรุปกระแสเงินสดตามคำขอ)
+    # 🌟 หน้า 2: บัญชีและพอร์ตโฟลิโอ (ยกเครื่องใหม่เป็นระบบบัญชีเต็มรูปแบบ)
     with tab_port:
-        st.subheader("💸 สรุปกระแสเงินสดเข้า-ออกพอร์ต (Cash Flow Summary)")
+        st.subheader("📝 สมุดบัญชีบันทึกประวัติการลงทุน (Transaction Ledger)")
+        st.markdown("บันทึกการฝาก/ถอนเงินเข้าพอร์ต และประวัติการซื้อขายหุ้นทุกครั้งที่นี่ **ระบบจะคำนวณต้นทุนเฉลี่ยและยอดยกมาให้อัตโนมัติค่ะ**")
         
-        # คำนวณยอดเงินสดจากตาราง Transfer Data
-        port_out = 0.0
-        port_in = 0.0
-        for _, r in st.session_state.transfer_data.iterrows():
-            usd_val = r["Amount_USD"] if pd.notna(r["Amount_USD"]) else 0
-            fx_val = r["FX_Rate"] if pd.notna(r["FX_Rate"]) else 0
-            thb_val = usd_val * fx_val
-            if r["Direction"] == "โอนออก (Outward)": port_out += thb_val
-            elif r["Direction"] == "นำเงินเข้า (Inward)": port_in += thb_val
-                
-        c_flow1, c_flow2, c_flow3 = st.columns(3)
-        c_flow1.metric("ยอดเงินส่งออกไปลงทุน", f"฿{port_out:,.2f}")
-        c_flow2.metric("ยอดเงินดึงกลับเข้าไทย", f"฿{port_in:,.2f}")
-        c_flow3.metric("เงินลงทุนสุทธิคงเหลือใน ตปท.", f"฿{max(0, port_out - port_in):,.2f}")
+        # ตารางให้กรอกประวัติ (แก้ไข/เพิ่มได้อิสระ)
+        edited_ledger = st.data_editor(
+            st.session_state.trade_ledger,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Date": st.column_config.DateColumn("วันที่ทำรายการ", format="DD/MM/YYYY"),
+                "Action": st.column_config.SelectboxColumn("ประเภทรายการ", options=["ฝากเงินเข้าพอร์ต (Deposit)", "ถอนเงินออกพอร์ต (Withdraw)", "ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)"]),
+                "Ticker": st.column_config.TextColumn("ชื่อหุ้น (ถ้ามี)"),
+                "Price": st.column_config.NumberColumn("ราคาต่อหุ้น ($)", format="%.2f"),
+                "Shares": st.column_config.NumberColumn("จำนวนหุ้น"),
+                "Amount": st.column_config.NumberColumn("จำนวนเงินฝาก/ถอน ($)", format="%.2f")
+            }
+        )
+        st.session_state.trade_ledger = edited_ledger
+
+        # 🌟 กลไกคำนวณบัญชี (Accounting Logic: หายอดยกมา และ ต้นทุนเฉลี่ย)
+        cash_balance = 0.0
+        holdings = {} # เก็บข้อมูล {ชื่อหุ้น: {จำนวนหุ้น, ต้นทุนรวม}}
+
+        for _, row in edited_ledger.iterrows():
+            action = row["Action"]
+            ticker = row["Ticker"] if pd.notna(row["Ticker"]) else ""
+            price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
+            shares = float(row["Shares"]) if pd.notna(row["Shares"]) else 0.0
+            amt = float(row["Amount"]) if pd.notna(row["Amount"]) else 0.0
+
+            if action == "ฝากเงินเข้าพอร์ต (Deposit)":
+                cash_balance += amt
+            elif action == "ถอนเงินออกพอร์ต (Withdraw)":
+                cash_balance -= amt
+            elif action == "ซื้อหุ้น (Buy)" and ticker:
+                trade_val = price * shares
+                cash_balance -= trade_val # หักเงินสด
+                if ticker not in holdings:
+                    holdings[ticker] = {"shares": 0.0, "total_cost": 0.0}
+                holdings[ticker]["shares"] += shares
+                holdings[ticker]["total_cost"] += trade_val
+            elif action == "ขายหุ้น (Sell)" and ticker:
+                trade_val = price * shares
+                cash_balance += trade_val # รับเงินสดคืน
+                if ticker in holdings and holdings[ticker]["shares"] > 0:
+                    # หักต้นทุนตามราคาเฉลี่ย
+                    avg_cost = holdings[ticker]["total_cost"] / holdings[ticker]["shares"]
+                    holdings[ticker]["shares"] -= shares
+                    holdings[ticker]["total_cost"] -= (avg_cost * shares)
+                    if holdings[ticker]["shares"] <= 0.0001: # เคลียร์เศษทศนิยมถ้าขายหมด
+                        holdings[ticker]["shares"] = 0
+                        holdings[ticker]["total_cost"] = 0
+
+        # สร้างตารางพอร์ตสรุปจากบัญชีด้านบน
+        port_summary = []
+        total_invested = 0.0
+        for t, data in holdings.items():
+            if data["shares"] > 0:
+                avg_c = data["total_cost"] / data["shares"]
+                port_summary.append({"Ticker": t, "Cost_Price": avg_c, "Shares": data["shares"], "Total_Cost": data["total_cost"]})
+                total_invested += data["total_cost"]
         
         st.markdown("---")
-        st.subheader("💼 ตัวติดตามสถานะหุ้น (Real-time Multi-Stock Tracker)")
-        edited_df = st.data_editor(st.session_state.port_data, num_rows="dynamic", use_container_width=True, column_config={"Ticker": "ชื่อหุ้น", "Cost_Price": "ราคาต้นทุน ($)", "Shares": "จำนวนหุ้น"})
-        st.session_state.port_data = edited_df 
+        st.subheader("💰 สถานะเงินสดในพอร์ต (Brokerage Account)")
+        st.metric("ยอดยกมา / เงินสดคงเหลือที่ซื้อหุ้นได้ (Cash Balance)", f"${cash_balance:,.2f}")
 
-        if st.button("🔄 อัปเดตราคาปัจจุบันทุกตัวในพอร์ต", type="primary", use_container_width=True):
-            tickers = edited_df["Ticker"].dropna().unique().tolist()
-            if tickers:
+        st.markdown("---")
+        st.subheader("💼 พอร์ตโฟลิโอปัจจุบัน (Current Holdings)")
+        
+        if len(port_summary) > 0:
+            current_port_df = pd.DataFrame(port_summary)
+            if st.button("🔄 ดึงราคาปัจจุบัน และ คำนวณกำไร/ขาดทุน", type="primary", use_container_width=True):
                 with st.spinner("กำลังดึงข้อมูลราคาล่าสุด..."):
                     current_prices = {}
-                    for t in tickers:
+                    for t in current_port_df["Ticker"]:
                         try:
-                            price = yf.Ticker(t).history(period="1d")['Close'].iloc[-1]
-                            current_prices[t] = price
+                            current_prices[t] = yf.Ticker(t).history(period="1d")['Close'].iloc[-1]
                         except: pass
-                    results, total_v, total_c = [], 0, 0
-                    for _, row in edited_df.iterrows():
-                        t, cost, sh = row["Ticker"], row["Cost_Price"], row["Shares"]
+                    
+                    results, total_v = [], 0.0
+                    for _, row in current_port_df.iterrows():
+                        t, avg_cost, sh, t_cost = row["Ticker"], row["Cost_Price"], row["Shares"], row["Total_Cost"]
                         if t in current_prices:
-                            curr_p, val, cst = current_prices[t], current_prices[t] * sh, cost * sh
-                            profit = val - cst
-                            profit_pct = (profit / cst * 100) if cst > 0 else 0
-                            results.append({"หุ้น": t, "ราคาปัจจุบัน": f"${curr_p:,.2f}", "ต้นทุน": f"${cost:,.2f}", "กำไร/ขาดทุน": f"${profit:,.2f}", "%": f"{profit_pct:.2f}%", "มูลค่ารวม": f"${val:,.2f}"})
+                            curr_p = current_prices[t]
+                            val = curr_p * sh
+                            profit = val - t_cost
+                            profit_pct = (profit / t_cost * 100) if t_cost > 0 else 0
+                            results.append({
+                                "หุ้น": t, 
+                                "จำนวนหุ้น": f"{sh:,.2f}", 
+                                "ต้นทุนเฉลี่ย/หุ้น": f"${avg_cost:,.2f}", 
+                                "ราคาปัจจุบัน": f"${curr_p:,.2f}", 
+                                "กำไร/ขาดทุน": f"${profit:,.2f}", 
+                                "% เปลี่ยนแปลง": f"{profit_pct:.2f}%", 
+                                "มูลค่ารวม": f"${val:,.2f}"
+                            })
                             total_v += val
-                            total_c += cst
-                    st.markdown("---")
+                    
                     p1, p2, p3 = st.columns(3)
-                    p1.metric("มูลค่าหุ้นรวมปัจจุบัน", f"${total_v:,.2f}")
-                    p2.metric("ต้นทุนหุ้นทั้งหมด", f"${total_c:,.2f}")
-                    p3.metric("กำไร/ขาดทุนรวม", f"${(total_v-total_c):,.2f}", f"{((total_v-total_c)/total_c*100 if total_c>0 else 0):.2f}%")
+                    p1.metric("มูลค่าหุ้นรวม (Market Value)", f"${total_v:,.2f}")
+                    p2.metric("ต้นทุนหุ้นทั้งหมด (Total Cost)", f"${total_invested:,.2f}")
+                    p3.metric("กำไร/ขาดทุนรวม (Unrealized P/L)", f"${(total_v-total_invested):,.2f}", f"{((total_v-total_invested)/total_invested*100 if total_invested>0 else 0):.2f}%")
                     st.dataframe(pd.DataFrame(results), use_container_width=True)
+        else:
+            st.info("พอร์ตว่างเปล่าค่ะ ลองบันทึกการ 'ซื้อหุ้น' ในสมุดบัญชีด้านบนดูนะคะ")
 
-    # 🌟 หน้า 3: คำนวณภาษี (เพิ่มระบบอัปโหลดไฟล์หลักฐาน)
+
+    # 🌟 หน้า 3: คำนวณภาษี สรรพากร
     with tab_tax:
         st.subheader("🧾 ระบบจัดการกระแสเงินสดและประเมินภาษีข้ามชาติ")
-        
         with st.expander("📖 หลักการหักล้างเงินเข้า-ออก (Principal Offset Rule) - อ้างอิงสรรพากร"):
             st.markdown("""
             **การพิจารณา 'กำไร' ด้วยหลักเงินเข้าลบเงินออก:**
@@ -287,12 +354,9 @@ if st.session_state["logged_in"]:
             """)
         
         st.markdown("---")
-        st.markdown("### 📝 1. บันทึกประวัติการทำรายการ (โอนเข้า-โอนออก)")
-        
+        st.markdown("### 📝 1. บันทึกประวัติการทำรายการ (โอนเข้า-โอนออกข้ามประเทศ)")
         edited_transfer = st.data_editor(
-            st.session_state.transfer_data,
-            num_rows="dynamic",
-            use_container_width=True,
+            st.session_state.transfer_data, num_rows="dynamic", use_container_width=True,
             column_config={
                 "Date": st.column_config.DateColumn("วันที่ทำรายการ", format="DD/MM/YYYY"),
                 "Direction": st.column_config.SelectboxColumn("ประเภทรายการ", options=["โอนออก (Outward)", "นำเงินเข้า (Inward)"]),
@@ -306,20 +370,14 @@ if st.session_state["logged_in"]:
         csv_data = edited_transfer.to_csv(index=False).encode('utf-8-sig')
         st.download_button(label="📥 ดาวน์โหลดข้อมูลเป็นไฟล์ Excel (CSV)", data=csv_data, file_name="tax_transfer_record.csv", mime="text/csv", use_container_width=True)
         
-        # 🌟 ฟีเจอร์ใหม่: ช่องแนบไฟล์หลักฐาน
         st.markdown("---")
         st.markdown("### 📎 2. แนบเอกสารหลักฐานอ้างอิง (e-Tax / Bank Statement)")
         uploaded_files = st.file_uploader("อัปโหลดไฟล์ PDF หรือรูปภาพ (JPG, PNG) เพื่อใช้เป็นหลักฐานประกอบการยื่นสรรพากร", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
-        if uploaded_files:
-            st.success(f"✅ สำเร็จ! รับรองไฟล์หลักฐานจำนวน {len(uploaded_files)} รายการ (ไฟล์จะถูกเก็บไว้สำหรับอ้างอิงในเซสชันนี้ค่ะ)")
+        if uploaded_files: st.success(f"✅ สำเร็จ! รับรองไฟล์หลักฐานจำนวน {len(uploaded_files)} รายการ")
         
-        # คำนวณยอดเงินรวมและหักล้าง
-        total_out_thb = 0.0
-        total_in_thb = 0.0
+        total_out_thb, total_in_thb = 0.0, 0.0
         for _, row in edited_transfer.iterrows():
-            usd = row["Amount_USD"] if pd.notna(row["Amount_USD"]) else 0
-            fx = row["FX_Rate"] if pd.notna(row["FX_Rate"]) else 0
-            amt_thb = usd * fx
+            amt_thb = (row["Amount_USD"] if pd.notna(row["Amount_USD"]) else 0) * (row["FX_Rate"] if pd.notna(row["FX_Rate"]) else 0)
             if row["Direction"] == "โอนออก (Outward)": total_out_thb += amt_thb
             elif row["Direction"] == "นำเงินเข้า (Inward)": total_in_thb += amt_thb
                 
@@ -334,21 +392,15 @@ if st.session_state["logged_in"]:
         
         st.markdown("---")
         st.markdown("### 🧮 4. ประเมินภาระภาษี (Tax Assessment)")
-        
         c1, c2 = st.columns(2)
-        with c1:
-            is_resident = st.radio("คุณอาศัยอยู่ในไทยเกิน 180 วัน ในปีภาษีนี้หรือไม่?", ["เกิน 180 วัน (เข้าเกณฑ์)", "ไม่ถึง 180 วัน (ได้รับยกเว้น)"])
-        with c2:
-            other_income = st.number_input("รายได้อื่นๆ ในไทยต่อปี (บาท) *เช่น เงินเดือน เพื่อหาฐานภาษีก้าวหน้า*", min_value=0.0, value=0.0, step=50000.0)
+        with c1: is_resident = st.radio("คุณอาศัยอยู่ในไทยเกิน 180 วัน ในปีภาษีนี้หรือไม่?", ["เกิน 180 วัน (เข้าเกณฑ์)", "ไม่ถึง 180 วัน (ได้รับยกเว้น)"])
+        with c2: other_income = st.number_input("รายได้อื่นๆ ในไทยต่อปี (บาท)", min_value=0.0, value=0.0, step=50000.0)
 
         if st.button("📊 คำนวณภาษีที่ต้องจ่ายเพิ่ม", type="primary", use_container_width=True):
-            if "ไม่ถึง" in is_resident:
-                st.success("🎉 คุณได้รับยกเว้นภาษี เนื่องจากอาศัยอยู่ในประเทศไทยไม่ถึง 180 วันในปีภาษีที่มีการโอนเงินกลับค่ะ")
-            elif net_taxable_gain == 0:
-                st.success("🎉 คุณยังไม่มีภาระภาษีจากการลงทุนต่างประเทศ เนื่องจากยอดดึงเงินกลับ (Inward) ยังไม่เกินยอดเงินต้นที่ส่งออกไป (Outward) ค่ะ")
+            if "ไม่ถึง" in is_resident: st.success("🎉 คุณได้รับยกเว้นภาษี")
+            elif net_taxable_gain == 0: st.success("🎉 ยังไม่มีกำไรส่วนเกินจากยอดเงินต้นค่ะ")
             else:
                 total_income_all = net_taxable_gain + other_income
-                
                 def calculate_tax(income):
                     tax = 0
                     if income > 5000000: tax += (income - 5000000) * 0.35 + 1265000
@@ -359,27 +411,15 @@ if st.session_state["logged_in"]:
                     elif income > 300000: tax += (income - 300000) * 0.10 + 7500
                     elif income > 150000: tax += (income - 150000) * 0.05
                     return tax
-                
-                tax_without_foreign = calculate_tax(other_income)
-                tax_with_foreign = calculate_tax(total_income_all)
-                additional_tax = tax_with_foreign - tax_without_foreign
+                additional_tax = calculate_tax(total_income_all) - calculate_tax(other_income)
                 
                 st.subheader("ผลการคำนวณฐานภาษี")
                 r1, r2, r3 = st.columns(3)
                 r1.metric("กำไรนำเข้าสุทธิ (หักทุนแล้ว)", f"฿{net_taxable_gain:,.2f}")
                 r2.metric("ฐานรายได้รวมทั้งหมดปีนี้", f"฿{total_income_all:,.2f}")
                 r3.metric("🚨 ภาษีที่เพิ่มขึ้นจากพอร์ต ตปท.", f"฿{additional_tax:,.2f}")
-                st.caption("*โปรแกรมนี้ประเมินจากยอดรายได้สุทธิเพื่อประกอบการตัดสินใจเบื้องต้น (ยังไม่ได้หักค่าลดหย่อนส่วนบุคคล)*")
 
     # หน้า 4: กลยุทธ์
     with tab_strat:
         st.subheader("📚 คู่มือกลยุทธ์การลงทุน (Pro Strategy)")
-        st.markdown("""
-        ### 1. กฎการเทรดแบบ Top-Down Analysis
-        - **เช็กรายเดือน (1M):** เพื่อดูว่าหุ้นอยู่ในวัฏจักรขาขึ้นรอบใหญ่หรือไม่
-        - **เช็กรายสัปดาห์ (1W):** เพื่อหาแนวรับ-แนวต้านที่แข็งแกร่ง
-        - **เช็กรายวัน (1D):** เพื่อหาจุดเข้าซื้อที่ได้เปรียบ
-        
-        ### 2. การจัดการความเสี่ยง (Risk Management)
-        - **กฎ 2%:** อย่าให้การขาดทุนในแต่ละไม้ เกิน 2% ของเงินต้นทั้งหมด
-        - **Relative Strength:** เน้นลงทุนในหุ้นที่ **ชนะตลาด (สีเขียว)** """)
+        st.markdown("""### 1. กฎการเทรดแบบ Top-Down Analysis\n### 2. การจัดการความเสี่ยง (Risk Management)""")
