@@ -30,7 +30,7 @@ except Exception as e:
     st.error(f"⚠️ ไม่สามารถเชื่อมต่อฐานข้อมูลได้: {e}")
     st.stop()
 
-# ฟังก์ชันดึงข้อมูลบัญชีแบบปลอดภัย
+# ฟังก์ชันดึงข้อมูล 
 def load_ledger_data():
     try:
         ws = sh.worksheet("Ledger")
@@ -38,7 +38,7 @@ def load_ledger_data():
         if not records:
             return pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
         df = pd.DataFrame(records)
-        df.replace("", np.nan, inplace=True)
+        df.replace(["", "None", "nan", None], np.nan, inplace=True)
         df.dropna(how="all", inplace=True)
         df.fillna("", inplace=True)
     except:
@@ -75,22 +75,32 @@ tz_th = timezone(timedelta(hours=7))
 current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M")
 
-# --- ระบบคำนวณตัดสต๊อกและยอดยกมา ---
+# ==========================================
+# 🌟 เครื่องยนต์คำนวณตัดสต๊อกอัจฉริยะ (กันพัง 100%)
+# ==========================================
 def calculate_stats(df_input):
+    df = df_input.copy()
     cb = 0.0
     stat = {"outward": 0.0, "inward": 0.0, "bought": 0.0, "sold": 0.0, "dividend": 0.0, "realized_profit": 0.0}
     r_bals = []
     hld = {}
     
-    for idx, row in df_input.iterrows():
+    for idx, row in df.iterrows():
         action = str(row.get("Action", "")).strip()
+        if action in ["None", "nan"]: action = ""
+        
         ticker = str(row.get("Ticker", "")).strip().upper()
-        try: price = float(row.get("Price", 0.0))
-        except: price = 0.0
-        try: shares = float(row.get("Shares", 0.0))
-        except: shares = 0.0
-        try: amt = float(row.get("Amount_USD", 0.0))
-        except: amt = 0.0
+        if ticker in ["NONE", "NAN"]: ticker = ""
+
+        # ฟังก์ชันแปลงตัวเลขป้องกัน Error ขั้นเด็ดขาด
+        def safe_num(val):
+            if pd.isna(val) or val is None or str(val).strip() in ["", "None", "nan"]: return 0.0
+            try: return float(val)
+            except: return 0.0
+
+        price = safe_num(row.get("Price"))
+        shares = safe_num(row.get("Shares"))
+        amt = safe_num(row.get("Amount_USD"))
 
         trade_val = price * shares
         if action == "นำเงินออกนอกประเทศ (Outward)":
@@ -121,9 +131,6 @@ def calculate_stats(df_input):
         r_bals.append(cb)
     return cb, stat, r_bals, hld
 
-cash_balance, ledger_stat, running_bals, holdings = calculate_stats(st.session_state.trade_ledger)
-st.session_state.trade_ledger["Running_Balance"] = running_bals
-
 # --- Sidebar ---
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
@@ -153,7 +160,7 @@ with st.sidebar:
             st.session_state["logged_in"] = False
             st.rerun()
 
-# --- ดึงข้อมูลวิเคราะห์แบบ Pro ---
+# --- ดึงข้อมูลวิเคราะห์ ---
 @st.cache_data(ttl=300)
 def load_pro_data(ticker_symbol, tf):
     settings = {"1D (รายวัน)": {"period": "6mo", "interval": "1d"}, "1W (รายสัปดาห์)": {"period": "2y", "interval": "1wk"}, "1M (รายเดือน)": {"period": "5y", "interval": "1mo"}}
@@ -168,12 +175,10 @@ def load_pro_data(ticker_symbol, tf):
         df['EMA_10'] = df['Close'].ewm(span=10, adjust=False).mean()
         df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
         df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
-        
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
         loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
         df['RSI'] = 100 - (100 / (1 + gain/loss))
-        
         if len(df) > 1:
             y = df['Close'].values
             x = np.arange(len(y))
@@ -206,7 +211,7 @@ else:
     tab_dash, = st.tabs(["📊 วิเคราะห์กราฟ (Analysis)"])
 
 # ==========================================
-# 🌟 หน้า 1: วิเคราะห์กราฟ (ส่วนที่หายไปกลับมาแล้ว!)
+# หน้า 1: วิเคราะห์กราฟ
 # ==========================================
 with tab_dash:
     st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
@@ -215,11 +220,7 @@ with tab_dash:
     if not df.empty:
         last_p = df['Close'].iloc[-1]
         rs_val = df['RS_vs_Market'].iloc[-1]
-        rs_text = ""
-        if not np.isnan(rs_val):
-            rs_color = "🟢 ชนะตลาด" if rs_val > 0 else "🔴 อ่อนแอกว่าตลาด"
-            rs_text = f" | **Relative Strength:** {rs_color} ({rs_val:.2f}%)"
-            
+        rs_text = f" | **Relative Strength:** {'🟢 ชนะตลาด' if rs_val > 0 else '🔴 อ่อนแอกว่าตลาด'} ({rs_val:.2f}%)" if not np.isnan(rs_val) else ""
         if matrix: st.info(f"🔮 **ทิศทาง {tf_option}:** {matrix['trend']} | **เป้าหมาย:** {matrix['l']:,.2f} - {matrix['u']:,.2f} (Matrix){rs_text}")
 
         col_left, col_right = st.columns([7, 3])
@@ -230,7 +231,6 @@ with tab_dash:
             fig.add_trace(go.Scatter(x=df.index, y=df['EMA_20'], line=dict(color='#00E676', width=2.5), name="EMA 20"), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['EMA_50'], line=dict(color='#FF6D00', width=2.5), name="EMA 50"), row=1, col=1)
             if buy_price > 0 and st.session_state["logged_in"]: fig.add_hline(y=buy_price, line_dash="dash", line_color="cyan", annotation_text="ต้นทุน", row=1, col=1)
-            
             v_colors = ['#00E676' if df['Close'].iloc[i] > df['Open'].iloc[i] else '#FF6D00' for i in range(len(df))]
             fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=v_colors, name="Vol"), row=2, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#BA68C8', width=2), name="RSI"), row=3, col=1)
@@ -250,36 +250,35 @@ with tab_dash:
         with col_right:
             prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - prev_p:.2f}")
-            st.caption(f"🕒 อัปเดตล่าสุด: {current_time} น.")
-            
             if st.session_state["logged_in"] and buy_price > 0:
                 pl = ((last_p - buy_price) / buy_price) * 100
                 st.write(f"**กำไร/ขาดทุน (หุ้นนี้):** {pl:.2f}%")
                 sl_price = df['EMA_50'].iloc[-1] * 0.99 if buy_price == 0 else buy_price * 0.92
                 st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl_price:.2f}**")
-                
                 risk_amt = total_capital * (risk_pct / 100)
                 risk_per_share = last_p - sl_price
                 if risk_per_share > 0:
                     shares = risk_amt / risk_per_share
                     st.success(f"🧮 **ซื้อได้:** {shares:.2f} หุ้น")
             
-            # 🌟 ส่วนที่หายไป คืนชีพกลับมาแล้วค่ะ!
             st.markdown("---")
             st.subheader("💡 คำแนะนำภาพรวม")
             if last_p > df['EMA_50'].iloc[-1]: 
-                st.success(f"**แนวโน้ม:** ขาขึ้น 📈\n\n**🟢 ซื้อ:** โซน {df['EMA_10'].iloc[-1]:.2f} - {df['EMA_20'].iloc[-1]:.2f}\n\n**🔴 ขาย:** {df['High'].tail(20).max():.2f} ขึ้นไป\n\n**🟡 ถือต่อ:** ยืนเหนือ {df['EMA_20'].iloc[-1]:.2f}")
+                st.success(f"**แนวโน้ม:** ขาขึ้น 📈\n\n**🟢 ซื้อ:** โซน {df['EMA_10'].iloc[-1]:.2f} - {df['EMA_20'].iloc[-1]:.2f}\n\n**🔴 ขาย:** {df['High'].tail(20).max():.2f} ขึ้นไป")
             else: 
-                st.error(f"**แนวโน้ม:** ขาลง 📉\n\nระวัง! กราฟอยู่ต่ำกว่าเส้นค่าเฉลี่ย 50 วัน ยังไม่แนะนำให้รับของค่ะ")
-            
+                st.error(f"**แนวโน้ม:** ขาลง 📉\n\nระวัง! กราฟอยู่ต่ำกว่าเส้น 50 วัน")
             st.markdown("---")
             st.subheader("🚧 แนวรับ-ต้าน")
-            st.write(f"**แนวต้าน (Resistance):** {df['High'].tail(20).max():.2f}")
-            st.write(f"**แนวรับ (Support):** {df['EMA_50'].iloc[-1]:.2f}")
+            st.write(f"**ต้าน:** {df['High'].tail(20).max():.2f}")
+            st.write(f"**รับ:** {df['EMA_50'].iloc[-1]:.2f}")
 
 if st.session_state["logged_in"]:
+    # คำนวณเตรียมพร้อมให้หน้าจอแสดงผลถูกต้อง 100%
+    cb, ledger_stat, running_bals, holdings = calculate_stats(st.session_state.trade_ledger)
+    st.session_state.trade_ledger["Running_Balance"] = running_bals
+
     # ==========================================
-    # หน้า 2: บัญชีและพอร์ตโฟลิโอ
+    # หน้า 2: บัญชีและพอร์ตโฟลิโอ (ระบบแก้ไข Real-time)
     # ==========================================
     with tab_port:
         st.subheader("💼 แดชบอร์ดกระแสเงินสด (Cash Flow)")
@@ -287,11 +286,11 @@ if st.session_state["logged_in"]:
         col1.metric("📤 นำเงินออกสะสม", f"${ledger_stat['outward']:,.2f}")
         col2.metric("📉 ใช้ซื้อหุ้นไปแล้ว", f"${ledger_stat['bought']:,.2f}", "หักจากเงินสด", delta_color="inverse")
         col3.metric("📈 ขายหุ้นได้เงินมา", f"${ledger_stat['sold']:,.2f}", "บวกกลับเข้าเงินสด")
-        col4.metric("💰 เงินสดคงเหลือ", f"${cash_balance:,.2f}")
+        col4.metric("💰 เงินสดคงเหลือ", f"${cb:,.2f}")
 
         st.markdown("---")
         st.subheader("📝 สมุดบัญชี Cloud Ledger")
-        st.caption("แก้ไข เพิ่ม ลบ ข้อมูลในตารางได้เลย เสร็จแล้ว **ต้องกดปุ่มบันทึกด้านล่าง** เพื่ออัปเดตยอดค่ะ")
+        st.caption("✨ เพียงแค่พิมพ์หรือแก้ตัวเลข ระบบจะตัดสต๊อกคำนวณยอดยกมาให้ทันที (อย่าลืมกดบันทึกลงคลาวด์นะคะ)")
         
         edited_ledger = st.data_editor(
             st.session_state.trade_ledger, 
@@ -308,16 +307,20 @@ if st.session_state["logged_in"]:
                 "FX_Rate": None, "WHT_USD": None, "Ref_Doc": None
             }
         )
-        st.session_state.trade_ledger = edited_ledger
+        
+        # 🌟 นี่คือหัวใจของระบบ Real-time: ถ้าตารางมีการพิมพ์เปลี่ยนไป ให้ลบคำว่า None และคำนวณสดทันที
+        if not edited_ledger.equals(st.session_state.trade_ledger):
+            edited_ledger.replace([None, "None", "nan"], "", inplace=True) # ล้างความว่างเปล่าทิ้ง
+            _, _, new_rb, _ = calculate_stats(edited_ledger) # คำนวณสูตรใหม่ทันที
+            edited_ledger["Running_Balance"] = new_rb
+            st.session_state.trade_ledger = edited_ledger
+            st.rerun() # รีเฟรชหน้า 1 วิ เพื่อให้เห็นผลลัพธ์
 
-        if st.button("💾 บันทึกข้อมูลบัญชีและอัปเดตยอด", type="primary", use_container_width=True):
-            with st.spinner("กำลังคำนวณและบันทึกลงคลาวด์..."):
-                cb, l_stat, r_bals, hlds = calculate_stats(st.session_state.trade_ledger)
-                st.session_state.trade_ledger["Running_Balance"] = r_bals
+        if st.button("💾 บันทึกข้อมูลบัญชีลง Google Sheets", type="primary", use_container_width=True):
+            with st.spinner("กำลังส่งข้อมูลเข้าสู่คลาวด์..."):
                 try:
                     save_df_to_sheet("Ledger", st.session_state.trade_ledger)
-                    st.success("🎉 บันทึกสำเร็จแล้ว!")
-                    st.rerun()
+                    st.success("🎉 บันทึกสำเร็จแล้ว! ข้อมูลปลอดภัย 100%")
                 except Exception as e:
                     st.error(f"เกิดข้อผิดพลาด: {e}")
 
@@ -359,7 +362,7 @@ if st.session_state["logged_in"]:
             st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ตค่ะ)")
 
     # ==========================================
-    # หน้า 3: ภาษีสรรพากร
+    # หน้า 3: ภาษีสรรพากร (ระบบแก้ไข Real-time)
     # ==========================================
     with tab_tax:
         st.subheader("🧾 ระบบประเมินภาษีสรรพากร ภ.ง.ด. 90")
@@ -384,15 +387,21 @@ if st.session_state["logged_in"]:
             }
         )
         
-        if st.button("💾 บันทึกอัตราแลกเปลี่ยนลงคลาวด์", type="primary"):
+        if not edited_tax_view.equals(tax_view):
+            edited_tax_view.replace([None, "None", "nan"], "", inplace=True)
             st.session_state.trade_ledger.update(edited_tax_view)
-            save_df_to_sheet("Ledger", st.session_state.trade_ledger)
-            st.success("บันทึกสำเร็จ!")
             st.rerun()
+
+        if st.button("💾 บันทึกอัตราแลกเปลี่ยนลง Google Sheets", type="primary", use_container_width=True):
+            try:
+                save_df_to_sheet("Ledger", st.session_state.trade_ledger)
+                st.success("บันทึกสำเร็จ!")
+            except Exception as e: st.error(f"เกิดข้อผิดพลาด: {e}")
 
         total_out_thb, total_in_thb, foreign_tax_credit_thb = 0.0, 0.0, 0.0
         for _, row in tax_view.iterrows():
-            usd, wht, fx = float(row.get("Amount_USD", 0)), float(row.get("WHT_USD", 0)), float(row.get("FX_Rate", 0))
+            def sn(val): return float(val) if not pd.isna(val) and str(val).strip() not in ["", "None"] else 0.0
+            usd, wht, fx = sn(row.get("Amount_USD")), sn(row.get("WHT_USD")), sn(row.get("FX_Rate"))
             amt_thb, wht_thb = usd * fx, wht * fx
             
             if row.get("Action") == "นำเงินออกนอกประเทศ (Outward)": total_out_thb += amt_thb
