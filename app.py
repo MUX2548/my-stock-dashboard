@@ -30,13 +30,16 @@ except Exception as e:
     st.error(f"⚠️ ไม่สามารถเชื่อมต่อฐานข้อมูลได้: {e}")
     st.stop()
 
-# 🛡️ เกราะป้องกันที่ 1: จัดการข้อมูลว่างตอนโหลด
 def clean_df_types(df):
     df_clean = df.copy()
     num_cols = ["Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD"]
+    str_cols = ["Date", "Action", "Ticker", "Ref_Doc"]
     for col in num_cols:
         if col in df_clean.columns:
             df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce').fillna(0.0)
+    for col in str_cols:
+        if col in df_clean.columns:
+            df_clean[col] = df_clean[col].fillna("").astype(str).replace(["None", "nan", "<NA>", "NaN"], "")
     return df_clean
 
 def load_ledger_data():
@@ -65,7 +68,6 @@ def save_df_to_sheet(worksheet_name, df):
     ws = sh.worksheet(worksheet_name)
     ws.clear()
     clean_df = clean_df_types(df)
-    clean_df = clean_df.fillna("")
     data_list = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
     ws.update(values=data_list, range_name='A1')
 
@@ -75,11 +77,10 @@ if "trade_ledger" not in st.session_state:
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
-# 🛡️ เกราะป้องกันที่ 2: บังคับข้อความให้เป็นข้อความ
-def safe_str(val):
-    if pd.isna(val) or val is None: return ""
-    res = str(val).strip().replace("None", "").replace("nan", "").replace("<NA>", "")
-    return res
+# 🌟 ตั้งค่าโซนเวลาไทยให้เป๊ะ
+tz_th = timezone(timedelta(hours=7))
+current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
+current_time = datetime.now(tz_th).strftime("%H:%M")
 
 def calculate_stats(df_input):
     df = clean_df_types(df_input)
@@ -88,23 +89,19 @@ def calculate_stats(df_input):
     r_bals, hld = [], {}
     
     for idx, row in df.iterrows():
-        # ตรงนี้แหละค่ะที่แก้ Error!
-        action = safe_str(row.get("Action"))
-        ticker = safe_str(row.get("Ticker")).upper()
-        
-        p = float(row.get("Price", 0.0)) if not pd.isna(row.get("Price")) else 0.0
-        s = float(row.get("Shares", 0.0)) if not pd.isna(row.get("Shares")) else 0.0
-        a = float(row.get("Amount_USD", 0.0)) if not pd.isna(row.get("Amount_USD")) else 0.0
+        action = str(row.get("Action", "")).strip()
+        ticker = str(row.get("Ticker", "")).strip().upper()
+        p, s, a = row.get("Price", 0.0), row.get("Shares", 0.0), row.get("Amount_USD", 0.0)
         val = p * s
         
         if action == "นำเงินออกนอกประเทศ (Outward)": cb += a; stat["outward"] += a
         elif action == "นำเงินเข้าประเทศไทย (Inward)": cb -= a; stat["inward"] += a
         elif action == "รับเงินปันผล (Dividend)": cb += a; stat["dividend"] += a
-        elif action == "ซื้อหุ้น (Buy)" and ticker != "":
+        elif action == "ซื้อหุ้น (Buy)" and ticker:
             cb -= val; stat["bought"] += val
             if ticker not in hld: hld[ticker] = {"shares": 0.0, "total_cost": 0.0}
             hld[ticker]["shares"] += s; hld[ticker]["total_cost"] += val
-        elif action == "ขายหุ้น (Sell)" and ticker != "":
+        elif action == "ขายหุ้น (Sell)" and ticker:
             cb += val; stat["sold"] += val
             if ticker in hld and hld[ticker]["shares"] > 0:
                 avg = hld[ticker]["total_cost"] / hld[ticker]["shares"]
@@ -114,7 +111,7 @@ def calculate_stats(df_input):
     return cb, stat, r_bals, hld
 
 # ==========================================
-# 🌟 Sidebar
+# 🌟 Sidebar (Public Tools)
 # ==========================================
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
@@ -195,9 +192,13 @@ tab_list = st.tabs(tabs)
 # ==========================================
 with tab_list[0]:
     st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
+    # 🌟 เติมวันที่กลับมาตรงนี้แล้วค่ะ!
+    st.caption(f"📅 ข้อมูลวิเคราะห์ ณ วันที่: {current_date}")
     
     if not df.empty:
         last_p = df['Close'].iloc[-1]
+        prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
+        
         rs = df['RS'].iloc[-1]
         rs_t = f" | **Relative Strength:** {'🟢 ชนะตลาด' if rs > 0 else '🔴 อ่อนแอกว่าตลาด'} ({rs:.2f}%)" if not np.isnan(rs) else ""
         if matrix: st.info(f"🔮 **ทิศทาง {tf_option}:** {matrix['tr']} | **เป้าหมาย:** {matrix['l']:,.2f} - {matrix['u']:,.2f} (Harmonic Matrix){rs_t}")
@@ -231,7 +232,10 @@ with tab_list[0]:
             f1, f2, f3 = st.columns(3); f1.metric("P/S Ratio", fund.get('ps','N/A')); f2.metric("P/E Ratio", fund.get('pe','N/A')); f3.metric("ROE", fund.get('roe','N/A'))
         
         with c_r:
-            st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - (df['Close'].iloc[-2] if len(df)>1 else last_p):.2f}")
+            st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - prev_p:.2f}")
+            # 🌟 เติมเวลากลับมาตรงนี้แล้วค่ะ!
+            st.caption(f"🕒 อัปเดตล่าสุด: {current_time} น.")
+            
             if b_p > 0:
                 pl = ((last_p - b_p) / b_p) * 100
                 st.write(f"**กำไร/ขาดทุนของคุณ:** {pl:.2f}%")
