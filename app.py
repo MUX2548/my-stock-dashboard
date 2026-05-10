@@ -13,7 +13,7 @@ from datetime import datetime, timezone, timedelta
 st.set_page_config(page_title="Strategic Portfolio Ecosystem 3.0", layout="wide")
 
 # ==========================================
-# 🔐 การเชื่อมต่อฐานข้อมูล (เข้าถึงเฉพาะแผ่นงานที่ระบุ)
+# 🔐 การเชื่อมต่อฐานข้อมูล
 # ==========================================
 @st.cache_resource
 def init_connection():
@@ -30,20 +30,16 @@ except Exception as e:
     st.error(f"⚠️ ไม่สามารถเชื่อมต่อฐานข้อมูลได้: {e}")
     st.stop()
 
-# 🌟 ฟังก์ชันฟอกข้อมูล (เกราะป้องกัน TypeError)
 def clean_df_types(df):
     df_clean = df.copy()
     num_cols = ["Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD"]
     str_cols = ["Date", "Action", "Ticker", "Ref_Doc"]
-    
     for col in num_cols:
         if col in df_clean.columns:
             df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce').fillna(0.0)
-            
     for col in str_cols:
         if col in df_clean.columns:
-            df_clean[col] = df_clean[col].astype(str).replace(["None", "nan", "<NA>", "nan"], "")
-            
+            df_clean[col] = df_clean[col].astype(str).replace(["None", "nan", "<NA>"], "")
     return df_clean
 
 def load_ledger_data():
@@ -64,10 +60,8 @@ def load_ledger_data():
         if col not in df.columns: df[col] = ""
 
     df = clean_df_types(df)
-    
     if not df.empty and "Date" in df.columns:
         df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.strftime("%d/%m/%Y").replace("NaT", "")
-    
     return df[req_cols]
 
 def save_df_to_sheet(worksheet_name, df):
@@ -139,7 +133,7 @@ with st.sidebar:
             st.session_state["logged_in"] = False
             st.rerun()
 
-# --- ดึงข้อมูลวิเคราะห์ ---
+# --- ดึงข้อมูลวิเคราะห์ (เพิ่มระบบดักจับจอดำ) ---
 @st.cache_data(ttl=300)
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
@@ -147,8 +141,11 @@ def load_pro_data(ticker_symbol, tf):
     try:
         s = yf.Ticker(ticker_symbol)
         df = s.history(period=p, interval=i)
-        if df.empty: return None, {}, None
+        if df is None or df.empty: return pd.DataFrame(), {}, None
+        
         df = df.dropna(subset=['Close'])
+        if df.empty: return pd.DataFrame(), {}, None
+        
         spy = yf.Ticker("^GSPC").history(period=p, interval=i)['Close']
         df['RS'] = (df['Close'].pct_change(10) - spy.pct_change(10)) * 100
         df['E20'] = df['Close'].ewm(span=20).mean()
@@ -177,7 +174,7 @@ def load_pro_data(ticker_symbol, tf):
         tr = "ขึ้น 📈" if last > df['E50'].iloc[-1] else "ลง 📉"
         mat = {"l": last * (1 - v*1.0) if tr == "ลง 📉" else last * (1 - v*0.5), "u": last * (1 - v*0.5) if tr == "ลง 📉" else last * (1 + v*1.0), "tr": tr}
         return df, fund, mat
-    except: return None, {}, None
+    except: return pd.DataFrame(), {}, None
 
 df, fund, matrix = load_pro_data(ticker, tf_option)
 
@@ -190,7 +187,8 @@ tab_list = st.tabs(tabs)
 # ==========================================
 with tab_list[0]:
     st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
-    if df is not None:
+    
+    if not df.empty:
         last_p = df['Close'].iloc[-1]
         rs = df['RS'].iloc[-1]
         rs_t = f" | **Relative Strength:** {'🟢 ชนะตลาด' if rs > 0 else '🔴 อ่อนแอกว่าตลาด'} ({rs:.2f}%)" if not np.isnan(rs) else ""
@@ -222,7 +220,7 @@ with tab_list[0]:
             st.plotly_chart(fig, use_container_width=True)
             
             st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
-            f1, f2, f3 = st.columns(3); f1.metric("P/S Ratio", fund['ps']); f2.metric("P/E Ratio", fund['pe']); f3.metric("ROE", fund['roe'])
+            f1, f2, f3 = st.columns(3); f1.metric("P/S Ratio", fund.get('ps','N/A')); f2.metric("P/E Ratio", fund.get('pe','N/A')); f3.metric("ROE", fund.get('roe','N/A'))
         
         with c_r:
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - (df['Close'].iloc[-2] if len(df)>1 else last_p):.2f}")
@@ -249,11 +247,17 @@ with tab_list[0]:
             st.subheader("🚧 แนวรับ-ต้าน")
             st.write(f"**ต้าน:** {df['High'].tail(20).max():.2f}")
             st.write(f"**รับ:** {df['E50'].iloc[-1]:.2f}")
+    else:
+        # 🌟 นี่คือส่วนที่ถูกเพิ่มเข้ามา เพื่อไม่ให้หน้าจอว่างเปล่าแบบงงๆ ค่ะ!
+        st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ\n\n**สาเหตุที่เป็นไปได้:**\n1. พิมพ์ชื่อหุ้นผิด หรือไม่มีหุ้นนี้ในระบบ (ลองเปลี่ยนเป็น AAPL, TSLA หรือหุ้นไทยต้องเติม .BK เช่น PTT.BK)\n2. ระบบข้อมูลจาก Yahoo Finance กำลังขัดข้องชั่วคราว หรือถูกจำกัดการดึงข้อมูลถี่เกินไป\n\n💡 **วิธีแก้:** ลองเปลี่ยนชื่อหุ้นที่เมนูด้านซ้าย หรือรอสักพัก (ประมาณ 2-3 นาที) แล้วกดรีเฟรชหน้าเว็บอีกครั้งค่ะ")
 
 if st.session_state["logged_in"]:
     cb, l_stat, r_bals, holdings = calculate_stats(st.session_state.trade_ledger)
     st.session_state.trade_ledger["Running_Balance"] = r_bals
 
+    # ==========================================
+    # หน้า 2: บัญชีและพอร์ตโฟลิโอ
+    # ==========================================
     with tab_list[1]:
         st.subheader("💼 แดชบอร์ดกระแสเงินสด")
         col1, col2, col3, col4 = st.columns(4)
@@ -276,7 +280,6 @@ if st.session_state["logged_in"]:
             })
             
         if not ed_l.equals(st.session_state.trade_ledger):
-            # 🛡️ ระบบฟอกข้อมูล ทำงานตรงนี้เพื่อกัน TypeError ค่ะ
             ed_l = clean_df_types(ed_l)
             _, _, n_rb, _ = calculate_stats(ed_l)
             ed_l["Running_Balance"] = n_rb
@@ -317,7 +320,12 @@ if st.session_state["logged_in"]:
                     p2.metric("ต้นทุนหุ้นทั้งหมด", f"${total_invested:,.2f}")
                     p3.metric("กำไร/ขาดทุนรวม", f"${(total_v-total_invested):,.2f}", f"{((total_v-total_invested)/total_invested*100 if total_invested>0 else 0):.2f}%")
                     st.dataframe(pd.DataFrame(results), use_container_width=True)
+        else:
+            st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ตค่ะ)")
 
+    # ==========================================
+    # หน้า 3: ภาษีสรรพากร
+    # ==========================================
     with tab_list[2]:
         st.subheader("🧾 ระบบประเมินภาษีสรรพากร ภ.ง.ด. 90")
         tax_idx = st.session_state.trade_ledger['Action'].isin(["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"])
@@ -341,7 +349,7 @@ if st.session_state["logged_in"]:
                            "WHT_USD": st.column_config.NumberColumn("ภาษีหัก ตปท. ($)", format="%.2f"), "Balance_THB": st.column_config.NumberColumn("เงินต้นคงเหลือ (฿)", disabled=True), "Ref_Doc": "หมายเหตุ"})
         
         if not ed_t[["FX_Rate", "WHT_USD", "Ref_Doc"]].equals(tax_v[["FX_Rate", "WHT_USD", "Ref_Doc"]]):
-            ed_t = clean_df_types(ed_t) # 🛡️ ป้องกันบั๊กในหน้าภาษีด้วย
+            ed_t = clean_df_types(ed_t)
             st.session_state.trade_ledger.loc[tax_idx, "FX_Rate"] = ed_t["FX_Rate"].values
             st.session_state.trade_ledger.loc[tax_idx, "WHT_USD"] = ed_t["WHT_USD"].values
             st.session_state.trade_ledger.loc[tax_idx, "Ref_Doc"] = ed_t["Ref_Doc"].values
@@ -362,7 +370,6 @@ if st.session_state["logged_in"]:
         cf3.metric("🚨 กำไรสุทธิที่ต้องประเมิน", f"฿{net_tax_gain:,.2f}", "หักล้างเงินต้นแล้ว", delta_color="inverse")
 
         st.markdown("---")
-        # 🌟 สังเกตตรงนี้ ฉันเพิ่มปี 2571 - 2573 ให้เผื่อใช้ยาวๆ เลยค่ะ!
         c1, c2, c3 = st.columns(3)
         with c1: tax_year = st.selectbox("📅 เลือกปีภาษี", ["2567 (2024)", "2568 (2025)", "2569 (2026)", "2570 (2027)", "2571 (2028)", "2572 (2029)", "2573 (2030)"])
         with c2: is_resident = st.radio("อาศัยอยู่ในไทยเกิน 180 วัน หรือไม่?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
