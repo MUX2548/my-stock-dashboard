@@ -1,4 +1,6 @@
+import json
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -7,28 +9,49 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
-st.set_page_config(page_title="Strategic Portfolio Ecosystem 2.0", layout="wide")
+st.set_page_config(page_title="Strategic Portfolio Ecosystem 3.0 (Cloud Sync)", layout="wide")
 
 # ==========================================
-# 🔐 ระบบสถานะ และ ฐานข้อมูลศูนย์กลาง (Single Source of Truth)
+# 🔐 การเชื่อมต่อฐานข้อมูลถาวร (Google Sheets Connection)
 # ==========================================
+try:
+    # ดึงข้อมูลรหัสผ่านและลิงก์ชีตจากตู้เซฟ (Secrets)
+    creds_dict = json.loads(st.secrets["google_creds_json"])
+    sheet_url = st.secrets["spreadsheet_url"]
+    conn = st.connection("gsheets", type=GSheetsConnection, service_account=creds_dict, spreadsheet=sheet_url)
+except Exception as e:
+    st.error("⚠️ กำลังรอการตั้งค่าตู้เซฟ (Secrets) ให้สมบูรณ์ หรือรูปแบบโค้ดในตู้เซฟไม่ถูกต้องค่ะ")
+    st.stop()
+
+# ฟังก์ชันดึงข้อมูลจากสมุดบัญชี (Ledger)
+def load_ledger_data():
+    try:
+        df = conn.read(worksheet="Ledger", ttl="0s")
+        if df.empty:
+            return pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance"])
+        return df
+    except:
+        return pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance"])
+
+# ฟังก์ชันดึงข้อมูลภาษี (Tax)
+def load_tax_data():
+    try:
+        df = conn.read(worksheet="Tax", ttl="0s")
+        if df.empty:
+            return pd.DataFrame(columns=["Date", "Direction", "Category", "Amount_USD", "WHT_USD", "FX_Rate", "Source", "Country", "Ref_Doc"])
+        return df
+    except:
+        return pd.DataFrame(columns=["Date", "Direction", "Category", "Amount_USD", "WHT_USD", "FX_Rate", "Source", "Country", "Ref_Doc"])
+
+# โหลดข้อมูลเข้าสู่ Session State 
+if "trade_ledger" not in st.session_state:
+    st.session_state.trade_ledger = load_ledger_data()
+
+if "transfer_data" not in st.session_state:
+    st.session_state.transfer_data = load_tax_data()
+
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
-
-# 🌟 รวมเป็นฐานข้อมูลเดียว (Trade Ledger) สำหรับทั้งพอร์ตและภาษี
-if "trade_ledger" not in st.session_state:
-    st.session_state.trade_ledger = pd.DataFrame({
-        "Date": [datetime.now().date(), datetime.now().date()],
-        "Action": ["นำเงินออกนอกประเทศ (Outward)", "ซื้อหุ้น (Buy)"],
-        "Ticker": ["", "NVTS"],
-        "Price": [0.0, 16.48],
-        "Shares": [0.0, 100.0],
-        "Amount_USD": [10000.0, 0.0],
-        "Running_Balance": [10000.0, 8352.0],
-        "FX_Rate": [35.0, 0.0],
-        "WHT_USD": [0.0, 0.0],
-        "Ref_Doc": ["Slip_Deposit.jpg", ""]
-    })
 
 tz_th = timezone(timedelta(hours=7))
 current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
@@ -46,11 +69,9 @@ with st.sidebar:
     
     if not st.session_state["logged_in"]:
         st.subheader("🔒 สำหรับเจ้าของพอร์ต")
-        st.caption("เข้าสู่ระบบเพื่อปลดล็อคเครื่องมือจัดการพอร์ตส่วนตัว")
         pwd = st.text_input("🔑 รหัสผ่าน", type="password")
         if st.button("เข้าสู่ระบบ (Login)", use_container_width=True):
-            correct_pwd = st.secrets.get("app_password", "123456")
-            if pwd == correct_pwd:
+            if pwd == st.secrets.get("app_password", "123456"):
                 st.session_state["logged_in"] = True
                 st.rerun()
             else:
@@ -64,14 +85,10 @@ with st.sidebar:
         st.subheader("💰 สถานะหุ้นตัวนี้")
         buy_price = st.number_input("ราคาต้นทุน (USD)", min_value=0.0, value=0.0, step=0.1)
         buy_shares = st.number_input("จำนวนหุ้นที่มี", min_value=0.0, value=0.0, step=0.1)
-        if st.button("➕ บันทึกประวัติซื้อหุ้นนี้ลงพอร์ต", type="primary", use_container_width=True):
-            new_trade = pd.DataFrame({
-                "Date": [datetime.now().date()], "Action": ["ซื้อหุ้น (Buy)"], "Ticker": [ticker], 
-                "Price": [buy_price], "Shares": [buy_shares], "Amount_USD": [0.0], 
-                "Running_Balance": [0.0], "FX_Rate": [0.0], "WHT_USD": [0.0], "Ref_Doc": [""]
-            })
+        if st.button("➕ บันทึกซื้อหุ้นลงสมุดบัญชี", type="primary", use_container_width=True):
+            new_trade = pd.DataFrame({"Date": [datetime.now().date()], "Action": ["ซื้อหุ้น (Buy)"], "Ticker": [ticker], "Price": [buy_price], "Shares": [buy_shares], "Amount_USD": [0.0], "Running_Balance": [0.0]})
             st.session_state.trade_ledger = pd.concat([st.session_state.trade_ledger, new_trade], ignore_index=True)
-            st.success(f"บันทึกการซื้อ {ticker} ลงบัญชีเรียบร้อย!")
+            st.success(f"บันทึกข้อมูล {ticker} ลงบัญชีชั่วคราวแล้ว (อย่าลืมกดปุ่มบันทึกลงฐานข้อมูลถาวรนะคะ!)")
         st.markdown("---")
         if st.button("🚪 ออกจากระบบ (Logout)", use_container_width=True):
             st.session_state["logged_in"] = False
@@ -128,7 +145,7 @@ matrix = get_matrix(df)
 # 🌟 ระบบแท็บ
 # ==========================================
 if st.session_state["logged_in"]:
-    tab_dash, tab_port, tab_tax, tab_strat = st.tabs(["📊 วิเคราะห์กราฟ", "💼 บัญชีและพอร์ตโฟลิโอ", "🧾 ภาษีสรรพากร", "📚 กลยุทธ์"])
+    tab_dash, tab_port, tab_tax, tab_strat = st.tabs(["📊 วิเคราะห์กราฟ (Analysis)", "💼 บัญชี (Cloud Sync)", "🧾 ภาษี (Cloud Sync)", "📚 กลยุทธ์"])
 else:
     tab_dash, = st.tabs(["📊 วิเคราะห์กราฟ (Analysis)"])
 
@@ -186,7 +203,7 @@ with tab_dash:
         with col_right:
             prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - prev_p:.2f}")
-            st.caption(f"🕒 อัปเดตล่าสุด: {df.index[-1].strftime('%d/%m/%Y')} | {current_time} น.")
+            st.caption(f"🕒 อัปเดตล่าสุด: {current_time} น.")
             
             if st.session_state["logged_in"] and buy_price > 0:
                 pl = ((last_p - buy_price) / buy_price) * 100
@@ -216,23 +233,22 @@ with tab_dash:
             st.write(f"**รับ:** {df['EMA_50'].iloc[-1]:.2f}")
 
 # ==========================================
-# 🌟 พื้นที่เฉพาะ Owner (บัญชี และ ภาษีอัจฉริยะ)
+# พื้นที่เฉพาะ Owner (บัญชี และ ภาษี Cloud Sync)
 # ==========================================
 
-# 1. กลไกคำนวณบัญชี (ทำงานแบบเรียลไทม์เบื้องหลังก่อนเรนเดอร์ตาราง)
+# คำนวณบัญชีก่อนเรนเดอร์
 cb = 0.0
 hld = {}
 total_realized_profit = 0.0
 total_dividend = 0.0
 
 for idx, row in st.session_state.trade_ledger.iterrows():
-    action = row["Action"]
-    ticker = row["Ticker"] if pd.notna(row["Ticker"]) else ""
+    action = str(row["Action"]) if pd.notna(row["Action"]) else ""
+    ticker = str(row["Ticker"]) if pd.notna(row["Ticker"]) else ""
     price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
     shares = float(row["Shares"]) if pd.notna(row["Shares"]) else 0.0
     amt = float(row["Amount_USD"]) if pd.notna(row["Amount_USD"]) else 0.0
 
-    # ตรรกะสถานะเงินสด (นำเงินออกนอกประเทศ = เอาเงินเข้าพอร์ตโบรกเกอร์)
     if action == "นำเงินออกนอกประเทศ (Outward)": cb += amt
     elif action == "นำเงินเข้าประเทศไทย (Inward)": cb -= amt
     elif action == "รับเงินปันผล (Dividend)": 
@@ -256,15 +272,12 @@ for idx, row in st.session_state.trade_ledger.iterrows():
             if hld[ticker]["shares"] <= 0.0001: 
                 hld[ticker]["shares"], hld[ticker]["total_cost"] = 0, 0
     
-    # 🌟 อัปเดตคอลัมน์ Running Balance ทันที
     st.session_state.trade_ledger.at[idx, "Running_Balance"] = cb
 
 if st.session_state["logged_in"]:
     
-    # 🌟 หน้า 2: บัญชีและพอร์ตโฟลิโอ 
     with tab_port:
-        st.subheader("📝 สมุดบัญชีบันทึกประวัติการลงทุน (Transaction Ledger)")
-        st.markdown("บันทึกฝาก-ถอน และประวัติเทรด **ระบบจะคำนวณยอดเงินคงเหลือแบบบรรทัดต่อบรรทัดให้อัตโนมัติค่ะ**")
+        st.subheader("📝 สมุดบัญชี Cloud Ledger (บันทึกฐานข้อมูลถาวร)")
         
         edited_ledger = st.data_editor(
             st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
@@ -274,17 +287,21 @@ if st.session_state["logged_in"]:
                 "Ticker": st.column_config.TextColumn("ชื่อหุ้น"),
                 "Price": st.column_config.NumberColumn("ราคา ($)", format="%.4f"),
                 "Shares": st.column_config.NumberColumn("จำนวนหุ้น"),
-                "Amount_USD": st.column_config.NumberColumn("จำนวนเงินเข้า/ออก ($)", format="%.2f"),
-                # 🌟 โชว์ Running Balance แบบแก้ไขไม่ได้ เพื่อความชัวร์
+                "Amount_USD": st.column_config.NumberColumn("จำนวนเงิน ($)", format="%.2f"),
                 "Running_Balance": st.column_config.NumberColumn("ยอดเงินคงเหลือ ($)", disabled=True, format="%.2f"),
-                # ซ่อนคอลัมน์ของฝั่งภาษีไว้ในหน้านี้
-                "FX_Rate": None, "WHT_USD": None, "Ref_Doc": None
             }
         )
-        # ถ้ายูสเซอร์แก้ไขอะไร ให้เซฟกลับไป
         st.session_state.trade_ledger.update(edited_ledger)
 
-        # สรุปตารางพอร์ต
+        # 🌟 ปุ่มบันทึกข้อมูลถาวร (Cloud Sync)
+        if st.button("💾 บันทึกข้อมูลบัญชีลงฐานข้อมูล (Google Sheets)", type="primary", use_container_width=True):
+            with st.spinner("กำลังส่งข้อมูลไปยังฐานข้อมูล..."):
+                try:
+                    conn.update(worksheet="Ledger", data=st.session_state.trade_ledger)
+                    st.success("🎉 บันทึกสมุดบัญชีลง Google Sheets สำเร็จแล้ว! ปิดแอปได้เลยข้อมูลไม่หายแน่นอนค่ะ")
+                except Exception as e:
+                    st.error(f"เกิดข้อผิดพลาดในการบันทึก: {e}")
+
         port_summary, total_invested = [], 0.0
         for t, data in hld.items():
             if data["shares"] > 0:
@@ -301,7 +318,7 @@ if st.session_state["logged_in"]:
         
         if len(port_summary) > 0:
             current_port_df = pd.DataFrame(port_summary)
-            if st.button("🔄 ดึงราคาปัจจุบัน และ คำนวณกำไร/ขาดทุน", type="primary", use_container_width=True):
+            if st.button("🔄 ดึงราคาปัจจุบัน และ คำนวณกำไร/ขาดทุน"):
                 with st.spinner("กำลังดึงข้อมูลราคาล่าสุด..."):
                     current_prices = {}
                     for t in current_port_df["Ticker"]:
@@ -328,72 +345,64 @@ if st.session_state["logged_in"]:
                     p2.metric("ต้นทุนหุ้นทั้งหมด (Total Cost)", f"${total_invested:,.2f}")
                     p3.metric("กำไร/ขาดทุนรวม (Unrealized P/L)", f"${(total_v-total_invested):,.2f}", f"{((total_v-total_invested)/total_invested*100 if total_invested>0 else 0):.2f}%")
                     st.dataframe(pd.DataFrame(results), use_container_width=True)
-        else: st.info("พอร์ตว่างเปล่าค่ะ ลองบันทึกการ 'ซื้อหุ้น' ในสมุดบัญชีด้านบนดูนะคะ")
 
-    # 🌟 หน้า 3: คำนวณภาษี (ดึงข้อมูลอัตโนมัติจาก Tab 2)
     with tab_tax:
-        st.subheader("🧾 ระบบประเมินภาษีสรรพากร ภ.ง.ด. 90")
+        st.subheader("🧾 ระบบประเมินภาษีสรรพากร ภ.ง.ด. 90 (Cloud Sync)")
         st.info(f"💡 **สรุปรายได้ที่เกิดขึ้นจริง (Realized Income) จากพอร์ต:**\n- กำไรจากการขายหุ้น (Realized Gain): **${total_realized_profit:,.2f}**\n- เงินปันผลรับ (Dividend): **${total_dividend:,.2f}**")
         
         st.markdown("---")
-        st.markdown("### 📝 1. บันทึกรายการโอนเงินระหว่างประเทศและเอกสารหลักฐาน")
-        st.caption("ดึงข้อมูลการโอนเงินเข้า/ออกอัตโนมัติมาจากแท็บ 'บัญชีและพอร์ตโฟลิโอ' ค่ะ กรุณากรอกอัตราแลกเปลี่ยนและภาษี WHT ที่นี่")
+        st.markdown("### 📝 1. บันทึกประวัติการโอนเงิน (พร้อมบันทึกเครดิตภาษีต่างประเทศ)")
         
-        # กรองเฉพาะรายการที่เกี่ยวกับภาษี (Inward, Outward, Dividend)
-        tax_actions = ["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"]
-        tax_view = st.session_state.trade_ledger[st.session_state.trade_ledger['Action'].isin(tax_actions)].copy()
-        
-        edited_tax_view = st.data_editor(
-            tax_view, use_container_width=True,
+        edited_transfer = st.data_editor(
+            st.session_state.transfer_data, num_rows="dynamic", use_container_width=True,
             column_config={
-                "Date": st.column_config.DateColumn("วันที่โอน", disabled=True, format="DD/MM/YYYY"),
-                "Action": st.column_config.TextColumn("ประเภทรายการ", disabled=True),
-                "Amount_USD": st.column_config.NumberColumn("ยอดเงิน (USD)", disabled=True, format="$%.2f"),
-                "FX_Rate": st.column_config.NumberColumn("อัตราแลกเปลี่ยน (THB/USD)", format="%.4f"),
-                "WHT_USD": st.column_config.NumberColumn("ภาษีที่ถูกหัก ตปท. (WHT $)", format="$%.2f"),
-                "Ref_Doc": st.column_config.TextColumn("ชื่อไฟล์อ้างอิงแนบ"),
-                # ซ่อนคอลัมน์หุ้น
-                "Ticker": None, "Price": None, "Shares": None, "Running_Balance": None
+                "Date": st.column_config.DateColumn("วันที่โอน", format="DD/MM/YYYY"),
+                "Direction": st.column_config.SelectboxColumn("ประเภท", options=["โอนออก (Outward)", "นำเงินเข้า (Inward)"]),
+                "Category": st.column_config.SelectboxColumn("หมวดหมู่เงิน", options=["เงินลงทุน (Principal)", "ดึงเงินกลับ (Withdrawal)", "กำไร/ปันผล (Taxable)"]),
+                "Amount_USD": st.column_config.NumberColumn("ยอดเงินโอน (USD)", format="$%.2f"),
+                "WHT_USD": st.column_config.NumberColumn("ภาษีที่ถูกหัก ตปท. (WHT)", format="$%.2f"),
+                "FX_Rate": st.column_config.NumberColumn("อัตราแลกเปลี่ยน", format="%.4f"),
+                "Source": st.column_config.TextColumn("แหล่งที่มา/หมายเหตุ"),
+                "Country": st.column_config.TextColumn("ประเทศ"),
+                "Ref_Doc": st.column_config.TextColumn("ชื่อไฟล์อ้างอิงแนบ")
             }
         )
-        # ดันการอัปเดตเรื่อง FX Rate กลับเข้าฐานข้อมูลหลัก
-        st.session_state.trade_ledger.update(edited_tax_view)
-        
-        csv_data = edited_tax_view.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(label="📥 ดาวน์โหลดหลักฐานบัญชีโอนข้ามประเทศ (Excel/CSV)", data=csv_data, file_name="tax_transfer_record.csv", mime="text/csv", use_container_width=True)
-        
-        st.markdown("---")
-        st.markdown("### 📎 2. แนบเอกสารหลักฐานอ้างอิง (e-Tax / Bank Statement)")
-        uploaded_files = st.file_uploader("อัปโหลดไฟล์หลักฐาน (จะถูกแมปเข้ากับชื่ออ้างอิงในตารางอัตโนมัติ)", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
-        if uploaded_files: st.success(f"✅ สำเร็จ! รับรองไฟล์หลักฐานจำนวน {len(uploaded_files)} รายการ")
+        st.session_state.transfer_data = edited_transfer
+
+        if st.button("💾 บันทึกข้อมูลภาษีลงฐานข้อมูล (Google Sheets)", type="primary", use_container_width=True):
+            with st.spinner("กำลังส่งข้อมูลไปยังฐานข้อมูล..."):
+                try:
+                    conn.update(worksheet="Tax", data=st.session_state.transfer_data)
+                    st.success("🎉 บันทึกข้อมูลภาษีลง Google Sheets สำเร็จแล้ว!")
+                except Exception as e:
+                    st.error(f"เกิดข้อผิดพลาดในการบันทึก: {e}")
         
         total_out_thb, total_in_thb, foreign_tax_credit_thb = 0.0, 0.0, 0.0
-        for _, row in edited_tax_view.iterrows():
-            usd = row["Amount_USD"] if pd.notna(row["Amount_USD"]) else 0
-            wht = row["WHT_USD"] if pd.notna(row["WHT_USD"]) else 0
-            fx = row["FX_Rate"] if pd.notna(row["FX_Rate"]) else 0
+        for _, row in edited_transfer.iterrows():
+            usd = float(row["Amount_USD"]) if pd.notna(row["Amount_USD"]) else 0.0
+            wht = float(row["WHT_USD"]) if pd.notna(row["WHT_USD"]) else 0.0
+            fx = float(row["FX_Rate"]) if pd.notna(row["FX_Rate"]) else 0.0
             
             amt_thb = usd * fx
             wht_thb = wht * fx
             
-            if row["Action"] == "นำเงินออกนอกประเทศ (Outward)": total_out_thb += amt_thb
-            elif row["Action"] == "นำเงินเข้าประเทศไทย (Inward)": 
+            direction = str(row["Direction"])
+            if direction == "โอนออก (Outward)": total_out_thb += amt_thb
+            elif direction == "นำเงินเข้า (Inward)": 
                 total_in_thb += amt_thb
                 foreign_tax_credit_thb += wht_thb 
-            elif row["Action"] == "รับเงินปันผล (Dividend)":
-                foreign_tax_credit_thb += wht_thb
                 
         net_taxable_gain = max(0, total_in_thb - total_out_thb)
         
         st.markdown("---")
-        st.markdown("### 📊 3. แดชบอร์ดสถานะกระแสเงินสด (Cash Flow Offset)")
+        st.markdown("### 📊 2. แดชบอร์ดสถานะกระแสเงินสด (Cash Flow Offset)")
         cf1, cf2, cf3 = st.columns(3)
-        cf1.metric("📤 ยอดรวมโอนออก (เงินต้นส่งไปลงทุน)", f"฿{total_out_thb:,.2f}")
-        cf2.metric("📥 ยอดรวมโอนเข้าไทย (ดึงเงินกลับ)", f"฿{total_in_thb:,.2f}")
+        cf1.metric("📤 ยอดรวมโอนออก (เงินต้น)", f"฿{total_out_thb:,.2f}")
+        cf2.metric("📥 ยอดรวมโอนเข้าไทย", f"฿{total_in_thb:,.2f}")
         cf3.metric("🚨 กำไรสุทธิที่ประเมินภาษี", f"฿{net_taxable_gain:,.2f}", "หักล้างเงินต้นแล้ว", delta_color="inverse")
         
         st.markdown("---")
-        st.markdown("### 🧮 4. ประเมินภาระภาษีเพื่อยื่น ภ.ง.ด. 90 (คำนวณลดหย่อนอัตโนมัติ)")
+        st.markdown("### 🧮 3. ประเมินภาระภาษีเพื่อยื่น ภ.ง.ด. 90 (คำนวณลดหย่อนอัตโนมัติ)")
         
         c1, c2, c3 = st.columns(3)
         with c1: tax_year = st.selectbox("📅 เลือกปีภาษี (Tax Year)", ["2567 (2024)", "2568 (2025)", "2569 (2026)", "2570 (2027)"])
@@ -431,7 +440,7 @@ if st.session_state["logged_in"]:
 
         if st.button(f"📊 คำนวณภาษีสุทธิ ปี {tax_year}", type="primary", use_container_width=True):
             if "ไม่ถึง" in is_resident: st.success("🎉 คุณได้รับยกเว้นภาษี")
-            elif net_taxable_gain == 0: st.success("🎉 ยังไม่มีกำไรส่วนเกินจากยอดเงินต้น ไม่ต้องเสียภาษีเงินได้ ตปท. ค่ะ")
+            elif net_taxable_gain <= 0: st.success("🎉 ยังไม่มีกำไรส่วนเกินจากยอดเงินต้น ไม่ต้องเสียภาษีเงินได้ ตปท. ค่ะ")
             else:
                 net_income_without_foreign = max(0, other_income - total_deductions)
                 net_income_with_foreign = max(0, (other_income + net_taxable_gain) - total_deductions)
@@ -461,7 +470,6 @@ if st.session_state["logged_in"]:
                 r1.metric("ภาษีที่เกิดจากพอร์ต ตปท.", f"฿{additional_tax_raw:,.2f}")
                 r2.metric("🚨 ภาษีที่ต้องจ่ายเพิ่มจริง (หักเครดิตแล้ว)", f"฿{final_tax_to_pay:,.2f}")
 
-    # หน้า 4: กลยุทธ์
     with tab_strat:
         st.subheader("📚 คู่มือกลยุทธ์การลงทุน (Pro Strategy)")
         st.markdown("""### 1. กฎการเทรดแบบ Top-Down Analysis\n### 2. การจัดการความเสี่ยง (Risk Management)""")
