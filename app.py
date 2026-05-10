@@ -15,13 +15,20 @@ st.set_page_config(page_title="Strategic Portfolio Ecosystem 3.0 (Cloud Sync)", 
 # 🔐 การเชื่อมต่อฐานข้อมูลถาวร (Google Sheets Connection)
 # ==========================================
 try:
-    # ดึงข้อมูลรหัสผ่านและลิงก์ชีตจากตู้เซฟ (Secrets)
+    if "google_creds_json" not in st.secrets:
+        st.error("❌ หาตัวแปร 'google_creds_json' ในตู้เซฟไม่เจอค่ะ ลองเช็คการสะกดดูนะคะ")
+        st.stop()
+    if "spreadsheet_url" not in st.secrets:
+        st.error("❌ หาตัวแปร 'spreadsheet_url' ในตู้เซฟไม่เจอค่ะ")
+        st.stop()
+        
     creds_dict = json.loads(st.secrets["google_creds_json"])
     sheet_url = st.secrets["spreadsheet_url"]
     conn = st.connection("gsheets", type=GSheetsConnection, service_account=creds_dict, spreadsheet=sheet_url)
 except Exception as e:
-    st.error("⚠️ กำลังรอการตั้งค่าตู้เซฟ (Secrets) ให้สมบูรณ์ หรือรูปแบบโค้ดในตู้เซฟไม่ถูกต้องค่ะ")
+    st.error(f"⚠️ สาเหตุของปัญหาคือ: {e}")
     st.stop()
+
 
 # ฟังก์ชันดึงข้อมูลจากสมุดบัญชี (Ledger)
 def load_ledger_data():
