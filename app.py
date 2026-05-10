@@ -30,7 +30,7 @@ except Exception as e:
     st.error(f"⚠️ ไม่สามารถเชื่อมต่อฐานข้อมูลได้: {e}")
     st.stop()
 
-# ฟังก์ชันดึงข้อมูล (ปลอดภัย 100%)
+# ฟังก์ชันดึงข้อมูลบัญชีแบบปลอดภัย
 def load_ledger_data():
     try:
         ws = sh.worksheet("Ledger")
@@ -72,9 +72,10 @@ if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 tz_th = timezone(timedelta(hours=7))
+current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M")
 
-# --- ระบบคำนวณตัดสต๊อกแบบเจาะลึก ---
+# --- ระบบคำนวณตัดสต๊อกและยอดยกมา ---
 def calculate_stats(df_input):
     cb = 0.0
     stat = {"outward": 0.0, "inward": 0.0, "bought": 0.0, "sold": 0.0, "dividend": 0.0, "realized_profit": 0.0}
@@ -152,7 +153,7 @@ with st.sidebar:
             st.session_state["logged_in"] = False
             st.rerun()
 
-# --- ดึงข้อมูลวิเคราะห์แบบ Pro (ของเดิมกลับมาแล้ว!) ---
+# --- ดึงข้อมูลวิเคราะห์แบบ Pro ---
 @st.cache_data(ttl=300)
 def load_pro_data(ticker_symbol, tf):
     settings = {"1D (รายวัน)": {"period": "6mo", "interval": "1d"}, "1W (รายสัปดาห์)": {"period": "2y", "interval": "1wk"}, "1M (รายเดือน)": {"period": "5y", "interval": "1mo"}}
@@ -188,7 +189,6 @@ def load_pro_data(ticker_symbol, tf):
             fund["roe"] = f"{info.get('returnOnEquity', 0)*100:.2f}%"
         except: pass
         
-        # คำนวณ Harmonic Matrix
         last_p = df['Close'].iloc[-1]
         vol = df['Close'].pct_change().tail(14).std()
         trend = "ขึ้น 📈" if last_p > df['EMA_50'].iloc[-1] else "ลง 📉"
@@ -206,10 +206,12 @@ else:
     tab_dash, = st.tabs(["📊 วิเคราะห์กราฟ (Analysis)"])
 
 # ==========================================
-# หน้า 1: วิเคราะห์กราฟ (ชุดเต็ม)
+# 🌟 หน้า 1: วิเคราะห์กราฟ (ส่วนที่หายไปกลับมาแล้ว!)
 # ==========================================
 with tab_dash:
     st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
+    st.caption(f"📅 ข้อมูลวันที่: {current_date}")
+    
     if not df.empty:
         last_p = df['Close'].iloc[-1]
         rs_val = df['RS_vs_Market'].iloc[-1]
@@ -222,7 +224,6 @@ with tab_dash:
 
         col_left, col_right = st.columns([7, 3])
         with col_left:
-            # วาดกราฟ 3 ชั้น (Price, Vol, RSI) กลับมาแล้ว!
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.25, 0.25])
             fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['Trendline'], line=dict(color='rgba(255, 255, 255, 0.4)', dash='dot', width=2), name="Trend"), row=1, col=1)
@@ -262,10 +263,23 @@ with tab_dash:
                 if risk_per_share > 0:
                     shares = risk_amt / risk_per_share
                     st.success(f"🧮 **ซื้อได้:** {shares:.2f} หุ้น")
+            
+            # 🌟 ส่วนที่หายไป คืนชีพกลับมาแล้วค่ะ!
+            st.markdown("---")
+            st.subheader("💡 คำแนะนำภาพรวม")
+            if last_p > df['EMA_50'].iloc[-1]: 
+                st.success(f"**แนวโน้ม:** ขาขึ้น 📈\n\n**🟢 ซื้อ:** โซน {df['EMA_10'].iloc[-1]:.2f} - {df['EMA_20'].iloc[-1]:.2f}\n\n**🔴 ขาย:** {df['High'].tail(20).max():.2f} ขึ้นไป\n\n**🟡 ถือต่อ:** ยืนเหนือ {df['EMA_20'].iloc[-1]:.2f}")
+            else: 
+                st.error(f"**แนวโน้ม:** ขาลง 📉\n\nระวัง! กราฟอยู่ต่ำกว่าเส้นค่าเฉลี่ย 50 วัน ยังไม่แนะนำให้รับของค่ะ")
+            
+            st.markdown("---")
+            st.subheader("🚧 แนวรับ-ต้าน")
+            st.write(f"**แนวต้าน (Resistance):** {df['High'].tail(20).max():.2f}")
+            st.write(f"**แนวรับ (Support):** {df['EMA_50'].iloc[-1]:.2f}")
 
 if st.session_state["logged_in"]:
     # ==========================================
-    # หน้า 2: บัญชีและพอร์ตโฟลิโอ (ชุดเต็ม)
+    # หน้า 2: บัญชีและพอร์ตโฟลิโอ
     # ==========================================
     with tab_port:
         st.subheader("💼 แดชบอร์ดกระแสเงินสด (Cash Flow)")
@@ -277,7 +291,7 @@ if st.session_state["logged_in"]:
 
         st.markdown("---")
         st.subheader("📝 สมุดบัญชี Cloud Ledger")
-        st.caption("แก้ไข เพิ่ม ลบ ข้อมูลในตารางได้เลย เสร็จแล้ว **ต้องกดปุ่มบันทึกด้านล่าง** เพื่อคำนวณยอดยกมาใหม่นะคะ")
+        st.caption("แก้ไข เพิ่ม ลบ ข้อมูลในตารางได้เลย เสร็จแล้ว **ต้องกดปุ่มบันทึกด้านล่าง** เพื่ออัปเดตยอดค่ะ")
         
         edited_ledger = st.data_editor(
             st.session_state.trade_ledger, 
@@ -294,25 +308,21 @@ if st.session_state["logged_in"]:
                 "FX_Rate": None, "WHT_USD": None, "Ref_Doc": None
             }
         )
+        st.session_state.trade_ledger = edited_ledger
 
-        # แก้บั๊กลูปค้าง: ใช้ปุ่มกดสั่งบันทึกทีเดียว ไม่ให้มันโหลดตัวเองรัวๆ
-        if st.button("💾 บันทึกข้อมูลและอัปเดตยอด (Save & Recalculate)", type="primary", use_container_width=True):
+        if st.button("💾 บันทึกข้อมูลบัญชีและอัปเดตยอด", type="primary", use_container_width=True):
             with st.spinner("กำลังคำนวณและบันทึกลงคลาวด์..."):
-                st.session_state.trade_ledger = edited_ledger
-                # สั่งคำนวณ Running Balance ใหม่
                 cb, l_stat, r_bals, hlds = calculate_stats(st.session_state.trade_ledger)
                 st.session_state.trade_ledger["Running_Balance"] = r_bals
-                
                 try:
                     save_df_to_sheet("Ledger", st.session_state.trade_ledger)
                     st.success("🎉 บันทึกสำเร็จแล้ว!")
-                    st.rerun() # รีเฟรชจอ 1 ครั้งเพื่อโชว์ยอดใหม่
+                    st.rerun()
                 except Exception as e:
                     st.error(f"เกิดข้อผิดพลาด: {e}")
 
         st.markdown("---")
         st.subheader("💼 พอร์ตโฟลิโอปัจจุบัน (Current Holdings)")
-        
         port_summary, total_invested = [], 0.0
         for t, data in holdings.items():
             if data["shares"] > 0.001:
@@ -328,7 +338,7 @@ if st.session_state["logged_in"]:
                     for _, row in current_port_df.iterrows():
                         t, avg_cost, sh, t_cost = row["Ticker"], row["Cost_Price"], row["Shares"], row["Total_Cost"]
                         try: curr_p = yf.Ticker(t).history(period="1d")['Close'].iloc[-1]
-                        except: curr_p = avg_cost # ถ้าดึงไม่ได้ใช้ทุนเดิม
+                        except: curr_p = avg_cost
                         
                         val = curr_p * sh
                         profit = val - t_cost
@@ -349,7 +359,7 @@ if st.session_state["logged_in"]:
             st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ตค่ะ)")
 
     # ==========================================
-    # หน้า 3: ภาษีสรรพากร (ชุดเต็ม ภ.ง.ด. 90)
+    # หน้า 3: ภาษีสรรพากร
     # ==========================================
     with tab_tax:
         st.subheader("🧾 ระบบประเมินภาษีสรรพากร ภ.ง.ด. 90")
@@ -399,12 +409,11 @@ if st.session_state["logged_in"]:
         cf2.metric("📥 ยอดรวมโอนเข้าไทย", f"฿{total_in_thb:,.2f}")
         cf3.metric("🚨 กำไรสุทธิที่ประเมินภาษี", f"฿{net_taxable_gain:,.2f}", "หักล้างเงินต้นแล้ว", delta_color="inverse")
 
-        # --- ฟอร์มคำนวณภาษีของเดิม กลับมาแล้ว! ---
         st.markdown("---")
-        st.markdown("### 🧮 2. ประเมินภาระภาษีเพื่อยื่น ภ.ง.ด. 90 (คำนวณลดหย่อนอัตโนมัติ)")
+        st.markdown("### 🧮 2. ประเมินภาระภาษีเพื่อยื่น ภ.ง.ด. 90")
         
         c1, c2, c3 = st.columns(3)
-        with c1: tax_year = st.selectbox("📅 เลือกปีภาษี (Tax Year)", ["2567 (2024)", "2568 (2025)", "2569 (2026)", "2570 (2027)"])
+        with c1: tax_year = st.selectbox("📅 เลือกปีภาษี", ["2567 (2024)", "2568 (2025)", "2569 (2026)", "2570 (2027)"])
         with c2: is_resident = st.radio("อาศัยอยู่ในไทยเกิน 180 วัน หรือไม่?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
         with c3: other_income = st.number_input("รายได้ประจำอื่นๆ ต่อปี (บาท)", min_value=0.0, value=500000.0, step=50000.0)
 
@@ -416,7 +425,7 @@ if st.session_state["logged_in"]:
             spouse_deduction = col_d1.checkbox("มีคู่สมรส (ไม่มีรายได้) - ลดหย่อน 60,000 บาท")
             children_count = col_d2.number_input("จำนวนบุตร (คนละ 30,000 บาท)", min_value=0, step=1)
             
-            st.markdown("**ประกันและการลงทุน (กลุ่มเกษียณรวมกันไม่เกิน 500,000 บาท)**")
+            st.markdown("**ประกันและการลงทุน**")
             c_inv1, c_inv2, c_inv3 = st.columns(3)
             life_ins = c_inv1.number_input("เบี้ยประกันชีวิต", min_value=0.0, step=5000.0)
             health_ins = c_inv2.number_input("เบี้ยประกันสุขภาพ", min_value=0.0, step=5000.0)
