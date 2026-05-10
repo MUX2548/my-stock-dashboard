@@ -17,10 +17,8 @@ st.set_page_config(page_title="Strategic Portfolio Ecosystem 3.0 (Cloud Sync)", 
 # ==========================================
 @st.cache_resource
 def init_connection():
-    # โหลดกุญแจจากตู้เซฟ
     creds_dict = json.loads(st.secrets["google_creds_json"])
     sheet_url = st.secrets["spreadsheet_url"]
-    # ขออนุญาตเข้าถึงชีต
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -69,7 +67,7 @@ def save_df_to_sheet(worksheet_name, df):
     ws.clear()
     clean_df = df.copy()
     if "Date" in clean_df.columns:
-        clean_df["Date"] = pd.to_datetime(clean_df["Date"]).dt.strftime("%d/%m/%Y")
+        clean_df["Date"] = pd.to_datetime(clean_df["Date"], errors='coerce').dt.strftime("%d/%m/%Y")
     clean_df = clean_df.fillna("")
     data_list = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
     ws.update(values=data_list, range_name='A1')
@@ -258,7 +256,7 @@ with tab_dash:
                 st.error(f"**แนวโน้ม:** ขาลง 📉")
 
 # ==========================================
-# พื้นที่เฉพาะ Owner (บัญชี และ ภาษี Cloud Sync)
+# 🌟 พื้นที่เฉพาะ Owner (บัญชี และ ภาษี Cloud Sync)
 # ==========================================
 
 cb = 0.0
@@ -266,12 +264,17 @@ hld = {}
 total_realized_profit = 0.0
 total_dividend = 0.0
 
+# 🌟 ซ่อมสูตร: ป้องกัน Error เวลามีค่าว่าง (None) จากการสร้างแถวใหม่
 for idx, row in st.session_state.trade_ledger.iterrows():
     action = str(row["Action"]) if pd.notna(row["Action"]) else ""
     ticker = str(row["Ticker"]) if pd.notna(row["Ticker"]) else ""
-    price = float(row["Price"]) if pd.notna(row["Price"]) and str(row["Price"])!="" else 0.0
-    shares = float(row["Shares"]) if pd.notna(row["Shares"]) and str(row["Shares"])!="" else 0.0
-    amt = float(row["Amount_USD"]) if pd.notna(row["Amount_USD"]) and str(row["Amount_USD"])!="" else 0.0
+    
+    try: price = float(row["Price"]) if pd.notna(row["Price"]) and str(row["Price"]).strip()!="" else 0.0
+    except: price = 0.0
+    try: shares = float(row["Shares"]) if pd.notna(row["Shares"]) and str(row["Shares"]).strip()!="" else 0.0
+    except: shares = 0.0
+    try: amt = float(row["Amount_USD"]) if pd.notna(row["Amount_USD"]) and str(row["Amount_USD"]).strip()!="" else 0.0
+    except: amt = 0.0
 
     if action == "นำเงินออกนอกประเทศ (Outward)": cb += amt
     elif action == "นำเงินเข้าประเทศไทย (Inward)": cb -= amt
@@ -296,6 +299,7 @@ for idx, row in st.session_state.trade_ledger.iterrows():
             if hld[ticker]["shares"] <= 0.0001: 
                 hld[ticker]["shares"], hld[ticker]["total_cost"] = 0, 0
     
+    # คำนวณบรรทัดต่อบรรทัด
     st.session_state.trade_ledger.at[idx, "Running_Balance"] = cb
 
 if st.session_state["logged_in"]:
@@ -315,7 +319,11 @@ if st.session_state["logged_in"]:
                 "Running_Balance": st.column_config.NumberColumn("ยอดเงินคงเหลือ ($)", disabled=True, format="%.2f"),
             }
         )
-        st.session_state.trade_ledger.update(edited_ledger)
+        
+        # 🌟 นี่คือจุดที่แก้ไขให้ระบบ "รับรู้" ทันทีเวลามีการกดเพิ่มแถวใหม่!
+        if not edited_ledger.equals(st.session_state.trade_ledger):
+            st.session_state.trade_ledger = edited_ledger
+            st.rerun()
 
         if st.button("💾 บันทึกข้อมูลบัญชีลงฐานข้อมูล (Google Sheets)", type="primary", use_container_width=True):
             with st.spinner("กำลังส่งข้อมูลไปยังฐานข้อมูล... (ใช้เวลาสักครู่)"):
@@ -390,7 +398,11 @@ if st.session_state["logged_in"]:
                 "Ref_Doc": st.column_config.TextColumn("ชื่อไฟล์อ้างอิงแนบ")
             }
         )
-        st.session_state.transfer_data = edited_transfer
+
+        # 🌟 นี่คือจุดที่แก้ไขให้หน้าภาษีรับค่าแถวใหม่เช่นกัน
+        if not edited_transfer.equals(st.session_state.transfer_data):
+            st.session_state.transfer_data = edited_transfer
+            st.rerun()
 
         if st.button("💾 บันทึกข้อมูลภาษีลงฐานข้อมูล (Google Sheets)", type="primary", use_container_width=True):
             with st.spinner("กำลังส่งข้อมูลไปยังฐานข้อมูล... (ใช้เวลาสักครู่)"):
@@ -401,10 +413,13 @@ if st.session_state["logged_in"]:
                     st.error(f"เกิดข้อผิดพลาดในการบันทึก: {e}")
         
         total_out_thb, total_in_thb, foreign_tax_credit_thb = 0.0, 0.0, 0.0
-        for _, row in edited_transfer.iterrows():
-            usd = float(row["Amount_USD"]) if pd.notna(row["Amount_USD"]) and str(row["Amount_USD"])!="" else 0.0
-            wht = float(row["WHT_USD"]) if pd.notna(row["WHT_USD"]) and str(row["WHT_USD"])!="" else 0.0
-            fx = float(row["FX_Rate"]) if pd.notna(row["FX_Rate"]) and str(row["FX_Rate"])!="" else 0.0
+        for _, row in st.session_state.transfer_data.iterrows():
+            try: usd = float(row["Amount_USD"]) if pd.notna(row["Amount_USD"]) and str(row["Amount_USD"]).strip()!="" else 0.0
+            except: usd = 0.0
+            try: wht = float(row["WHT_USD"]) if pd.notna(row["WHT_USD"]) and str(row["WHT_USD"]).strip()!="" else 0.0
+            except: wht = 0.0
+            try: fx = float(row["FX_Rate"]) if pd.notna(row["FX_Rate"]) and str(row["FX_Rate"]).strip()!="" else 0.0
+            except: fx = 0.0
             
             amt_thb = usd * fx
             wht_thb = wht * fx
@@ -425,7 +440,7 @@ if st.session_state["logged_in"]:
         cf3.metric("🚨 กำไรสุทธิที่ประเมินภาษี", f"฿{net_taxable_gain:,.2f}", "หักล้างเงินต้นแล้ว", delta_color="inverse")
         
         st.markdown("---")
-        st.markdown("### 🧮 3. ประเมินภาระภาษีเพื่อยื่น ภ.ง.ด. 90")
+        st.markdown("### 🧮 3. ประเมินภาระภาษีเพื่อยื่น ภ.ง.ด. 90 (คำนวณลดหย่อนอัตโนมัติ)")
         
         c1, c2, c3 = st.columns(3)
         with c1: tax_year = st.selectbox("📅 เลือกปีภาษี (Tax Year)", ["2567 (2024)", "2568 (2025)", "2569 (2026)", "2570 (2027)"])
