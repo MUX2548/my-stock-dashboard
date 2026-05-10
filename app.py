@@ -30,16 +30,13 @@ except Exception as e:
     st.error(f"⚠️ ไม่สามารถเชื่อมต่อฐานข้อมูลได้: {e}")
     st.stop()
 
+# 🛡️ เกราะป้องกันที่ 1: จัดการข้อมูลว่างตอนโหลด
 def clean_df_types(df):
     df_clean = df.copy()
     num_cols = ["Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD"]
-    str_cols = ["Date", "Action", "Ticker", "Ref_Doc"]
     for col in num_cols:
         if col in df_clean.columns:
             df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce').fillna(0.0)
-    for col in str_cols:
-        if col in df_clean.columns:
-            df_clean[col] = df_clean[col].astype(str).replace(["None", "nan", "<NA>"], "")
     return df_clean
 
 def load_ledger_data():
@@ -68,6 +65,7 @@ def save_df_to_sheet(worksheet_name, df):
     ws = sh.worksheet(worksheet_name)
     ws.clear()
     clean_df = clean_df_types(df)
+    clean_df = clean_df.fillna("")
     data_list = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
     ws.update(values=data_list, range_name='A1')
 
@@ -77,6 +75,12 @@ if "trade_ledger" not in st.session_state:
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
+# 🛡️ เกราะป้องกันที่ 2: บังคับข้อความให้เป็นข้อความ
+def safe_str(val):
+    if pd.isna(val) or val is None: return ""
+    res = str(val).strip().replace("None", "").replace("nan", "").replace("<NA>", "")
+    return res
+
 def calculate_stats(df_input):
     df = clean_df_types(df_input)
     cb = 0.0
@@ -84,19 +88,23 @@ def calculate_stats(df_input):
     r_bals, hld = [], {}
     
     for idx, row in df.iterrows():
-        action = row.get("Action", "").strip()
-        ticker = row.get("Ticker", "").strip().upper()
-        p, s, a = row.get("Price", 0.0), row.get("Shares", 0.0), row.get("Amount_USD", 0.0)
+        # ตรงนี้แหละค่ะที่แก้ Error!
+        action = safe_str(row.get("Action"))
+        ticker = safe_str(row.get("Ticker")).upper()
+        
+        p = float(row.get("Price", 0.0)) if not pd.isna(row.get("Price")) else 0.0
+        s = float(row.get("Shares", 0.0)) if not pd.isna(row.get("Shares")) else 0.0
+        a = float(row.get("Amount_USD", 0.0)) if not pd.isna(row.get("Amount_USD")) else 0.0
         val = p * s
         
         if action == "นำเงินออกนอกประเทศ (Outward)": cb += a; stat["outward"] += a
         elif action == "นำเงินเข้าประเทศไทย (Inward)": cb -= a; stat["inward"] += a
         elif action == "รับเงินปันผล (Dividend)": cb += a; stat["dividend"] += a
-        elif action == "ซื้อหุ้น (Buy)" and ticker:
+        elif action == "ซื้อหุ้น (Buy)" and ticker != "":
             cb -= val; stat["bought"] += val
             if ticker not in hld: hld[ticker] = {"shares": 0.0, "total_cost": 0.0}
             hld[ticker]["shares"] += s; hld[ticker]["total_cost"] += val
-        elif action == "ขายหุ้น (Sell)" and ticker:
+        elif action == "ขายหุ้น (Sell)" and ticker != "":
             cb += val; stat["sold"] += val
             if ticker in hld and hld[ticker]["shares"] > 0:
                 avg = hld[ticker]["total_cost"] / hld[ticker]["shares"]
@@ -106,7 +114,7 @@ def calculate_stats(df_input):
     return cb, stat, r_bals, hld
 
 # ==========================================
-# 🌟 Sidebar (Public Tools)
+# 🌟 Sidebar
 # ==========================================
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
@@ -133,7 +141,7 @@ with st.sidebar:
             st.session_state["logged_in"] = False
             st.rerun()
 
-# --- ดึงข้อมูลวิเคราะห์ (เพิ่มระบบดักจับจอดำ) ---
+# --- ดึงข้อมูลวิเคราะห์ ---
 @st.cache_data(ttl=300)
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
@@ -248,8 +256,7 @@ with tab_list[0]:
             st.write(f"**ต้าน:** {df['High'].tail(20).max():.2f}")
             st.write(f"**รับ:** {df['E50'].iloc[-1]:.2f}")
     else:
-        # 🌟 นี่คือส่วนที่ถูกเพิ่มเข้ามา เพื่อไม่ให้หน้าจอว่างเปล่าแบบงงๆ ค่ะ!
-        st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ\n\n**สาเหตุที่เป็นไปได้:**\n1. พิมพ์ชื่อหุ้นผิด หรือไม่มีหุ้นนี้ในระบบ (ลองเปลี่ยนเป็น AAPL, TSLA หรือหุ้นไทยต้องเติม .BK เช่น PTT.BK)\n2. ระบบข้อมูลจาก Yahoo Finance กำลังขัดข้องชั่วคราว หรือถูกจำกัดการดึงข้อมูลถี่เกินไป\n\n💡 **วิธีแก้:** ลองเปลี่ยนชื่อหุ้นที่เมนูด้านซ้าย หรือรอสักพัก (ประมาณ 2-3 นาที) แล้วกดรีเฟรชหน้าเว็บอีกครั้งค่ะ")
+        st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ\n\n💡 **วิธีแก้:** ลองเปลี่ยนชื่อหุ้นที่เมนูด้านซ้าย หรือรอสักพัก (ประมาณ 2-3 นาที) แล้วกดรีเฟรชหน้าเว็บอีกครั้งค่ะ")
 
 if st.session_state["logged_in"]:
     cb, l_stat, r_bals, holdings = calculate_stats(st.session_state.trade_ledger)
@@ -333,6 +340,10 @@ if st.session_state["logged_in"]:
         
         tax_v["Out_USD"] = np.where(tax_v["Action"] == "นำเงินออกนอกประเทศ (Outward)", tax_v["Amount_USD"], 0.0)
         tax_v["In_USD"] = np.where(tax_v["Action"].isin(["นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"]), tax_v["Amount_USD"], 0.0)
+        
+        tax_v["FX_Rate"] = pd.to_numeric(tax_v["FX_Rate"], errors='coerce').fillna(0.0)
+        tax_v["WHT_USD"] = pd.to_numeric(tax_v["WHT_USD"], errors='coerce').fillna(0.0)
+        
         tax_v["Out_THB"] = tax_v["Out_USD"] * tax_v["FX_Rate"]
         tax_v["In_THB"] = tax_v["In_USD"] * tax_v["FX_Rate"]
         
@@ -349,7 +360,6 @@ if st.session_state["logged_in"]:
                            "WHT_USD": st.column_config.NumberColumn("ภาษีหัก ตปท. ($)", format="%.2f"), "Balance_THB": st.column_config.NumberColumn("เงินต้นคงเหลือ (฿)", disabled=True), "Ref_Doc": "หมายเหตุ"})
         
         if not ed_t[["FX_Rate", "WHT_USD", "Ref_Doc"]].equals(tax_v[["FX_Rate", "WHT_USD", "Ref_Doc"]]):
-            ed_t = clean_df_types(ed_t)
             st.session_state.trade_ledger.loc[tax_idx, "FX_Rate"] = ed_t["FX_Rate"].values
             st.session_state.trade_ledger.loc[tax_idx, "WHT_USD"] = ed_t["WHT_USD"].values
             st.session_state.trade_ledger.loc[tax_idx, "Ref_Doc"] = ed_t["Ref_Doc"].values
