@@ -28,14 +28,13 @@ if "trade_ledger" not in st.session_state:
         "Amount": [10000.0, 0.0]
     })
 
-# 🌟 ปรับปรุงตารางภาษี เพิ่มคอลัมน์ "ภาษีที่หักต่างประเทศ (WHT)" เพื่อใช้ทำ Foreign Tax Credit
 if "transfer_data" not in st.session_state or "WHT_USD" not in st.session_state.transfer_data.columns:
     st.session_state.transfer_data = pd.DataFrame({
         "Date": [datetime.now().date(), datetime.now().date()],
         "Direction": ["โอนออก (Outward)", "นำเงินเข้า (Inward)"],
         "Category": ["เงินลงทุน (Principal)", "กำไร/ปันผล (Taxable)"],
         "Amount_USD": [5000.0, 1000.0],
-        "WHT_USD": [0.0, 150.0], # ภาษีที่โดนหัก ณ ที่จ่ายใน ตปท.
+        "WHT_USD": [0.0, 150.0], 
         "FX_Rate": [35.00, 36.50],
         "Source": ["ออมทรัพย์", "ปันผลหุ้น NVTS"],
         "Country": ["ไทย (TH)", "สหรัฐอเมริกา (USA)"],
@@ -144,6 +143,10 @@ else:
 # หน้า 1: วิเคราะห์หลัก (Dashboard)
 # ==========================================
 with tab_dash:
+    # 🌟 [กู้คืน] นำป้ายชื่อหุ้นแบบตะโกนกลับมาแล้วค่ะ!
+    st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
+    st.caption(f"📅 ข้อมูลวันที่: {current_date}")
+
     if not df.empty:
         last_p = df['Close'].iloc[-1]
         rs_val = df['RS_vs_Market'].iloc[-1]
@@ -191,7 +194,7 @@ with tab_dash:
         with col_right:
             prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - prev_p:.2f}")
-            st.caption(f"🕒 อัปเดต: {df.index[-1].strftime('%d/%m/%Y')} | {current_time} น.")
+            st.caption(f"🕒 อัปเดตล่าสุด: {df.index[-1].strftime('%d/%m/%Y')} | {current_time} น.")
             
             if st.session_state["logged_in"] and buy_price > 0:
                 pl = ((last_p - buy_price) / buy_price) * 100
@@ -210,13 +213,19 @@ with tab_dash:
             
             st.markdown("---")
             st.subheader("💡 คำแนะนำภาพรวม")
-            if last_p > df['EMA_50'].iloc[-1]: st.success(f"**แนวโน้ม:** ขาขึ้น 📈\n\n**ซื้อ:** {df['EMA_10'].iloc[-1]:.2f} - {df['EMA_20'].iloc[-1]:.2f}\n\n**ขาย:** {df['High'].tail(20).max():.2f}")
-            else: st.error(f"**แนวโน้ม:** ขาลง 📉\n\nระวัง! ไม่แนะนำให้รับของ")
+            # 🌟 [กู้คืน] คำแนะนำ "🟡 ถือต่อ" นำกลับมาครบถ้วนแล้วค่ะ
+            if last_p > df['EMA_50'].iloc[-1]: 
+                st.success(f"**แนวโน้ม:** ขาขึ้น 📈\n\n**🟢 ซื้อ:** โซน {df['EMA_10'].iloc[-1]:.2f} - {df['EMA_20'].iloc[-1]:.2f}\n\n**🔴 ขาย:** {df['High'].tail(20).max():.2f} ขึ้นไป\n\n**🟡 ถือต่อ:** ยืนเหนือ {df['EMA_20'].iloc[-1]:.2f}")
+            else: 
+                st.error(f"**แนวโน้ม:** ขาลง 📉\n\nระวัง! ไม่แนะนำให้รับของ")
             
             st.markdown("---")
             st.subheader("🚧 แนวรับ-ต้าน")
             st.write(f"**ต้าน:** {df['High'].tail(20).max():.2f}")
             st.write(f"**รับ:** {df['EMA_50'].iloc[-1]:.2f}")
+
+    else:
+        st.warning("ไม่พบข้อมูล กรุณาลองหุ้นตัวอื่นค่ะ")
 
 # ==========================================
 # พื้นที่เฉพาะ Owner (บัญชี และ ภาษี)
@@ -238,7 +247,7 @@ if st.session_state["logged_in"]:
                 "Ticker": st.column_config.TextColumn("ชื่อหุ้น (ถ้ามี)"),
                 "Price": st.column_config.NumberColumn("ราคาต่อหุ้น ($)", format="%.2f"),
                 "Shares": st.column_config.NumberColumn("จำนวนหุ้น"),
-                "Amount": st.column_config.NumberColumn("จำนวนเงิน ($)", format="%.2f")
+                "Amount": st.column_config.NumberColumn("จำนวนเงิน ($) *ฝาก/ถอน/ปันผล*", format="%.2f")
             }
         )
         st.session_state.trade_ledger = edited_ledger
@@ -320,8 +329,7 @@ if st.session_state["logged_in"]:
                     st.dataframe(pd.DataFrame(results), use_container_width=True)
         else: st.info("พอร์ตว่างเปล่าค่ะ ลองบันทึกการ 'ซื้อหุ้น' ในสมุดบัญชีด้านบนดูนะคะ")
 
-
-    # 🌟 หน้า 3: คำนวณภาษี (อัปเกรดแบบยื่นแบบ ภ.ง.ด. 90 ได้เป๊ะๆ)
+    # 🌟 หน้า 3: คำนวณภาษี (แบบยื่นแบบ ภ.ง.ด. 90)
     with tab_tax:
         st.subheader("🧾 ระบบประเมินภาษีสรรพากร แบบสมบูรณ์")
         
@@ -329,7 +337,6 @@ if st.session_state["logged_in"]:
         
         st.markdown("---")
         st.markdown("### 📝 1. บันทึกประวัติการโอนเงิน (พร้อมบันทึกเครดิตภาษีต่างประเทศ)")
-        st.caption("หากเป็นเงินปันผลที่โดนหักภาษี ณ ที่จ่ายจากอเมริกา ให้กรอกจำนวนภาษีที่โดนหักในช่อง 'ภาษีที่ถูกหัก (WHT)' เพื่อนำไปใช้ลดหย่อนภาษีในไทยตามอนุสัญญาภาษีซ้อน (DTA) ค่ะ")
         
         edited_transfer = st.data_editor(
             st.session_state.transfer_data, num_rows="dynamic", use_container_width=True,
@@ -355,7 +362,6 @@ if st.session_state["logged_in"]:
         uploaded_files = st.file_uploader("อัปโหลดไฟล์หลักฐาน (จะถูกแมปเข้ากับชื่ออ้างอิงในตารางอัตโนมัติ)", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
         if uploaded_files: st.success(f"✅ สำเร็จ! รับรองไฟล์หลักฐานจำนวน {len(uploaded_files)} รายการ")
         
-        # คำนวณกระแสเงินสดและเครดิตภาษี
         total_out_thb, total_in_thb, foreign_tax_credit_thb = 0.0, 0.0, 0.0
         for _, row in edited_transfer.iterrows():
             usd = row["Amount_USD"] if pd.notna(row["Amount_USD"]) else 0
@@ -368,7 +374,7 @@ if st.session_state["logged_in"]:
             if row["Direction"] == "โอนออก (Outward)": total_out_thb += amt_thb
             elif row["Direction"] == "นำเงินเข้า (Inward)": 
                 total_in_thb += amt_thb
-                foreign_tax_credit_thb += wht_thb # รวมเครดิตภาษีต่างประเทศ
+                foreign_tax_credit_thb += wht_thb 
                 
         net_taxable_gain = max(0, total_in_thb - total_out_thb)
         
@@ -385,13 +391,12 @@ if st.session_state["logged_in"]:
         c1, c2, c3 = st.columns(3)
         with c1: is_resident = st.radio("คุณอาศัยอยู่ในไทยเกิน 180 วัน หรือไม่?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
         with c2: other_income = st.number_input("รายได้ประจำอื่นๆ ต่อปี (บาท)", min_value=0.0, value=500000.0, step=50000.0)
-        with c3: deductions = st.number_input("รวมค่าลดหย่อนส่วนบุคคล (บาท)", min_value=0.0, value=160000.0, step=10000.0, help="เช่น ลดหย่อนส่วนตัว 60k, ประกันชีวิต, PVD, SSF, RMF")
+        with c3: deductions = st.number_input("รวมค่าลดหย่อนส่วนบุคคล (บาท)", min_value=0.0, value=160000.0, step=10000.0)
 
         if st.button("📊 คำนวณภาษีสุทธิที่ต้องจ่ายจริง", type="primary", use_container_width=True):
             if "ไม่ถึง" in is_resident: st.success("🎉 คุณได้รับยกเว้นภาษี")
             elif net_taxable_gain == 0: st.success("🎉 ยังไม่มีกำไรส่วนเกินจากยอดเงินต้นที่ต้องนำมาคิดภาษีค่ะ")
             else:
-                # การคำนวณรายได้สุทธิเพื่อเสียภาษี (Net Taxable Income)
                 net_income_without_foreign = max(0, other_income - deductions)
                 net_income_with_foreign = max(0, (other_income + net_taxable_gain) - deductions)
                 
@@ -409,7 +414,6 @@ if st.session_state["logged_in"]:
                 tax_without = calculate_tax(net_income_without_foreign)
                 tax_with = calculate_tax(net_income_with_foreign)
                 
-                # ภาษีที่ต้องจ่ายเพิ่มจากพอร์ตต่างประเทศ หักด้วย เครดิตภาษีต่างประเทศ
                 additional_tax_raw = tax_with - tax_without
                 final_tax_to_pay = max(0, additional_tax_raw - foreign_tax_credit_thb)
                 
@@ -420,7 +424,6 @@ if st.session_state["logged_in"]:
                 r1, r2 = st.columns(2)
                 r1.metric("ภาษีที่คำนวณได้จากพอร์ต ตปท.", f"฿{additional_tax_raw:,.2f}")
                 r2.metric("🚨 ภาษีที่ต้องจ่ายเพิ่มจริง (หักเครดิตแล้ว)", f"฿{final_tax_to_pay:,.2f}")
-                st.success("📝 **สรุป:** โปรแกรมนี้ได้นำค่าลดหย่อนส่วนบุคคล และเครดิตภาษีต่างประเทศมาคำนวณให้แล้ว คุณสามารถนำตัวเลขเหล่านี้ไปประกอบการยื่นแบบ ภ.ง.ด.90 ได้เลยค่ะ")
 
     # หน้า 4: กลยุทธ์
     with tab_strat:
