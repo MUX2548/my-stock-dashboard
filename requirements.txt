@@ -2,5 +2,5 @@ streamlit
 yfinance
 plotly
 pandas
-curl_cffi
-lxml
+numpy
+st-gsheets-connection
