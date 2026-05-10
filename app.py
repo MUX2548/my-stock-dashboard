@@ -30,44 +30,36 @@ except Exception as e:
     st.error(f"⚠️ ไม่สามารถเชื่อมต่อฐานข้อมูลได้: {e}")
     st.stop()
 
-# ฟังก์ชันดึงข้อมูลจากสมุดบัญชี (ป้องกัน None)
+# ฟังก์ชันดึงข้อมูล (ปลอดภัย 100%)
 def load_ledger_data():
     try:
         ws = sh.worksheet("Ledger")
         records = ws.get_all_records()
-        if not records:
-            return pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
-        df = pd.DataFrame(records)
-        df.replace("", np.nan, inplace=True)
-        df.dropna(how="all", inplace=True)
-        df.fillna("", inplace=True)
+        df = pd.DataFrame(records) if records else pd.DataFrame()
     except:
         df = pd.DataFrame()
 
-    required_cols = ["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"]
-    for col in required_cols:
+    req_cols = ["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"]
+    for col in req_cols:
         if col not in df.columns: df[col] = ""
 
-    # บังคับรูปแบบคอลัมน์
     for col in ["Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD"]:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
     for col in ["Action", "Ticker", "Ref_Doc"]:
         df[col] = df[col].astype(str).replace("None", "").replace("nan", "")
+    
     if not df.empty and "Date" in df.columns:
         df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.strftime("%d/%m/%Y").replace("NaT", "")
     
-    return df[required_cols]
+    return df[req_cols]
 
-# ฟังก์ชันบันทึกข้อมูล
 def save_df_to_sheet(worksheet_name, df):
     ws = sh.worksheet(worksheet_name)
     ws.clear()
-    clean_df = df.copy()
-    clean_df = clean_df.fillna("")
+    clean_df = df.copy().fillna("")
     data_list = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
     ws.update(values=data_list, range_name='A1')
 
-# โหลดข้อมูลเริ่มต้น
 if "trade_ledger" not in st.session_state:
     st.session_state.trade_ledger = load_ledger_data()
 
@@ -75,10 +67,8 @@ if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 tz_th = timezone(timedelta(hours=7))
-current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
-current_time = datetime.now(tz_th).strftime("%H:%M")
 
-# --- แถบเมนูด้านซ้าย (Sidebar) ---
+# --- Sidebar ---
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
     ticker = st.text_input("🔎 ชื่อหุ้น / ดัชนี", value="NVTS").upper()
@@ -102,7 +92,7 @@ with st.sidebar:
             st.session_state["logged_in"] = False
             st.rerun()
 
-# --- ฟังก์ชันดึงข้อมูลหุ้น ---
+# --- Fetch Data ---
 @st.cache_data(ttl=300)
 def load_pro_data(ticker_symbol, tf):
     settings = {"1D (รายวัน)": {"period": "6mo", "interval": "1d"}, "1W (รายสัปดาห์)": {"period": "2y", "interval": "1wk"}, "1M (รายเดือน)": {"period": "5y", "interval": "1mo"}}
@@ -118,27 +108,22 @@ def load_pro_data(ticker_symbol, tf):
 
 df = load_pro_data(ticker, tf_option)
 
-# ==========================================
-# 🌟 เครื่องยนต์คำนวณบัญชี (ตัดสต๊อก Real-time)
-# ==========================================
-def recalculate_ledger(df_input):
-    df = df_input.copy()
-    for col in ["Price", "Shares", "Amount_USD", "FX_Rate", "WHT_USD"]:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-    
+# --- ระบบคำนวณตัดสต๊อกและยอดยกมา ---
+def calculate_stats(df_input):
     cb = 0.0
-    stat = {"outward": 0.0, "inward": 0.0, "bought": 0.0, "sold": 0.0, "dividend": 0.0, "realized_profit": 0.0}
-    hld = {}
-
-    for idx, row in df.iterrows():
+    stat = {"outward": 0.0, "inward": 0.0, "bought": 0.0, "sold": 0.0, "dividend": 0.0}
+    r_bals = []
+    
+    for idx, row in df_input.iterrows():
         action = str(row.get("Action", "")).strip()
-        ticker = str(row.get("Ticker", "")).strip().replace("None", "")
-        price = float(row.get("Price", 0.0))
-        shares = float(row.get("Shares", 0.0))
-        amt = float(row.get("Amount_USD", 0.0))
+        try: price = float(row.get("Price", 0.0))
+        except: price = 0.0
+        try: shares = float(row.get("Shares", 0.0))
+        except: shares = 0.0
+        try: amt = float(row.get("Amount_USD", 0.0))
+        except: amt = 0.0
 
         trade_val = price * shares
-
         if action == "นำเงินออกนอกประเทศ (Outward)":
             cb += amt
             stat["outward"] += amt
@@ -148,34 +133,21 @@ def recalculate_ledger(df_input):
         elif action == "รับเงินปันผล (Dividend)": 
             cb += amt
             stat["dividend"] += amt
-        elif action == "ซื้อหุ้น (Buy)" and ticker:
+        elif action == "ซื้อหุ้น (Buy)":
             cb -= trade_val
             stat["bought"] += trade_val
-            if ticker not in hld: hld[ticker] = {"shares": 0.0, "total_cost": 0.0}
-            hld[ticker]["shares"] += shares
-            hld[ticker]["total_cost"] += trade_val
-        elif action == "ขายหุ้น (Sell)" and ticker:
+        elif action == "ขายหุ้น (Sell)":
             cb += trade_val
             stat["sold"] += trade_val
-            if ticker in hld and hld[ticker]["shares"] > 0:
-                avg_cost = hld[ticker]["total_cost"] / hld[ticker]["shares"]
-                profit = trade_val - (avg_cost * shares)
-                stat["realized_profit"] += profit
-                hld[ticker]["shares"] -= shares
-                hld[ticker]["total_cost"] -= (avg_cost * shares)
-        
-        # บันทึกยอดยกมาลงใน DataFrame ทันที
-        df.at[idx, "Running_Balance"] = cb
-        df.at[idx, "Ticker"] = ticker # แก้ None ให้เป็นค่าว่าง
+            
+        r_bals.append(cb)
+    return cb, stat, r_bals
 
-    return df, cb, stat, hld
+# คำนวณก่อนวาดหน้าจอ
+cash_balance, ledger_stat, running_bals = calculate_stats(st.session_state.trade_ledger)
+st.session_state.trade_ledger["Running_Balance"] = running_bals
 
-# ทำการคำนวณตารางล่าสุด
-st.session_state.trade_ledger, cash_balance, ledger_stat, holdings = recalculate_ledger(st.session_state.trade_ledger)
-
-# ==========================================
-# 🌟 ระบบแท็บ
-# ==========================================
+# --- Tabs ---
 if st.session_state["logged_in"]:
     tab_dash, tab_port, tab_tax = st.tabs(["📊 วิเคราะห์กราฟ", "💼 บัญชี (สมุดหลัก)", "🧾 ภาษี (ลิงก์อัตโนมัติ)"])
 else:
@@ -191,24 +163,21 @@ with tab_dash:
         st.plotly_chart(fig, use_container_width=True)
 
 if st.session_state["logged_in"]:
-    
     with tab_port:
-        st.subheader("💼 แดชบอร์ดสรุปกระแสเงินสด (Cash Flow & Inventory)")
-        
-        # 🌟 แผง Dashboard แบบตัดสต๊อก
+        st.subheader("💼 แดชบอร์ดสรุปกระแสเงินสด (Cash Flow)")
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("📤 นำเงินออกสะสม", f"${ledger_stat['outward']:,.2f}")
         col2.metric("📉 ใช้ซื้อหุ้นไปแล้ว", f"${ledger_stat['bought']:,.2f}", "หักจากเงินสด", delta_color="inverse")
         col3.metric("📈 ขายหุ้นได้เงินมา", f"${ledger_stat['sold']:,.2f}", "บวกกลับเข้าเงินสด")
-        col4.metric("💰 เงินสดคงเหลือ (ซื้อได้อีก)", f"${cash_balance:,.2f}")
+        col4.metric("💰 เงินสดคงเหลือ", f"${cash_balance:,.2f}")
 
         st.markdown("---")
-        st.subheader("📝 สมุดบัญชี Cloud Ledger (แก้ไข/เพิ่ม/ลบ แถวได้เลย)")
-        st.caption("💡 ทริค: หากต้องการ 'ลบแถว' ให้คลิกที่ช่องสี่เหลี่ยมหน้าแถวนั้น แล้วกดปุ่ม Delete บนคีย์บอร์ดค่ะ")
+        st.subheader("📝 สมุดบัญชี Cloud Ledger")
+        st.caption("พิมพ์ข้อมูลลงในตารางได้เลย พิมพ์เสร็จแล้วอย่าลืมกดปุ่ม 'บันทึกข้อมูล' ด้านล่างนะคะ")
         
         edited_ledger = st.data_editor(
             st.session_state.trade_ledger, 
-            num_rows="dynamic", # อนุญาตให้เพิ่ม/ลบแถวได้
+            num_rows="dynamic",
             use_container_width=True,
             column_config={
                 "Date": "วันที่ (DD/MM/YYYY)",
@@ -221,14 +190,10 @@ if st.session_state["logged_in"]:
                 "FX_Rate": None, "WHT_USD": None, "Ref_Doc": None
             }
         )
-        
-        # ถ้าระบบตรวจพบว่ามีการแก้/เพิ่ม/ลบ ข้อมูล ให้คำนวณใหม่และรีโหลดหน้าจอ
-        if not edited_ledger.equals(st.session_state.trade_ledger):
-            st.session_state.trade_ledger = edited_ledger
-            st.rerun()
+        st.session_state.trade_ledger = edited_ledger
 
-        if st.button("💾 บันทึกการเปลี่ยนแปลงทั้งหมดลง Google Sheets", type="primary", use_container_width=True):
-            with st.spinner("กำลังอัปเดตข้อมูลบนคลาวด์..."):
+        if st.button("💾 บันทึกข้อมูลบัญชีลง Google Sheets", type="primary", use_container_width=True):
+            with st.spinner("กำลังบันทึกข้อมูล..."):
                 try:
                     save_df_to_sheet("Ledger", st.session_state.trade_ledger)
                     st.success("🎉 บันทึกสำเร็จแล้ว! ข้อมูลปลอดภัย 100%")
@@ -237,7 +202,6 @@ if st.session_state["logged_in"]:
 
     with tab_tax:
         st.subheader("🧾 ระบบประเมินภาษีสรรพากร (ลิงก์ข้อมูลอัตโนมัติ)")
-        
         tax_actions = ["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"]
         tax_view = st.session_state.trade_ledger[st.session_state.trade_ledger['Action'].isin(tax_actions)].copy()
 
@@ -255,10 +219,8 @@ if st.session_state["logged_in"]:
                 "Ticker": None, "Price": None, "Shares": None, "Running_Balance": None
             }
         )
-
-        if not edited_tax_view.equals(tax_view):
-            st.session_state.trade_ledger.update(edited_tax_view)
-            st.rerun()
+        
+        st.session_state.trade_ledger.update(edited_tax_view)
         
         if st.button("💾 บันทึกข้อมูลภาษีลง Google Sheets", type="primary", use_container_width=True):
             with st.spinner("กำลังอัปเดตข้อมูลภาษีลงฐานข้อมูล..."):
@@ -269,9 +231,12 @@ if st.session_state["logged_in"]:
 
         total_out_thb, total_in_thb, foreign_tax_credit_thb = 0.0, 0.0, 0.0
         for _, row in tax_view.iterrows():
-            usd = float(row.get("Amount_USD", 0) if str(row.get("Amount_USD")) != "" else 0)
-            wht = float(row.get("WHT_USD", 0) if str(row.get("WHT_USD")) != "" else 0)
-            fx = float(row.get("FX_Rate", 0) if str(row.get("FX_Rate")) != "" else 0)
+            try: usd = float(row.get("Amount_USD", 0))
+            except: usd = 0.0
+            try: wht = float(row.get("WHT_USD", 0))
+            except: wht = 0.0
+            try: fx = float(row.get("FX_Rate", 0))
+            except: fx = 0.0
             
             amt_thb = usd * fx
             wht_thb = wht * fx
