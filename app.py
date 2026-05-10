@@ -1,6 +1,7 @@
 import json
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from google.oauth2.service_account import Credentials
 import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -12,43 +13,66 @@ from datetime import datetime, timezone, timedelta
 st.set_page_config(page_title="Strategic Portfolio Ecosystem 3.0 (Cloud Sync)", layout="wide")
 
 # ==========================================
-# 🔐 การเชื่อมต่อฐานข้อมูลถาวร (Google Sheets Connection)
+# 🔐 การเชื่อมต่อฐานข้อมูลถาวร (Google Sheets ทางด่วน gspread)
 # ==========================================
-try:
-    if "google_creds_json" not in st.secrets:
-        st.error("❌ หาตัวแปร 'google_creds_json' ในตู้เซฟไม่เจอค่ะ ลองเช็คการสะกดดูนะคะ")
-        st.stop()
-    if "spreadsheet_url" not in st.secrets:
-        st.error("❌ หาตัวแปร 'spreadsheet_url' ในตู้เซฟไม่เจอค่ะ")
-        st.stop()
-        
+@st.cache_resource
+def init_connection():
+    # โหลดกุญแจจากตู้เซฟ
     creds_dict = json.loads(st.secrets["google_creds_json"])
     sheet_url = st.secrets["spreadsheet_url"]
-    conn = st.connection("gsheets", type=GSheetsConnection, service_account=creds_dict, spreadsheet=sheet_url)
-except Exception as e:
-    st.error(f"⚠️ สาเหตุของปัญหาคือ: {e}")
-    st.stop()
+    # ขออนุญาตเข้าถึงชีต
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    gc = gspread.authorize(credentials)
+    return gc.open_by_url(sheet_url)
 
+try:
+    sh = init_connection()
+except Exception as e:
+    st.error(f"⚠️ ไม่สามารถเชื่อมต่อฐานข้อมูลได้: {e}")
+    st.stop()
 
 # ฟังก์ชันดึงข้อมูลจากสมุดบัญชี (Ledger)
 def load_ledger_data():
     try:
-        df = conn.read(worksheet="Ledger", ttl="0s")
-        if df.empty:
-            return pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance"])
-        return df
+        ws = sh.worksheet("Ledger")
+        records = ws.get_all_records()
+        if records:
+            df = pd.DataFrame(records)
+            if "Date" in df.columns:
+                df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.date
+            return df
+        return pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance"])
     except:
         return pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance"])
 
 # ฟังก์ชันดึงข้อมูลภาษี (Tax)
 def load_tax_data():
     try:
-        df = conn.read(worksheet="Tax", ttl="0s")
-        if df.empty:
-            return pd.DataFrame(columns=["Date", "Direction", "Category", "Amount_USD", "WHT_USD", "FX_Rate", "Source", "Country", "Ref_Doc"])
-        return df
+        ws = sh.worksheet("Tax")
+        records = ws.get_all_records()
+        if records:
+            df = pd.DataFrame(records)
+            if "Date" in df.columns:
+                df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.date
+            return df
+        return pd.DataFrame(columns=["Date", "Direction", "Category", "Amount_USD", "WHT_USD", "FX_Rate", "Source", "Country", "Ref_Doc"])
     except:
         return pd.DataFrame(columns=["Date", "Direction", "Category", "Amount_USD", "WHT_USD", "FX_Rate", "Source", "Country", "Ref_Doc"])
+
+# ฟังก์ชันบันทึกข้อมูลกลับลงชีต
+def save_df_to_sheet(worksheet_name, df):
+    ws = sh.worksheet(worksheet_name)
+    ws.clear()
+    clean_df = df.copy()
+    if "Date" in clean_df.columns:
+        clean_df["Date"] = pd.to_datetime(clean_df["Date"]).dt.strftime("%d/%m/%Y")
+    clean_df = clean_df.fillna("")
+    data_list = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
+    ws.update(values=data_list, range_name='A1')
 
 # โหลดข้อมูลเข้าสู่ Session State 
 if "trade_ledger" not in st.session_state:
@@ -205,7 +229,6 @@ with tab_dash:
             with f3:
                 st.metric("ROE", fund.get('roe', 'N/A'))
                 st.caption("ความเก่งบริหาร (>15% = ดี)")
-            st.info("💡 **ทริค:** เซียนหุ้นจะดูแท่ง Volume ควบคู่ไปด้วย หากราคาทะลุแนวต้านพร้อม Volume สีเขียวสูงปรี๊ด แสดงว่าเป็นขาขึ้นของจริงค่ะ!")
 
         with col_right:
             prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
@@ -230,20 +253,14 @@ with tab_dash:
             st.markdown("---")
             st.subheader("💡 คำแนะนำภาพรวม")
             if last_p > df['EMA_50'].iloc[-1]: 
-                st.success(f"**แนวโน้ม:** ขาขึ้น 📈\n\n**🟢 ซื้อ:** โซน {df['EMA_10'].iloc[-1]:.2f} - {df['EMA_20'].iloc[-1]:.2f}\n\n**🔴 ขาย:** {df['High'].tail(20).max():.2f} ขึ้นไป\n\n**🟡 ถือต่อ:** ยืนเหนือ {df['EMA_20'].iloc[-1]:.2f}")
+                st.success(f"**แนวโน้ม:** ขาขึ้น 📈\n\n**🟢 ซื้อ:** โซน {df['EMA_10'].iloc[-1]:.2f} - {df['EMA_20'].iloc[-1]:.2f}")
             else: 
-                st.error(f"**แนวโน้ม:** ขาลง 📉\n\nระวัง! ไม่แนะนำให้รับของ")
-            
-            st.markdown("---")
-            st.subheader("🚧 แนวรับ-ต้าน")
-            st.write(f"**ต้าน:** {df['High'].tail(20).max():.2f}")
-            st.write(f"**รับ:** {df['EMA_50'].iloc[-1]:.2f}")
+                st.error(f"**แนวโน้ม:** ขาลง 📉")
 
 # ==========================================
 # พื้นที่เฉพาะ Owner (บัญชี และ ภาษี Cloud Sync)
 # ==========================================
 
-# คำนวณบัญชีก่อนเรนเดอร์
 cb = 0.0
 hld = {}
 total_realized_profit = 0.0
@@ -252,9 +269,9 @@ total_dividend = 0.0
 for idx, row in st.session_state.trade_ledger.iterrows():
     action = str(row["Action"]) if pd.notna(row["Action"]) else ""
     ticker = str(row["Ticker"]) if pd.notna(row["Ticker"]) else ""
-    price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
-    shares = float(row["Shares"]) if pd.notna(row["Shares"]) else 0.0
-    amt = float(row["Amount_USD"]) if pd.notna(row["Amount_USD"]) else 0.0
+    price = float(row["Price"]) if pd.notna(row["Price"]) and str(row["Price"])!="" else 0.0
+    shares = float(row["Shares"]) if pd.notna(row["Shares"]) and str(row["Shares"])!="" else 0.0
+    amt = float(row["Amount_USD"]) if pd.notna(row["Amount_USD"]) and str(row["Amount_USD"])!="" else 0.0
 
     if action == "นำเงินออกนอกประเทศ (Outward)": cb += amt
     elif action == "นำเงินเข้าประเทศไทย (Inward)": cb -= amt
@@ -300,12 +317,11 @@ if st.session_state["logged_in"]:
         )
         st.session_state.trade_ledger.update(edited_ledger)
 
-        # 🌟 ปุ่มบันทึกข้อมูลถาวร (Cloud Sync)
         if st.button("💾 บันทึกข้อมูลบัญชีลงฐานข้อมูล (Google Sheets)", type="primary", use_container_width=True):
-            with st.spinner("กำลังส่งข้อมูลไปยังฐานข้อมูล..."):
+            with st.spinner("กำลังส่งข้อมูลไปยังฐานข้อมูล... (ใช้เวลาสักครู่)"):
                 try:
-                    conn.update(worksheet="Ledger", data=st.session_state.trade_ledger)
-                    st.success("🎉 บันทึกสมุดบัญชีลง Google Sheets สำเร็จแล้ว! ปิดแอปได้เลยข้อมูลไม่หายแน่นอนค่ะ")
+                    save_df_to_sheet("Ledger", st.session_state.trade_ledger)
+                    st.success("🎉 บันทึกสมุดบัญชีลง Google Sheets สำเร็จแล้ว! ข้อมูลปลอดภัย 100%")
                 except Exception as e:
                     st.error(f"เกิดข้อผิดพลาดในการบันทึก: {e}")
 
@@ -377,18 +393,18 @@ if st.session_state["logged_in"]:
         st.session_state.transfer_data = edited_transfer
 
         if st.button("💾 บันทึกข้อมูลภาษีลงฐานข้อมูล (Google Sheets)", type="primary", use_container_width=True):
-            with st.spinner("กำลังส่งข้อมูลไปยังฐานข้อมูล..."):
+            with st.spinner("กำลังส่งข้อมูลไปยังฐานข้อมูล... (ใช้เวลาสักครู่)"):
                 try:
-                    conn.update(worksheet="Tax", data=st.session_state.transfer_data)
+                    save_df_to_sheet("Tax", st.session_state.transfer_data)
                     st.success("🎉 บันทึกข้อมูลภาษีลง Google Sheets สำเร็จแล้ว!")
                 except Exception as e:
                     st.error(f"เกิดข้อผิดพลาดในการบันทึก: {e}")
         
         total_out_thb, total_in_thb, foreign_tax_credit_thb = 0.0, 0.0, 0.0
         for _, row in edited_transfer.iterrows():
-            usd = float(row["Amount_USD"]) if pd.notna(row["Amount_USD"]) else 0.0
-            wht = float(row["WHT_USD"]) if pd.notna(row["WHT_USD"]) else 0.0
-            fx = float(row["FX_Rate"]) if pd.notna(row["FX_Rate"]) else 0.0
+            usd = float(row["Amount_USD"]) if pd.notna(row["Amount_USD"]) and str(row["Amount_USD"])!="" else 0.0
+            wht = float(row["WHT_USD"]) if pd.notna(row["WHT_USD"]) and str(row["WHT_USD"])!="" else 0.0
+            fx = float(row["FX_Rate"]) if pd.notna(row["FX_Rate"]) and str(row["FX_Rate"])!="" else 0.0
             
             amt_thb = usd * fx
             wht_thb = wht * fx
@@ -409,7 +425,7 @@ if st.session_state["logged_in"]:
         cf3.metric("🚨 กำไรสุทธิที่ประเมินภาษี", f"฿{net_taxable_gain:,.2f}", "หักล้างเงินต้นแล้ว", delta_color="inverse")
         
         st.markdown("---")
-        st.markdown("### 🧮 3. ประเมินภาระภาษีเพื่อยื่น ภ.ง.ด. 90 (คำนวณลดหย่อนอัตโนมัติ)")
+        st.markdown("### 🧮 3. ประเมินภาระภาษีเพื่อยื่น ภ.ง.ด. 90")
         
         c1, c2, c3 = st.columns(3)
         with c1: tax_year = st.selectbox("📅 เลือกปีภาษี (Tax Year)", ["2567 (2024)", "2568 (2025)", "2569 (2026)", "2570 (2027)"])
