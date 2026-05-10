@@ -143,7 +143,6 @@ else:
 # หน้า 1: วิเคราะห์หลัก (Dashboard)
 # ==========================================
 with tab_dash:
-    # 🌟 [กู้คืน] นำป้ายชื่อหุ้นแบบตะโกนกลับมาแล้วค่ะ!
     st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
     st.caption(f"📅 ข้อมูลวันที่: {current_date}")
 
@@ -213,7 +212,6 @@ with tab_dash:
             
             st.markdown("---")
             st.subheader("💡 คำแนะนำภาพรวม")
-            # 🌟 [กู้คืน] คำแนะนำ "🟡 ถือต่อ" นำกลับมาครบถ้วนแล้วค่ะ
             if last_p > df['EMA_50'].iloc[-1]: 
                 st.success(f"**แนวโน้ม:** ขาขึ้น 📈\n\n**🟢 ซื้อ:** โซน {df['EMA_10'].iloc[-1]:.2f} - {df['EMA_20'].iloc[-1]:.2f}\n\n**🔴 ขาย:** {df['High'].tail(20).max():.2f} ขึ้นไป\n\n**🟡 ถือต่อ:** ยืนเหนือ {df['EMA_20'].iloc[-1]:.2f}")
             else: 
@@ -329,9 +327,9 @@ if st.session_state["logged_in"]:
                     st.dataframe(pd.DataFrame(results), use_container_width=True)
         else: st.info("พอร์ตว่างเปล่าค่ะ ลองบันทึกการ 'ซื้อหุ้น' ในสมุดบัญชีด้านบนดูนะคะ")
 
-    # 🌟 หน้า 3: คำนวณภาษี (แบบยื่นแบบ ภ.ง.ด. 90)
+    # 🌟 หน้า 3: คำนวณภาษี 
     with tab_tax:
-        st.subheader("🧾 ระบบประเมินภาษีสรรพากร แบบสมบูรณ์")
+        st.subheader("🧾 ระบบประเมินภาษีสรรพากร ภ.ง.ด. 90")
         
         st.info(f"💡 **สรุปรายได้ที่เกิดขึ้นจริง (Realized Income) จากพอร์ต:**\n- กำไรจากการขายหุ้น (Realized Gain): **${total_realized_profit:,.2f}**\n- เงินปันผลรับ (Dividend): **${total_dividend:,.2f}**")
         
@@ -386,19 +384,64 @@ if st.session_state["logged_in"]:
         cf3.metric("🚨 กำไรสุทธิที่ประเมินภาษี", f"฿{net_taxable_gain:,.2f}", "หักล้างเงินต้นแล้ว", delta_color="inverse")
         
         st.markdown("---")
-        st.markdown("### 🧮 4. ประเมินภาระภาษีเพื่อยื่น ภ.ง.ด. 90 (รวมค่าลดหย่อน)")
+        # 🌟 อัปเกรด: เพิ่มให้เลือกปีภาษี และรายการลดหย่อนแบบเจาะลึก
+        st.markdown("### 🧮 4. ประเมินภาระภาษีเพื่อยื่น ภ.ง.ด. 90 (คำนวณลดหย่อนอัตโนมัติ)")
         
         c1, c2, c3 = st.columns(3)
-        with c1: is_resident = st.radio("คุณอาศัยอยู่ในไทยเกิน 180 วัน หรือไม่?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
-        with c2: other_income = st.number_input("รายได้ประจำอื่นๆ ต่อปี (บาท)", min_value=0.0, value=500000.0, step=50000.0)
-        with c3: deductions = st.number_input("รวมค่าลดหย่อนส่วนบุคคล (บาท)", min_value=0.0, value=160000.0, step=10000.0)
+        with c1: tax_year = st.selectbox("📅 เลือกปีภาษี (Tax Year)", ["2567 (2024)", "2568 (2025)", "2569 (2026)", "2570 (2027)"])
+        with c2: is_resident = st.radio("อาศัยอยู่ในไทยเกิน 180 วัน หรือไม่?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
+        with c3: other_income = st.number_input("รายได้ประจำอื่นๆ ต่อปี (บาท)", min_value=0.0, value=500000.0, step=50000.0, help="เช่น เงินเดือน 40(1) เพื่อหาฐานภาษี")
 
-        if st.button("📊 คำนวณภาษีสุทธิที่ต้องจ่ายจริง", type="primary", use_container_width=True):
-            if "ไม่ถึง" in is_resident: st.success("🎉 คุณได้รับยกเว้นภาษี")
-            elif net_taxable_gain == 0: st.success("🎉 ยังไม่มีกำไรส่วนเกินจากยอดเงินต้นที่ต้องนำมาคิดภาษีค่ะ")
+        # ฟอร์มลดหย่อนภาษีอัจฉริยะ
+        st.markdown("#### 🛡️ รายการลดหย่อนภาษี (กรอกตามจริง ระบบจะล็อกเพดานตามกฎหมายให้)")
+        
+        # หักค่าใช้จ่ายส่วนตัว 50% ไม่เกิน 100,000
+        standard_expense = min(other_income * 0.5, 100000.0)
+        personal_deduction = 60000.0 # ลดหย่อนส่วนตัว 60k
+        
+        with st.expander("📝 บันทึกค่าลดหย่อนส่วนบุคคล การลงทุน และครอบครัว (คลิกเพื่อกางออก)", expanded=True):
+            col_d1, col_d2 = st.columns(2)
+            spouse_deduction = col_d1.checkbox("มีคู่สมรส (ไม่มีรายได้) - ลดหย่อน 60,000 บาท")
+            children_count = col_d2.number_input("จำนวนบุตร (คนละ 30,000 บาท)", min_value=0, step=1)
+            
+            st.markdown("**ประกันและการลงทุน (กลุ่มลดหย่อนเกษียณรวมกันไม่เกิน 500,000 บาท)**")
+            c_inv1, c_inv2, c_inv3 = st.columns(3)
+            life_ins = c_inv1.number_input("เบี้ยประกันชีวิต (ตามจริง)", min_value=0.0, step=5000.0)
+            health_ins = c_inv2.number_input("เบี้ยประกันสุขภาพ (ตามจริง)", min_value=0.0, step=5000.0)
+            pvd = c_inv3.number_input("กองทุน PVD / กบข.", min_value=0.0, step=5000.0)
+            
+            ssf = c_inv1.number_input("ซื้อกองทุน SSF", min_value=0.0, step=5000.0)
+            rmf = c_inv2.number_input("ซื้อกองทุน RMF", min_value=0.0, step=5000.0)
+            donate = c_inv3.number_input("เงินบริจาคทั่วไป", min_value=0.0, step=1000.0)
+
+        # 🌟 คำนวณเพดานลดหย่อนตามกฎหมาย
+        # ประกันชีวิต + สุขภาพ (สุขภาพไม่เกิน 25k, รวมกันไม่เกิน 1 แสน)
+        actual_health = min(health_ins, 25000.0)
+        actual_life_health = min(life_ins + actual_health, 100000.0)
+        
+        # SSF/RMF ไม่เกิน 30% ของรายได้ และไม่เกินเพดาน
+        total_income_for_cap = other_income + net_taxable_gain
+        ssf_limit = min(ssf, total_income_for_cap * 0.3, 200000.0)
+        rmf_limit = min(rmf, total_income_for_cap * 0.3, 500000.0)
+        pvd_limit = min(pvd, total_income_for_cap * 0.15, 500000.0)
+        
+        # กลุ่มเกษียณรวมกันไม่เกิน 5 แสน
+        retirement_total = min(ssf_limit + rmf_limit + pvd_limit, 500000.0)
+        
+        # ครอบครัว
+        family_deduction = (60000.0 if spouse_deduction else 0.0) + (children_count * 30000.0)
+        
+        # สรุปลดหย่อนทั้งหมด
+        total_deductions = standard_expense + personal_deduction + family_deduction + actual_life_health + retirement_total + donate
+        
+        st.info(f"✅ **รวมค่าใช้จ่ายและค่าลดหย่อนที่สามารถนำไปหักภาษีได้จริง:** ฿{total_deductions:,.2f}")
+
+        if st.button(f"📊 คำนวณภาษีสุทธิ ปี {tax_year}", type="primary", use_container_width=True):
+            if "ไม่ถึง" in is_resident: st.success("🎉 คุณได้รับยกเว้นภาษี เนื่องจากอาศัยอยู่ในไทยไม่ถึง 180 วัน")
+            elif net_taxable_gain == 0: st.success("🎉 คุณยังไม่มีกำไรส่วนเกินจากยอดเงินต้น (Principal Offset) ไม่ต้องเสียภาษีเงินได้ ตปท. ค่ะ")
             else:
-                net_income_without_foreign = max(0, other_income - deductions)
-                net_income_with_foreign = max(0, (other_income + net_taxable_gain) - deductions)
+                net_income_without_foreign = max(0, other_income - total_deductions)
+                net_income_with_foreign = max(0, (other_income + net_taxable_gain) - total_deductions)
                 
                 def calculate_tax(net_inc):
                     tax = 0
@@ -417,12 +460,12 @@ if st.session_state["logged_in"]:
                 additional_tax_raw = tax_with - tax_without
                 final_tax_to_pay = max(0, additional_tax_raw - foreign_tax_credit_thb)
                 
-                st.subheader("ผลการคำนวณแบบ ภ.ง.ด. 90 (ประเมิน)")
-                st.write(f"- รายได้สุทธิหลังหักลดหย่อน (รวมรายได้ ตปท.): ฿{net_income_with_foreign:,.2f}")
+                st.subheader(f"ผลการคำนวณ ภ.ง.ด. 90 (ประจำปี {tax_year})")
+                st.write(f"- รายได้สุทธิเพื่อคำนวณภาษี (Net Taxable Income): ฿{net_income_with_foreign:,.2f}")
                 st.write(f"- ภาษีที่ถูกหักไปแล้วในต่างประเทศ (Foreign Tax Credit): ฿{foreign_tax_credit_thb:,.2f}")
                 
                 r1, r2 = st.columns(2)
-                r1.metric("ภาษีที่คำนวณได้จากพอร์ต ตปท.", f"฿{additional_tax_raw:,.2f}")
+                r1.metric("ภาษีที่เกิดจากพอร์ต ตปท.", f"฿{additional_tax_raw:,.2f}")
                 r2.metric("🚨 ภาษีที่ต้องจ่ายเพิ่มจริง (หักเครดิตแล้ว)", f"฿{final_tax_to_pay:,.2f}")
 
     # หน้า 4: กลยุทธ์
