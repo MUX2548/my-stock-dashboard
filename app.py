@@ -139,7 +139,7 @@ with st.sidebar:
             st.session_state["logged_in"] = False
             st.rerun()
 
-# --- ดึงข้อมูลวิเคราะห์ (เพิ่ม MACD และ Volume) ---
+# --- ดึงข้อมูลวิเคราะห์ ---
 @st.cache_data(ttl=300)
 def load_pro_data(ticker_symbol, tf):
     settings = {"1D (รายวัน)": {"period": "6mo", "interval": "1d"}, "1W (รายสัปดาห์)": {"period": "2y", "interval": "1wk"}, "1M (รายเดือน)": {"period": "5y", "interval": "1mo"}}
@@ -163,12 +163,12 @@ def load_pro_data(ticker_symbol, tf):
         loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
         df['RSI'] = 100 - (100 / (1 + gain/loss))
         
-        # MACD (ใหม่!)
+        # MACD
         df['MACD'] = df['Close'].ewm(span=12, adjust=False).mean() - df['Close'].ewm(span=26, adjust=False).mean()
         df['Signal_Line'] = df['MACD'].ewm(span=9, adjust=False).mean()
         df['MACD_Hist'] = df['MACD'] - df['Signal_Line']
         
-        # Volume Average (ใหม่!)
+        # Volume Average
         df['Vol_SMA'] = df['Volume'].rolling(window=20).mean()
         
         if len(df) > 1:
@@ -189,6 +189,7 @@ def load_pro_data(ticker_symbol, tf):
         last_p = df['Close'].iloc[-1]
         vol = df['Close'].pct_change().tail(14).std()
         trend = "ขึ้น 📈" if last_p > df['EMA_50'].iloc[-1] else "ลง 📉"
+        # คำนวณ Harmonic Matrix
         matrix = {"l": last_p * (1 - vol*1.0) if trend == "ลง 📉" else last_p * (1 - vol*0.5), "u": last_p * (1 - vol*0.5) if trend == "ลง 📉" else last_p * (1 + vol*1.0), "trend": trend}
         
         return df, fund, matrix
@@ -203,7 +204,7 @@ else:
     tab_dash, = st.tabs(["📊 วิเคราะห์กราฟ (Analysis)"])
 
 # ==========================================
-# หน้า 1: วิเคราะห์กราฟ (ชุดเต็ม + เทรดดิ้ง Pro)
+# หน้า 1: วิเคราะห์กราฟ (ชุดเต็ม)
 # ==========================================
 with tab_dash:
     st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
@@ -213,9 +214,14 @@ with tab_dash:
         last_p = df['Close'].iloc[-1]
         prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
         
+        # 🌟 เพิ่ม Harmonic Matrix แบบเต็ม กลับมาอยู่ด้านบนสุดตามที่คุณศศิธาต้องการ!
+        rs_val = df['RS_vs_Market'].iloc[-1]
+        rs_text = f" | **Relative Strength:** {'🟢 ชนะตลาด' if rs_val > 0 else '🔴 อ่อนแอกว่าตลาด'} ({rs_val:.2f}%)" if not np.isnan(rs_val) else ""
+        if matrix: 
+            st.info(f"🔮 **ทิศทาง {tf_option}:** {matrix['trend']} | **เป้าหมาย:** {matrix['l']:,.2f} - {matrix['u']:,.2f} (Harmonic Matrix){rs_text}")
+        
         col_left, col_right = st.columns([7, 3])
         with col_left:
-            # เพิ่มหน้าต่างย่อยที่ 4 (MACD)
             fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.45, 0.15, 0.2, 0.2])
             
             # Row 1: Price
@@ -235,7 +241,7 @@ with tab_dash:
             fig.add_hline(y=70, line_dash="dot", line_color="red", row=3, col=1)
             fig.add_hline(y=30, line_dash="dot", line_color="green", row=3, col=1)
             
-            # Row 4: MACD (ใหม่!)
+            # Row 4: MACD
             macd_colors = ['#00E676' if val >= 0 else '#FF5252' for val in df['MACD_Hist']]
             fig.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], marker_color=macd_colors, name="MACD Hist"), row=4, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='#2962FF', width=2), name="MACD"), row=4, col=1)
@@ -253,7 +259,6 @@ with tab_dash:
             f3.metric("ROE", fund.get('roe', 'N/A'))
 
         with col_right:
-            # 🌟 ประเมินสถานะหุ้นของตัวเอง (เปิดให้ทุกคนใช้ได้แล้ว)
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - prev_p:.2f}")
             if buy_price > 0:
                 pl = ((last_p - buy_price) / buy_price) * 100
@@ -267,19 +272,15 @@ with tab_dash:
                     shares = risk_amt / risk_per_share
                     st.success(f"🧮 **ซื้อได้สูงสุด:** {shares:.2f} หุ้น")
 
-            # 🤖 AI สรุปสัญญาณเทคนิค (ใหม่!)
             st.markdown("---")
             st.subheader("🤖 สรุปสัญญาณเทคนิค")
             
-            # ประเมิน Trend
             if last_p > df['EMA_50'].iloc[-1]: trend_signal = "🟢 ขาขึ้น (Bullish)"
             else: trend_signal = "🔴 ขาลง (Bearish)"
             
-            # ประเมิน Momentum (MACD)
             if df['MACD'].iloc[-1] > df['Signal_Line'].iloc[-1]: macd_signal = "🟢 แรงซื้อได้เปรียบ"
             else: macd_signal = "🔴 แรงขายกดดัน"
             
-            # ประเมิน RSI
             rsi_val = df['RSI'].iloc[-1]
             if rsi_val > 70: rsi_signal = "🔴 ซื้อมากไป (Overbought)"
             elif rsi_val < 30: rsi_signal = "🟢 ขายมากไป (Oversold)"
