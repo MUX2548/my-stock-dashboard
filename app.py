@@ -36,21 +36,35 @@ def safe_float(val):
         return float(val)
     except: return 0.0
 
-# ฟังก์ชันดึงข้อมูลจากสมุดบัญชี (ดึงที่เดียวใช้ได้ทั้งแอป!)
+# 🌟 ดึงข้อมูลแบบ Safe Mode (ตัดแถวว่างทิ้ง ป้องกันบั๊ก 100%)
 def load_ledger_data():
     try:
         ws = sh.worksheet("Ledger")
         records = ws.get_all_records()
-        df = pd.DataFrame(records) if records else pd.DataFrame()
+        if not records:
+            return pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
+        
+        df = pd.DataFrame(records)
+        # ล้างแถวว่างที่เกิดจาก Google Sheets
+        df.replace("", np.nan, inplace=True)
+        df.dropna(how="all", inplace=True)
+        df.fillna("", inplace=True)
+
     except:
         df = pd.DataFrame()
 
     required_cols = ["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"]
     for col in required_cols:
-        if col not in df.columns: df[col] = ""
+        if col not in df.columns: 
+            df[col] = ""
 
+    num_cols = ["Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD"]
+    for col in num_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+
+    # บังคับรูปแบบวันที่ให้เป็น String เพื่อหลีกเลี่ยงบั๊ก DateColumn ของ Streamlit
     if not df.empty and "Date" in df.columns:
-        df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.date
+        df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.strftime("%d/%m/%Y").replace("NaT", "")
     
     return df[required_cols]
 
@@ -59,8 +73,6 @@ def save_df_to_sheet(worksheet_name, df):
     ws = sh.worksheet(worksheet_name)
     ws.clear()
     clean_df = df.copy()
-    if "Date" in clean_df.columns:
-        clean_df["Date"] = pd.to_datetime(clean_df["Date"], errors='coerce').dt.strftime("%d/%m/%Y")
     clean_df = clean_df.fillna("")
     data_list = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
     ws.update(values=data_list, range_name='A1')
@@ -191,7 +203,6 @@ hld = {}
 total_realized_profit = 0.0
 total_dividend = 0.0
 
-# คำนวณคณิตศาสตร์แบบบรรทัดต่อบรรทัด ป้องกัน Error ค่าว่าง
 for idx, row in st.session_state.trade_ledger.iterrows():
     action = str(row.get("Action", ""))
     ticker = str(row.get("Ticker", ""))
@@ -227,19 +238,19 @@ if st.session_state["logged_in"]:
     
     with tab_port:
         st.subheader("📝 สมุดบัญชี Cloud Ledger (ศูนย์กลางข้อมูล)")
-        st.caption("เมื่อคุณเพิ่มรายการ 'นำเงินออก/เข้า' ที่นี่ ข้อมูลจะวิ่งไปรอในหน้าภาษีให้อัตโนมัติค่ะ")
+        st.caption("เมื่อคุณเพิ่มรายการที่นี่ ข้อมูลจะวิ่งไปรอในหน้าภาษีให้อัตโนมัติค่ะ")
         
+        # 🌟 ถอดเกราะป้องกันความ Error ออกทั้งหมด ให้ Streamlit จัดการอย่างอิสระ
         edited_ledger = st.data_editor(
             st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
             column_config={
-                "Date": st.column_config.DateColumn("วันที่", format="DD/MM/YYYY"),
+                "Date": "วันที่ (DD/MM/YYYY)",
                 "Action": st.column_config.SelectboxColumn("ประเภทรายการ", options=["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)", "รับเงินปันผล (Dividend)"]),
-                "Ticker": st.column_config.TextColumn("ชื่อหุ้น"),
-                "Price": st.column_config.NumberColumn("ราคา ($)", format="%.4f"),
-                "Shares": st.column_config.NumberColumn("จำนวนหุ้น"),
-                "Amount_USD": st.column_config.NumberColumn("จำนวนเงิน ($)", format="%.2f"),
-                "Running_Balance": st.column_config.NumberColumn("ยอดเงินคงเหลือ ($)", disabled=True, format="%.2f"),
-                # ซ่อนคอลัมน์ภาษีไว้ ไม่ให้เกะกะในหน้านี้
+                "Ticker": "ชื่อหุ้น",
+                "Price": "ราคา ($)",
+                "Shares": "จำนวนหุ้น",
+                "Amount_USD": "จำนวนเงิน ($)",
+                "Running_Balance": st.column_config.Column("ยอดเงินคงเหลือ ($)", disabled=True),
                 "FX_Rate": None, "WHT_USD": None, "Ref_Doc": None
             }
         )
@@ -249,7 +260,7 @@ if st.session_state["logged_in"]:
             st.rerun()
 
         if st.button("💾 บันทึกการเปลี่ยนแปลงทั้งหมดลง Google Sheets", type="primary", use_container_width=True):
-            with st.spinner("กำลังส่งข้อมูลไปยังฐานข้อมูล... (ใช้เวลาสักครู่)"):
+            with st.spinner("กำลังส่งข้อมูลไปยังฐานข้อมูล..."):
                 try:
                     save_df_to_sheet("Ledger", st.session_state.trade_ledger)
                     st.success("🎉 บันทึกสำเร็จแล้ว! ข้อมูลปลอดภัย 100%")
@@ -263,23 +274,20 @@ if st.session_state["logged_in"]:
     with tab_tax:
         st.subheader("🧾 ระบบประเมินภาษีสรรพากร (ลิงก์ข้อมูลอัตโนมัติ)")
         
-        st.markdown("### 📝 1. บันทึกอัตราแลกเปลี่ยน (ดึงข้อมูลจากสมุดบัญชีมาให้อัตโนมัติ)")
-        
-        # กรองเอาเฉพาะรายการที่เกี่ยวกับภาษีมาโชว์ให้กรอกเรทเงิน
         tax_actions = ["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"]
         tax_view = st.session_state.trade_ledger[st.session_state.trade_ledger['Action'].isin(tax_actions)].copy()
 
         edited_tax_view = st.data_editor(
             tax_view,
-            num_rows="fixed", # ล็อคไม่ให้เพิ่มแถวที่นี่ ให้ไปเพิ่มในหน้าบัญชีแทน
+            num_rows="fixed",
             use_container_width=True,
             column_config={
-                "Date": st.column_config.DateColumn("วันที่โอน", disabled=True, format="DD/MM/YYYY"),
-                "Action": st.column_config.TextColumn("ประเภทรายการ", disabled=True),
-                "Amount_USD": st.column_config.NumberColumn("ยอดเงินโอน (USD)", disabled=True, format="$%.2f"),
-                "FX_Rate": st.column_config.NumberColumn("อัตราแลกเปลี่ยน", format="%.4f"),
-                "WHT_USD": st.column_config.NumberColumn("ภาษีที่ถูกหัก ตปท. (WHT)", format="$%.2f"),
-                "Ref_Doc": st.column_config.TextColumn("ชื่อไฟล์อ้างอิงแนบ"),
+                "Date": st.column_config.Column("วันที่โอน", disabled=True),
+                "Action": st.column_config.Column("ประเภทรายการ", disabled=True),
+                "Amount_USD": st.column_config.Column("ยอดเงินโอน (USD)", disabled=True),
+                "FX_Rate": "อัตราแลกเปลี่ยน",
+                "WHT_USD": "ภาษีที่ถูกหัก ตปท. (WHT)",
+                "Ref_Doc": "ชื่อไฟล์อ้างอิงแนบ",
                 "Ticker": None, "Price": None, "Shares": None, "Running_Balance": None
             }
         )
