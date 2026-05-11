@@ -10,7 +10,29 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
-st.set_page_config(page_title="Strategic Portfolio Ecosystem 3.0", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.0", page_icon="📈", layout="wide")
+
+# 🎨 2. ตกแต่ง UI/UX ให้ดูโปร (CSS Customization)
+st.markdown("""
+    <style>
+    /* ตกแต่งปุ่มให้ดูแพง */
+    .stButton>button {
+        border-radius: 12px;
+        font-weight: bold;
+        transition: all 0.3s ease;
+        border: 1px solid #4CAF50;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 15px rgba(76, 175, 80, 0.4);
+        border-color: #4CAF50;
+    }
+    /* ปุ่ม Primary (ปุ่มสีแดง/สีหลัก) */
+    .stButton>button[data-baseweb="button"] {
+        border-radius: 12px;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # ==========================================
 # 🔐 การเชื่อมต่อฐานข้อมูล
@@ -77,7 +99,6 @@ if "trade_ledger" not in st.session_state:
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
-# 🌟 ตั้งค่าโซนเวลาไทย
 tz_th = timezone(timedelta(hours=7))
 current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M")
@@ -110,8 +131,13 @@ def calculate_stats(df_input):
         r_bals.append(cb)
     return cb, stat, r_bals, hld
 
+# ฟังก์ชันแปลงไฟล์เป็น CSV (Excel)
+@st.cache_data
+def convert_df_to_csv(df):
+    return df.to_csv(index=False).encode('utf-8-sig')
+
 # ==========================================
-# 🌟 Sidebar (Public Tools)
+# 🌟 Sidebar
 # ==========================================
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
@@ -127,7 +153,7 @@ with st.sidebar:
     st.markdown("---")
     if not st.session_state["logged_in"]:
         pwd = st.text_input("🔑 รหัสผ่าน (สำหรับเจ้าของ)", type="password")
-        if st.button("เข้าสู่ระบบ", use_container_width=True):
+        if st.button("🔓 เข้าสู่ระบบ", use_container_width=True, type="primary"):
             if pwd == st.secrets.get("app_password", "123456"):
                 st.session_state["logged_in"] = True
                 st.rerun()
@@ -144,33 +170,27 @@ def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
     p, i = stgs[tf]["p"], stgs[tf]["i"]
     try:
-        # ดึงกราฟหุ้นหลัก
         s = yf.Ticker(ticker_symbol)
         df = s.history(period=p, interval=i)
         if df is None or df.empty: return pd.DataFrame(), {}, None, None
         df = df.dropna(subset=['Close'])
         if df.empty: return pd.DataFrame(), {}, None, None
         
-        # 🌟 ดึงข้อมูลตลาดโลก (S&P 500) และคำนวณทิศทาง
         spy = yf.Ticker("^GSPC").history(period=p, interval=i)
         spy_trend = "N/A"
         if not spy.empty:
             df['RS'] = (df['Close'].pct_change(10) - spy['Close'].pct_change(10)) * 100
             spy_ema50 = spy['Close'].ewm(span=50).mean().iloc[-1]
             spy_trend = "ขึ้น 📈" if spy['Close'].iloc[-1] > spy_ema50 else "ลง 📉"
-        else:
-            df['RS'] = 0
+        else: df['RS'] = 0
 
-        # 🌟 ดึงข้อมูลดัชนีความกลัว (VIX)
         try:
             vix = yf.Ticker("^VIX").history(period="1mo", interval="1d")
             vix_val = vix['Close'].iloc[-1] if not vix.empty else 20.0
-        except:
-            vix_val = 20.0
+        except: vix_val = 20.0
 
         market_signal = {"spy_trend": spy_trend, "vix": vix_val}
 
-        # คำนวณอินดิเคเตอร์
         df['E20'] = df['Close'].ewm(span=20).mean()
         df['E50'] = df['Close'].ewm(span=50).mean()
         delta = df['Close'].diff()
@@ -202,7 +222,6 @@ def load_pro_data(ticker_symbol, tf):
 
 df, fund, matrix, market_signal = load_pro_data(ticker, tf_option)
 
-# --- Tabs ---
 tabs = ["📊 วิเคราะห์กราฟ (Analysis)", "💼 บัญชี (Cloud Sync)", "🧾 ภาษีสรรพากร"] if st.session_state["logged_in"] else ["📊 วิเคราะห์กราฟ (Analysis)"]
 tab_list = st.tabs(tabs)
 
@@ -217,12 +236,10 @@ with tab_list[0]:
         last_p = df['Close'].iloc[-1]
         prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
         
-        # 🌟 แสดงผล Dashboard Market Signal
         if market_signal:
             st.markdown("---")
             st.markdown("### 🌐 Market Signal (เรดาร์สแกนภาพรวมตลาด)")
             m1, m2, m3 = st.columns(3)
-            
             spy_t = market_signal["spy_trend"]
             m1.metric("ทิศทางตลาดโลก (S&P 500)", spy_t, "🟢 กระแสน้ำผลักดัน" if "ขึ้น" in spy_t else "🔴 กระแสน้ำกดดัน", delta_color="normal" if "ขึ้น" in spy_t else "inverse")
             
@@ -233,12 +250,9 @@ with tab_list[0]:
             m2.metric("ดัชนีความกลัว (VIX Index)", f"{v_val:.2f}", v_stat, delta_color=v_col)
             
             with m3:
-                if "ขึ้น" in spy_t and v_val < 25:
-                    st.success("✅ **ตลาดเป็นใจ:** สภาพแวดล้อมปลอดภัย เอื้อต่อการเข้าทำกำไรหรือถือรันเทรนด์ค่ะ")
-                elif "ลง" in spy_t and v_val > 25:
-                    st.error("🚨 **ความเสี่ยงสูง:** ตลาดกำลังผันผวนรุนแรง แนะนำให้ชะลอการลงทุน หรือคุม Stop Loss ให้แน่นหนาค่ะ")
-                else:
-                    st.warning("⚠️ **ตลาดไร้ทิศทาง:** ตลาดยังเลือกทางไม่ได้ แนะนำเก็งกำไรระยะสั้นในกรอบเท่านั้นค่ะ")
+                if "ขึ้น" in spy_t and v_val < 25: st.success("✅ **ตลาดเป็นใจ:** สภาพแวดล้อมปลอดภัย เอื้อต่อการเข้าทำกำไร")
+                elif "ลง" in spy_t and v_val > 25: st.error("🚨 **ความเสี่ยงสูง:** ตลาดกำลังผันผวนรุนแรง คุมความเสี่ยงด่วน")
+                else: st.warning("⚠️ **ตลาดไร้ทิศทาง:** ตลาดยังเลือกทางไม่ได้ แนะนำเก็งกำไรในกรอบ")
             st.markdown("---")
 
         rs = df['RS'].iloc[-1]
@@ -300,11 +314,10 @@ with tab_list[0]:
             st.write(f"**ต้าน:** {df['High'].tail(20).max():.2f}")
             st.write(f"**รับ:** {df['E50'].iloc[-1]:.2f}")
     else:
-        st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ\n\n💡 **วิธีแก้:** ลองเปลี่ยนชื่อหุ้นที่เมนูด้านซ้าย หรือรอสักพัก (ประมาณ 2-3 นาที) แล้วกดรีเฟรชหน้าเว็บอีกครั้งค่ะ")
+        st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ")
 
-    # 🌟 ระบบส่งฟีดแบ็กความแม่นยำ
     st.markdown("---")
-    with st.expander("⭐ ประเมินความแม่นยำของระบบวิเคราะห์ (เพื่อนำไปพัฒนาต่อยอด)"):
+    with st.expander("⭐ ประเมินความแม่นยำของระบบวิเคราะห์"):
         with st.form("feedback_form", clear_on_submit=True):
             st.write(f"คุณมีความคิดเห็นอย่างไรกับการวิเคราะห์กราฟของหุ้น **{ticker}** ในครั้งนี้?")
             rating = st.slider("ระดับความแม่นยำและประโยชน์ที่ได้รับ (1 = แย่, 5 = แม่นยำ/มีประโยชน์มาก)", 1, 5, 5)
@@ -315,26 +328,35 @@ with tab_list[0]:
                     fb_ws = sh.worksheet("Feedback")
                     timestamp = datetime.now(tz_th).strftime("%d/%m/%Y %H:%M:%S")
                     fb_ws.append_row([timestamp, ticker, rating, comment])
-                    st.success("🙏 ขอบคุณสำหรับฟีดแบ็กค่ะ! ข้อมูลถูกส่งเข้าฐานข้อมูลเรียบร้อยแล้ว เพื่อนำไปพัฒนาระบบให้ดียิ่งขึ้นค่ะ")
+                    st.success("🙏 ขอบคุณสำหรับฟีดแบ็กค่ะ!")
                 except Exception as e:
-                    st.error("⚠️ ไม่สามารถส่งข้อมูลได้ กรุณาตรวจสอบว่าคุณได้สร้างแผ่นงานที่ชื่อ 'Feedback' ใน Google Sheets แล้วหรือยังคะ?")
+                    st.error("⚠️ ไม่สามารถส่งข้อมูลได้ กรุณาตรวจสอบว่าสร้างชีต 'Feedback' แล้วหรือยังคะ")
 
 if st.session_state["logged_in"]:
     cb, l_stat, r_bals, holdings = calculate_stats(st.session_state.trade_ledger)
     st.session_state.trade_ledger["Running_Balance"] = r_bals
 
     # ==========================================
-    # หน้า 2: บัญชีและพอร์ตโฟลิโอ
+    # หน้า 2: บัญชีและพอร์ตโฟลิโอ (Pro UI)
     # ==========================================
     with tab_list[1]:
-        st.subheader("💼 แดชบอร์ดกระแสเงินสด")
+        st.subheader("💼 แดชบอร์ดกระแสเงินสด (Cashflow Overview)")
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("📤 นำเงินออกสะสม", f"${l_stat['outward']:,.2f}")
-        col2.metric("📉 ซื้อหุ้นไปแล้ว", f"${l_stat['bought']:,.2f}", delta_color="inverse")
-        col3.metric("📈 ขายหุ้นได้เงินมา", f"${l_stat['sold']:,.2f}")
-        col4.metric("💰 เงินสดคงเหลือ", f"${cb:,.2f}")
+        # ใช้สีอธิบายความหมายที่ชัดเจน
+        col1.metric("📤 นำเงินออกสะสม (ลงทุน)", f"${l_stat['outward']:,.2f}")
+        col2.metric("📥 นำเงินกลับไทย (ถอน)", f"${l_stat['inward']:,.2f}")
+        col3.metric("📈 ต้นทุนหุ้นในพอร์ตรวม", f"${l_stat['bought'] - l_stat['sold']:,.2f}")
+        col4.metric("💰 เงินสดคงเหลือ (พร้อมเทรด)", f"${cb:,.2f}", "💵 Cash Balance")
         
         st.markdown("---")
+        h1, h2 = st.columns([8, 2])
+        h1.subheader("📝 สมุดบันทึกบัญชีการเทรด (Cloud Ledger)")
+        # 📥 ปุ่ม Export ข้อมูลบัญชีเป็น Excel
+        csv_ledger = convert_df_to_csv(st.session_state.trade_ledger)
+        h2.download_button(label="📥 โหลดข้อมูล (Excel/CSV)", data=csv_ledger, file_name=f"Trade_Ledger_{current_date.replace('/','-')}.csv", mime='text/csv', use_container_width=True)
+        
+        st.info("💡 **วิธีลบข้อมูลตาราง:** กดเลือก ⬜ หน้าแถวที่ต้องการลบ (มุมซ้ายสุด) แล้วกดไอคอน 🗑️ มุมขวาบนของตาราง หรือกดปุ่ม Delete บนคีย์บอร์ดได้เลยค่ะ")
+        
         ed_l = st.data_editor(st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
             column_config={
                 "Date": "วันที่ (DD/MM/YYYY)",
@@ -354,12 +376,13 @@ if st.session_state["logged_in"]:
             st.session_state.trade_ledger = ed_l
             st.rerun()
             
-        if st.button("💾 บันทึกข้อมูลพอร์ตลง Cloud", type="primary", use_container_width=True):
+        if st.button("💾 บันทึกข้อมูลบัญชีขึ้น Cloud", type="primary", use_container_width=True):
             save_df_to_sheet("Ledger", st.session_state.trade_ledger)
             st.success("บันทึกสำเร็จ! ข้อมูลปลอดภัย 100%")
 
         st.markdown("---")
-        st.subheader("💼 พอร์ตโฟลิโอปัจจุบัน (Current Holdings)")
+        st.subheader("📊 พอร์ตโฟลิโอปัจจุบัน (Visual Holdings)")
+        
         port_summary, total_invested = [], 0.0
         for t, data in holdings.items():
             if data["shares"] > 0.001:
@@ -369,8 +392,9 @@ if st.session_state["logged_in"]:
         
         if len(port_summary) > 0:
             current_port_df = pd.DataFrame(port_summary)
-            if st.button("🔄 ดึงราคาปัจจุบัน และ คำนวณกำไร/ขาดทุน"):
-                with st.spinner("กำลังดึงราคา..."):
+            
+            if st.button("🔄 ดึงราคาล่าสุด & คำนวณกำไร/ขาดทุน (Mark to Market)", type="primary", use_container_width=True):
+                with st.spinner("กำลังดึงราคาแบบเรียลไทม์..."):
                     results, total_v = [], 0.0
                     for _, row in current_port_df.iterrows():
                         t, avg_cost, sh, t_cost = row["Ticker"], row["Cost_Price"], row["Shares"], row["Total_Cost"]
@@ -380,22 +404,55 @@ if st.session_state["logged_in"]:
                         val = curr_p * sh
                         profit = val - t_cost
                         profit_pct = (profit / t_cost * 100) if t_cost > 0 else 0
-                        results.append({"หุ้น": t, "จำนวนหุ้น": f"{sh:,.2f}", "ต้นทุนเฉลี่ย": f"${avg_cost:,.2f}", "ราคาปัจจุบัน": f"${curr_p:,.2f}", "กำไร/ขาดทุน": f"${profit:,.2f}", "% เปลี่ยนแปลง": f"{profit_pct:.2f}%", "มูลค่ารวม": f"${val:,.2f}"})
+                        results.append({
+                            "หุ้น": t, "จำนวนหุ้น": sh, "ต้นทุนเฉลี่ย": avg_cost, 
+                            "ราคาปัจจุบัน": curr_p, "กำไร/ขาดทุน": profit, 
+                            "% เปลี่ยนแปลง": profit_pct, "มูลค่ารวม": val
+                        })
                         total_v += val
                     
+                    # สรุปด้านบน
                     p1, p2, p3 = st.columns(3)
-                    p1.metric("มูลค่าหุ้นรวม", f"${total_v:,.2f}")
-                    p2.metric("ต้นทุนหุ้นทั้งหมด", f"${total_invested:,.2f}")
-                    p3.metric("กำไร/ขาดทุนรวม", f"${(total_v-total_invested):,.2f}", f"{((total_v-total_invested)/total_invested*100 if total_invested>0 else 0):.2f}%")
-                    st.dataframe(pd.DataFrame(results), use_container_width=True)
+                    p1.metric("มูลค่าหุ้นรวม (Market Value)", f"${total_v:,.2f}")
+                    p2.metric("ต้นทุนหุ้นทั้งหมด (Total Cost)", f"${total_invested:,.2f}")
+                    p3.metric("กำไร/ขาดทุนรวม (Unrealized P/L)", f"${(total_v-total_invested):,.2f}", f"{((total_v-total_invested)/total_invested*100 if total_invested>0 else 0):.2f}%")
+                    
+                    # 📊 สร้างกราฟวงกลมและกราฟแท่ง
+                    res_df = pd.DataFrame(results)
+                    chart_col1, chart_col2 = st.columns(2)
+                    with chart_col1:
+                        fig_pie = go.Figure(data=[go.Pie(labels=res_df['หุ้น'], values=res_df['มูลค่ารวม'], hole=.4)])
+                        fig_pie.update_layout(title="สัดส่วนพอร์ต (Allocation)", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
+                        st.plotly_chart(fig_pie, use_container_width=True)
+                    with chart_col2:
+                        bar_colors = ['#00E676' if val >= 0 else '#FF5252' for val in res_df['กำไร/ขาดทุน']]
+                        fig_bar = go.Figure(data=[go.Bar(x=res_df['หุ้น'], y=res_df['กำไร/ขาดทุน'], marker_color=bar_colors)])
+                        fig_bar.update_layout(title="กำไร/ขาดทุนรายตัว (P/L)", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
+                        st.plotly_chart(fig_bar, use_container_width=True)
+
+                    # 🔴 จัดรูปแบบตาราง ตัวเลขติดลบให้เป็นสีแดง กำไรเป็นสีเขียว
+                    def color_profit(val):
+                        return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
+                    
+                    styled_res = res_df.style.map(color_profit, subset=["กำไร/ขาดทุน", "% เปลี่ยนแปลง"]).format({
+                        "จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}",
+                        "กำไร/ขาดทุน": "${:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", "มูลค่ารวม": "${:,.2f}"
+                    })
+                    st.dataframe(styled_res, use_container_width=True)
+                    
+                    # 📥 ปุ่ม Export พอร์ต
+                    csv_port = convert_df_to_csv(res_df)
+                    st.download_button(label="📥 ดาวน์โหลดพอร์ตโฟลิโอ (Excel/CSV)", data=csv_port, file_name=f"Portfolio_{current_date.replace('/','-')}.csv", mime='text/csv')
         else:
             st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ตค่ะ)")
 
     # ==========================================
-    # หน้า 3: ภาษีสรรพากร
+    # หน้า 3: ภาษีสรรพากร (Pro UI)
     # ==========================================
     with tab_list[2]:
-        st.subheader("🧾 ระบบประเมินภาษีสรรพากร ภ.ง.ด. 90")
+        t1, t2 = st.columns([8, 2])
+        t1.subheader("🧾 ระบบประเมินภาษีสรรพากร ภ.ง.ด. 90")
+        
         tax_idx = st.session_state.trade_ledger['Action'].isin(["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"])
         tax_v = st.session_state.trade_ledger[tax_idx].copy()
         
@@ -413,6 +470,9 @@ if st.session_state["logged_in"]:
             c_t_bal += (r["Out_THB"] - r["In_THB"])
             t_bals.append(c_t_bal)
         tax_v["Balance_THB"] = t_bals
+
+        csv_tax = convert_df_to_csv(tax_v)
+        t2.download_button(label="📥 โหลดตารางภาษี (Excel/CSV)", data=csv_tax, file_name=f"Tax_Report_{current_date.replace('/','-')}.csv", mime='text/csv', use_container_width=True)
 
         ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed",
             column_order=["Date", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "WHT_USD", "Ref_Doc"],
@@ -437,9 +497,9 @@ if st.session_state["logged_in"]:
 
         st.markdown("---")
         cf1, cf2, cf3 = st.columns(3)
-        cf1.metric("📤 รวมโอนออก (เงินต้น)", f"฿{sum_out_thb:,.2f}")
-        cf2.metric("📥 รวมนำเข้าไทย", f"฿{sum_in_thb:,.2f}")
-        cf3.metric("🚨 กำไรสุทธิที่ต้องประเมิน", f"฿{net_tax_gain:,.2f}", "หักล้างเงินต้นแล้ว", delta_color="inverse")
+        cf1.metric("📤 ยอดเงินโอนออกนอกประเทศรวม (เงินต้นตั้งรับ)", f"฿{sum_out_thb:,.2f}")
+        cf2.metric("📥 ยอดเงินนำกลับเข้าไทยรวม", f"฿{sum_in_thb:,.2f}")
+        cf3.metric("🚨 ส่วนเกินทุนสุทธิ (ประเมินภาษี)", f"฿{net_tax_gain:,.2f}", "หักล้างเงินต้นเรียบร้อยแล้ว", delta_color="inverse")
 
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
