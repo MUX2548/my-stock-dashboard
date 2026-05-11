@@ -77,6 +77,7 @@ if "trade_ledger" not in st.session_state:
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
+# 🌟 ตั้งค่าโซนเวลาไทย
 tz_th = timezone(timedelta(hours=7))
 current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M")
@@ -110,7 +111,7 @@ def calculate_stats(df_input):
     return cb, stat, r_bals, hld
 
 # ==========================================
-# 🌟 Sidebar
+# 🌟 Sidebar (Public Tools)
 # ==========================================
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
@@ -137,21 +138,39 @@ with st.sidebar:
             st.session_state["logged_in"] = False
             st.rerun()
 
-# --- ดึงข้อมูลวิเคราะห์ ---
+# --- ดึงข้อมูลวิเคราะห์ + 🌟 สัญญาณตลาด (Market Signal) ---
 @st.cache_data(ttl=300)
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
     p, i = stgs[tf]["p"], stgs[tf]["i"]
     try:
+        # ดึงกราฟหุ้นหลัก
         s = yf.Ticker(ticker_symbol)
         df = s.history(period=p, interval=i)
-        if df is None or df.empty: return pd.DataFrame(), {}, None
-        
+        if df is None or df.empty: return pd.DataFrame(), {}, None, None
         df = df.dropna(subset=['Close'])
-        if df.empty: return pd.DataFrame(), {}, None
+        if df.empty: return pd.DataFrame(), {}, None, None
         
-        spy = yf.Ticker("^GSPC").history(period=p, interval=i)['Close']
-        df['RS'] = (df['Close'].pct_change(10) - spy.pct_change(10)) * 100
+        # 🌟 ดึงข้อมูลตลาดโลก (S&P 500) และคำนวณทิศทาง
+        spy = yf.Ticker("^GSPC").history(period=p, interval=i)
+        spy_trend = "N/A"
+        if not spy.empty:
+            df['RS'] = (df['Close'].pct_change(10) - spy['Close'].pct_change(10)) * 100
+            spy_ema50 = spy['Close'].ewm(span=50).mean().iloc[-1]
+            spy_trend = "ขึ้น 📈" if spy['Close'].iloc[-1] > spy_ema50 else "ลง 📉"
+        else:
+            df['RS'] = 0
+
+        # 🌟 ดึงข้อมูลดัชนีความกลัว (VIX)
+        try:
+            vix = yf.Ticker("^VIX").history(period="1mo", interval="1d")
+            vix_val = vix['Close'].iloc[-1] if not vix.empty else 20.0
+        except:
+            vix_val = 20.0
+
+        market_signal = {"spy_trend": spy_trend, "vix": vix_val}
+
+        # คำนวณอินดิเคเตอร์
         df['E20'] = df['Close'].ewm(span=20).mean()
         df['E50'] = df['Close'].ewm(span=50).mean()
         delta = df['Close'].diff()
@@ -177,10 +196,11 @@ def load_pro_data(ticker_symbol, tf):
         v = df['Close'].pct_change().tail(14).std()
         tr = "ขึ้น 📈" if last > df['E50'].iloc[-1] else "ลง 📉"
         mat = {"l": last * (1 - v*1.0) if tr == "ลง 📉" else last * (1 - v*0.5), "u": last * (1 - v*0.5) if tr == "ลง 📉" else last * (1 + v*1.0), "tr": tr}
-        return df, fund, mat
-    except: return pd.DataFrame(), {}, None
+        
+        return df, fund, mat, market_signal
+    except: return pd.DataFrame(), {}, None, None
 
-df, fund, matrix = load_pro_data(ticker, tf_option)
+df, fund, matrix, market_signal = load_pro_data(ticker, tf_option)
 
 # --- Tabs ---
 tabs = ["📊 วิเคราะห์กราฟ (Analysis)", "💼 บัญชี (Cloud Sync)", "🧾 ภาษีสรรพากร"] if st.session_state["logged_in"] else ["📊 วิเคราะห์กราฟ (Analysis)"]
@@ -191,12 +211,36 @@ tab_list = st.tabs(tabs)
 # ==========================================
 with tab_list[0]:
     st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
-    st.caption(f"📅 ข้อมูลวิเคราะห์ ณ วันที่: {current_date}")
+    st.caption(f"📅 ข้อมูลวิเคราะห์ ณ วันที่: {current_date} | 🕒 อัปเดตล่าสุด: {current_time} น.")
     
     if not df.empty:
         last_p = df['Close'].iloc[-1]
         prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
         
+        # 🌟 แสดงผล Dashboard Market Signal
+        if market_signal:
+            st.markdown("---")
+            st.markdown("### 🌐 Market Signal (เรดาร์สแกนภาพรวมตลาด)")
+            m1, m2, m3 = st.columns(3)
+            
+            spy_t = market_signal["spy_trend"]
+            m1.metric("ทิศทางตลาดโลก (S&P 500)", spy_t, "🟢 กระแสน้ำผลักดัน" if "ขึ้น" in spy_t else "🔴 กระแสน้ำกดดัน", delta_color="normal" if "ขึ้น" in spy_t else "inverse")
+            
+            v_val = market_signal["vix"]
+            if v_val < 20: v_stat, v_col = "🟢 คนกล้าซื้อ (Risk ON)", "normal"
+            elif v_val < 30: v_stat, v_col = "🟡 เฝ้าระวัง (Neutral)", "off"
+            else: v_stat, v_col = "🔴 ตื่นตระหนก (Risk OFF)", "inverse"
+            m2.metric("ดัชนีความกลัว (VIX Index)", f"{v_val:.2f}", v_stat, delta_color=v_col)
+            
+            with m3:
+                if "ขึ้น" in spy_t and v_val < 25:
+                    st.success("✅ **ตลาดเป็นใจ:** สภาพแวดล้อมปลอดภัย เอื้อต่อการเข้าทำกำไรหรือถือรันเทรนด์ค่ะ")
+                elif "ลง" in spy_t and v_val > 25:
+                    st.error("🚨 **ความเสี่ยงสูง:** ตลาดกำลังผันผวนรุนแรง แนะนำให้ชะลอการลงทุน หรือคุม Stop Loss ให้แน่นหนาค่ะ")
+                else:
+                    st.warning("⚠️ **ตลาดไร้ทิศทาง:** ตลาดยังเลือกทางไม่ได้ แนะนำเก็งกำไรระยะสั้นในกรอบเท่านั้นค่ะ")
+            st.markdown("---")
+
         rs = df['RS'].iloc[-1]
         rs_t = f" | **Relative Strength:** {'🟢 ชนะตลาด' if rs > 0 else '🔴 อ่อนแอกว่าตลาด'} ({rs:.2f}%)" if not np.isnan(rs) else ""
         if matrix: st.info(f"🔮 **ทิศทาง {tf_option}:** {matrix['tr']} | **เป้าหมาย:** {matrix['l']:,.2f} - {matrix['u']:,.2f} (Harmonic Matrix){rs_t}")
@@ -231,7 +275,6 @@ with tab_list[0]:
         
         with c_r:
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - prev_p:.2f}")
-            st.caption(f"🕒 อัปเดตล่าสุด: {current_time} น.")
             
             if b_p > 0:
                 pl = ((last_p - b_p) / b_p) * 100
@@ -259,7 +302,7 @@ with tab_list[0]:
     else:
         st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ\n\n💡 **วิธีแก้:** ลองเปลี่ยนชื่อหุ้นที่เมนูด้านซ้าย หรือรอสักพัก (ประมาณ 2-3 นาที) แล้วกดรีเฟรชหน้าเว็บอีกครั้งค่ะ")
 
-    # 🌟 ส่วนระบบส่งฟีดแบ็กความแม่นยำ (Feedback System) ปลอดภัย 100%
+    # 🌟 ระบบส่งฟีดแบ็กความแม่นยำ
     st.markdown("---")
     with st.expander("⭐ ประเมินความแม่นยำของระบบวิเคราะห์ (เพื่อนำไปพัฒนาต่อยอด)"):
         with st.form("feedback_form", clear_on_submit=True):
