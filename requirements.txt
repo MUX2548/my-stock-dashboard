@@ -1,6 +1,7 @@
 streamlit
-yfinance
+gspread
+google-auth
+yfinance>=0.2.40
 plotly
 pandas
 numpy
-st-gsheets-connection
