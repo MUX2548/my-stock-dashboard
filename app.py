@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
-st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.5", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.6", page_icon="📈", layout="wide")
 
 # 🎨 2. ตกแต่ง UI/UX
 st.markdown("""
@@ -110,21 +110,17 @@ tz_th = timezone(timedelta(hours=7))
 current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M")
 
-# 🌟 ฟังก์ชันระบบนับยอดคนเข้าแอป (Visitor Logger)
 def log_visitor():
     try:
         ws = sh.worksheet("Visitor_Log")
-        # เช็คว่าคนนี้เคยถูกนับไปหรือยังในรอบการเข้าเว็บครั้งนี้
         if "has_logged_visit" not in st.session_state:
             timestamp = datetime.now(tz_th).strftime("%d/%m/%Y %H:%M:%S")
             ws.append_row([timestamp])
             st.session_state.has_logged_visit = True
-        
-        # ดึงจำนวนแถวทั้งหมดมานับเป็นจำนวนคน
         total_visits = len(ws.col_values(1))
         return total_visits
     except Exception as e:
-        return "N/A (สร้างชีต 'Visitor_Log' ด้วยค่ะ)"
+        return "N/A"
 
 visitor_count = log_visitor()
 
@@ -165,8 +161,6 @@ def convert_df_to_csv(df):
 # ==========================================
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
-    
-    # 🌟 แปะป้ายแสดงยอดคนเข้าชมที่เมนูด้านซ้าย
     st.info(f"👁️ **ยอดผู้เข้าชมทั้งหมด: {visitor_count} ครั้ง**")
     st.markdown("---")
     
@@ -433,6 +427,14 @@ if st.session_state["logged_in"]:
         st.markdown("---")
         st.subheader("📊 พอร์ตโฟลิโอปัจจุบัน (Visual Holdings)")
         
+        # 🌟 ระบบดึงค่าเงินบาท (USD/THB) แบบเรียลไทม์
+        try:
+            live_fx = yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
+        except:
+            live_fx = 35.00 # ค่าสำรองกรณีดึงข้อมูลไม่สำเร็จ
+            
+        st.info(f"💱 **อัตราแลกเปลี่ยนตลาดโลกปัจจุบัน (USD/THB):** ฿{live_fx:.4f} ต่อ 1 ดอลลาร์")
+        
         port_summary, total_invested = [], 0.0
         for t, data in holdings.items():
             if data["shares"] > 0.001:
@@ -452,19 +454,29 @@ if st.session_state["logged_in"]:
                         except: curr_p = avg_cost
                         
                         val = curr_p * sh
-                        profit = val - t_cost
-                        profit_pct = (profit / t_cost * 100) if t_cost > 0 else 0
+                        profit_usd = val - t_cost
+                        profit_thb = profit_usd * live_fx
+                        profit_pct = (profit_usd / t_cost * 100) if t_cost > 0 else 0
+                        
                         results.append({
                             "หุ้น": t, "จำนวนหุ้น": sh, "ต้นทุนเฉลี่ย": avg_cost, 
-                            "ราคาปัจจุบัน": curr_p, "กำไร/ขาดทุน": profit, 
+                            "ราคาปัจจุบัน": curr_p, "กำไร/ขาดทุน ($)": profit_usd, 
+                            "กำไร/ขาดทุน (฿)": profit_thb,
                             "% เปลี่ยนแปลง": profit_pct, "มูลค่ารวม": val
                         })
                         total_v += val
                     
-                    p1, p2, p3 = st.columns(3)
-                    p1.metric("มูลค่าหุ้นรวม (Market Value)", f"${total_v:,.2f}")
-                    p2.metric("ต้นทุนหุ้นทั้งหมด (Total Cost)", f"${total_invested:,.2f}")
-                    p3.metric("กำไร/ขาดทุนรวม (Unrealized P/L)", f"${(total_v-total_invested):,.2f}", f"{((total_v-total_invested)/total_invested*100 if total_invested>0 else 0):.2f}%")
+                    # 🌟 อัปเดตกล่องตัวเลข 4 กล่อง (เพิ่มสรุปกำไรเป็นเงินบาท)
+                    p1, p2, p3, p4 = st.columns(4)
+                    p1.metric("มูลค่าหุ้นรวม ($)", f"${total_v:,.2f}")
+                    p2.metric("ต้นทุนหุ้นทั้งหมด ($)", f"${total_invested:,.2f}")
+                    
+                    total_pl_usd = total_v - total_invested
+                    total_pl_thb = total_pl_usd * live_fx
+                    pl_pct = (total_pl_usd / total_invested * 100) if total_invested > 0 else 0
+                    
+                    p3.metric("กำไร/ขาดทุนรวม ($)", f"${total_pl_usd:,.2f}", f"{pl_pct:.2f}%")
+                    p4.metric("กำไร/ขาดทุนรวม (฿)", f"฿{total_pl_thb:,.2f}", "แปลงจาก USD อัตโนมัติ")
                     
                     res_df = pd.DataFrame(results)
                     chart_col1, chart_col2 = st.columns(2)
@@ -473,17 +485,19 @@ if st.session_state["logged_in"]:
                         fig_pie.update_layout(title="สัดส่วนพอร์ต (Allocation)", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
                         st.plotly_chart(fig_pie, use_container_width=True)
                     with chart_col2:
-                        bar_colors = ['#00E676' if val >= 0 else '#FF5252' for val in res_df['กำไร/ขาดทุน']]
-                        fig_bar = go.Figure(data=[go.Bar(x=res_df['หุ้น'], y=res_df['กำไร/ขาดทุน'], marker_color=bar_colors)])
+                        bar_colors = ['#00E676' if val >= 0 else '#FF5252' for val in res_df['กำไร/ขาดทุน ($)']]
+                        fig_bar = go.Figure(data=[go.Bar(x=res_df['หุ้น'], y=res_df['กำไร/ขาดทุน ($)'], marker_color=bar_colors)])
                         fig_bar.update_layout(title="กำไร/ขาดทุนรายตัว (P/L)", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
                         st.plotly_chart(fig_bar, use_container_width=True)
 
                     def color_profit(val):
                         return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
                     
-                    styled_res = res_df.style.map(color_profit, subset=["กำไร/ขาดทุน", "% เปลี่ยนแปลง"]).format({
+                    # 🌟 จัดรูปแบบให้ตารางรองรับคอลัมน์ใหม่ (฿)
+                    styled_res = res_df.style.map(color_profit, subset=["กำไร/ขาดทุน ($)", "กำไร/ขาดทุน (฿)", "% เปลี่ยนแปลง"]).format({
                         "จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}",
-                        "กำไร/ขาดทุน": "${:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", "มูลค่ารวม": "${:,.2f}"
+                        "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}",
+                        "% เปลี่ยนแปลง": "{:,.2f}%", "มูลค่ารวม": "${:,.2f}"
                     })
                     st.dataframe(styled_res, use_container_width=True)
                     
