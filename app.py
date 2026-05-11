@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
-st.set_page_config(page_title="Strategic Portfolio Ecosystem 3.0", layout="wide")
+st.set_page_config(page_title="Strategic Portfolio Ecosystem 3.0", page_icon="📈", layout="wide")
 
 # ==========================================
 # 🔐 การเชื่อมต่อฐานข้อมูล
@@ -77,7 +77,6 @@ if "trade_ledger" not in st.session_state:
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
-# 🌟 ตั้งค่าโซนเวลาไทยให้เป๊ะ
 tz_th = timezone(timedelta(hours=7))
 current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M")
@@ -111,7 +110,7 @@ def calculate_stats(df_input):
     return cb, stat, r_bals, hld
 
 # ==========================================
-# 🌟 Sidebar (Public Tools)
+# 🌟 Sidebar
 # ==========================================
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
@@ -192,7 +191,6 @@ tab_list = st.tabs(tabs)
 # ==========================================
 with tab_list[0]:
     st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
-    # 🌟 เติมวันที่กลับมาตรงนี้แล้วค่ะ!
     st.caption(f"📅 ข้อมูลวิเคราะห์ ณ วันที่: {current_date}")
     
     if not df.empty:
@@ -233,7 +231,6 @@ with tab_list[0]:
         
         with c_r:
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - prev_p:.2f}")
-            # 🌟 เติมเวลากลับมาตรงนี้แล้วค่ะ!
             st.caption(f"🕒 อัปเดตล่าสุด: {current_time} น.")
             
             if b_p > 0:
@@ -261,6 +258,23 @@ with tab_list[0]:
             st.write(f"**รับ:** {df['E50'].iloc[-1]:.2f}")
     else:
         st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ\n\n💡 **วิธีแก้:** ลองเปลี่ยนชื่อหุ้นที่เมนูด้านซ้าย หรือรอสักพัก (ประมาณ 2-3 นาที) แล้วกดรีเฟรชหน้าเว็บอีกครั้งค่ะ")
+
+    # 🌟 ส่วนระบบส่งฟีดแบ็กความแม่นยำ (Feedback System) ปลอดภัย 100%
+    st.markdown("---")
+    with st.expander("⭐ ประเมินความแม่นยำของระบบวิเคราะห์ (เพื่อนำไปพัฒนาต่อยอด)"):
+        with st.form("feedback_form", clear_on_submit=True):
+            st.write(f"คุณมีความคิดเห็นอย่างไรกับการวิเคราะห์กราฟของหุ้น **{ticker}** ในครั้งนี้?")
+            rating = st.slider("ระดับความแม่นยำและประโยชน์ที่ได้รับ (1 = แย่, 5 = แม่นยำ/มีประโยชน์มาก)", 1, 5, 5)
+            comment = st.text_area("ข้อเสนอแนะเพิ่มเติม (Optional):")
+            
+            if st.form_submit_button("ส่งฟีดแบ็ก (Submit)"):
+                try:
+                    fb_ws = sh.worksheet("Feedback")
+                    timestamp = datetime.now(tz_th).strftime("%d/%m/%Y %H:%M:%S")
+                    fb_ws.append_row([timestamp, ticker, rating, comment])
+                    st.success("🙏 ขอบคุณสำหรับฟีดแบ็กค่ะ! ข้อมูลถูกส่งเข้าฐานข้อมูลเรียบร้อยแล้ว เพื่อนำไปพัฒนาระบบให้ดียิ่งขึ้นค่ะ")
+                except Exception as e:
+                    st.error("⚠️ ไม่สามารถส่งข้อมูลได้ กรุณาตรวจสอบว่าคุณได้สร้างแผ่นงานที่ชื่อ 'Feedback' ใน Google Sheets แล้วหรือยังคะ?")
 
 if st.session_state["logged_in"]:
     cb, l_stat, r_bals, holdings = calculate_stats(st.session_state.trade_ledger)
@@ -364,6 +378,7 @@ if st.session_state["logged_in"]:
                            "WHT_USD": st.column_config.NumberColumn("ภาษีหัก ตปท. ($)", format="%.2f"), "Balance_THB": st.column_config.NumberColumn("เงินต้นคงเหลือ (฿)", disabled=True), "Ref_Doc": "หมายเหตุ"})
         
         if not ed_t[["FX_Rate", "WHT_USD", "Ref_Doc"]].equals(tax_v[["FX_Rate", "WHT_USD", "Ref_Doc"]]):
+            ed_t = clean_df_types(ed_t)
             st.session_state.trade_ledger.loc[tax_idx, "FX_Rate"] = ed_t["FX_Rate"].values
             st.session_state.trade_ledger.loc[tax_idx, "WHT_USD"] = ed_t["WHT_USD"].values
             st.session_state.trade_ledger.loc[tax_idx, "Ref_Doc"] = ed_t["Ref_Doc"].values
