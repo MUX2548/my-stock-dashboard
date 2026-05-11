@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
-st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.4", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.5", page_icon="📈", layout="wide")
 
 # 🎨 2. ตกแต่ง UI/UX
 st.markdown("""
@@ -35,7 +35,6 @@ st.markdown("""
         margin-bottom: 20px;
         border-left: 5px solid;
     }
-    /* ปรับระยะห่างใต้กล่องตัวเลขราคาให้ชิดขึ้น */
     div[data-testid="stMetricValue"] {
         padding-bottom: 0px;
     }
@@ -111,6 +110,24 @@ tz_th = timezone(timedelta(hours=7))
 current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M")
 
+# 🌟 ฟังก์ชันระบบนับยอดคนเข้าแอป (Visitor Logger)
+def log_visitor():
+    try:
+        ws = sh.worksheet("Visitor_Log")
+        # เช็คว่าคนนี้เคยถูกนับไปหรือยังในรอบการเข้าเว็บครั้งนี้
+        if "has_logged_visit" not in st.session_state:
+            timestamp = datetime.now(tz_th).strftime("%d/%m/%Y %H:%M:%S")
+            ws.append_row([timestamp])
+            st.session_state.has_logged_visit = True
+        
+        # ดึงจำนวนแถวทั้งหมดมานับเป็นจำนวนคน
+        total_visits = len(ws.col_values(1))
+        return total_visits
+    except Exception as e:
+        return "N/A (สร้างชีต 'Visitor_Log' ด้วยค่ะ)"
+
+visitor_count = log_visitor()
+
 def calculate_stats(df_input):
     df = clean_df_types(df_input)
     cb = 0.0
@@ -148,6 +165,11 @@ def convert_df_to_csv(df):
 # ==========================================
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
+    
+    # 🌟 แปะป้ายแสดงยอดคนเข้าชมที่เมนูด้านซ้าย
+    st.info(f"👁️ **ยอดผู้เข้าชมทั้งหมด: {visitor_count} ครั้ง**")
+    st.markdown("---")
+    
     ticker = st.text_input("🔎 ชื่อหุ้น / ดัชนี", value="NVTS").upper()
     tf_option = st.radio("เลือกความละเอียด:", ["1D (รายวัน)", "1W (รายสัปดาห์)", "1M (รายเดือน)"], index=0)
     
@@ -239,7 +261,6 @@ tab_list = st.tabs(tabs)
 # ==========================================
 with tab_list[0]:
     st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
-    # 🌟 ปรับขนาดและสีของวันที่ให้ใหญ่และชัดเจนขึ้น
     st.markdown(f"#### 📅 ข้อมูลวิเคราะห์ ณ วันที่: <span style='color:#4CAF50'>{current_date}</span> &nbsp;|&nbsp; 🕒 อัปเดตล่าสุด: <span style='color:#4CAF50'>{current_time} น.</span>", unsafe_allow_html=True)
     
     if not df.empty:
@@ -317,7 +338,6 @@ with tab_list[0]:
         
         with c_r:
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - prev_p:.2f}")
-            # 🌟 เพิ่มวันที่และเวลาแนบชิดใต้ราคาปัจจุบัน
             st.markdown(f"<div style='margin-top: -15px; margin-bottom: 20px; font-size: 0.9em; color: #a0aab2;'>📅 {current_date} &nbsp; 🕒 {current_time} น.</div>", unsafe_allow_html=True)
             
             if b_p > 0:
