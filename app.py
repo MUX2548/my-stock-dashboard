@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
-st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.9", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.10", page_icon="📈", layout="wide")
 
 # 🎨 2. ตกแต่ง UI/UX
 st.markdown("""
@@ -37,6 +37,10 @@ st.markdown("""
     }
     div[data-testid="stMetricValue"] {
         padding-bottom: 0px;
+    }
+    /* แต่งสี Spinner ให้ดูพรีเมียม */
+    .stSpinner > div > div {
+        border-top-color: #deff9a !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -108,7 +112,7 @@ if "logged_in" not in st.session_state:
 
 tz_th = timezone(timedelta(hours=7))
 current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
-current_time = datetime.now(tz_th).strftime("%H:%M:%S") # เพิ่มวินาทีให้เห็นความสดใหม่
+current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 
 def log_visitor():
     try:
@@ -158,15 +162,14 @@ def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
 # ==========================================
-# 🌟 Sidebar & Real-time Controls
+# 🌟 Sidebar
 # ==========================================
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
     
-    # 🌟 ปุ่ม Force Refresh ดึงข้อมูลใหม่ทันที
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
-        st.cache_data.clear() # ล้างความจำทั้งหมด
-        st.rerun() # รีโหลดแอปใหม่ทันที
+        st.cache_data.clear()
+        st.rerun()
         
     st.info(f"👁️ **ยอดผู้เข้าชมทั้งหมด: {visitor_count} ครั้ง**")
     st.markdown("---")
@@ -194,7 +197,7 @@ with st.sidebar:
             st.session_state["logged_in"] = False
             st.rerun()
 
-# --- ดึงข้อมูลวิเคราะห์ (ปรับให้จำแค่ 60 วินาที เพื่อความเรียลไทม์) ---
+# --- ดึงข้อมูลวิเคราะห์ ---
 @st.cache_data(ttl=60)
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
@@ -252,9 +255,6 @@ def load_pro_data(ticker_symbol, tf):
         return df, fund, mat, market_signal
     except: return pd.DataFrame(), {}, None, None
 
-df, fund, matrix, market_signal = load_pro_data(ticker, tf_option)
-
-# 🌟 ฟังก์ชันดึงราคาและค่าเงินแบบ Real-time (จำแค่ 60 วินาที)
 @st.cache_data(ttl=60)
 def get_live_price(ticker_sym):
     try: return yf.Ticker(ticker_sym).history(period="1d")['Close'].iloc[-1]
@@ -264,6 +264,10 @@ def get_live_price(ticker_sym):
 def get_live_fx():
     try: return yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
     except: return 35.00
+
+# 🌟 โชว์ Spinner ตอนกำลังโหลดข้อมูลกราฟหลัก
+with st.spinner(f"⏳ กำลังดึงข้อมูลกราฟ {ticker} และเรดาร์ตลาดโลก... (อาจใช้เวลา 5-10 วินาที)"):
+    df, fund, matrix, market_signal = load_pro_data(ticker, tf_option)
 
 tabs = ["📊 วิเคราะห์กราฟ (Analysis)", "💼 บัญชี (Cloud Sync)", "🧾 ภาษีสรรพากร"] if st.session_state["logged_in"] else ["📊 วิเคราะห์กราฟ (Analysis)"]
 tab_list = st.tabs(tabs)
@@ -459,26 +463,28 @@ if st.session_state["logged_in"]:
         if len(port_summary) > 0:
             current_port_df = pd.DataFrame(port_summary)
             
-            # 🌟 คำนวณอัตโนมัติทันทีที่เข้าหน้านี้ ไม่ต้องมีปุ่มกดอีกต่อไป!
             results, total_v = [], 0.0
-            for _, row in current_port_df.iterrows():
-                t, avg_cost, sh, t_cost = row["Ticker"], row["Cost_Price"], row["Shares"], row["Total_Cost"]
-                
-                curr_p = get_live_price(t)
-                if curr_p is None: curr_p = avg_cost # ถ้าดึงพัง ให้ใช้ราคาต้นทุนแทนชั่วคราว
-                
-                val = curr_p * sh
-                profit_usd = val - t_cost
-                profit_thb = profit_usd * live_fx
-                profit_pct = (profit_usd / t_cost * 100) if t_cost > 0 else 0
-                
-                results.append({
-                    "หุ้น": t, "จำนวนหุ้น": sh, "ต้นทุนเฉลี่ย": avg_cost, 
-                    "ราคาปัจจุบัน": curr_p, "กำไร/ขาดทุน ($)": profit_usd, 
-                    "กำไร/ขาดทุน (฿)": profit_thb,
-                    "% เปลี่ยนแปลง": profit_pct, "มูลค่ารวม": val
-                })
-                total_v += val
+            
+            # 🌟 โชว์ Spinner ตอนโหลดราคาหุ้นในพอร์ต
+            with st.spinner("⏳ กำลังวิ่งไปเก็บราคาล่าสุดของหุ้นทุกตัวในพอร์ต... (รอแป๊บนึงนะคะ)"):
+                for _, row in current_port_df.iterrows():
+                    t, avg_cost, sh, t_cost = row["Ticker"], row["Cost_Price"], row["Shares"], row["Total_Cost"]
+                    
+                    curr_p = get_live_price(t)
+                    if curr_p is None: curr_p = avg_cost
+                    
+                    val = curr_p * sh
+                    profit_usd = val - t_cost
+                    profit_thb = profit_usd * live_fx
+                    profit_pct = (profit_usd / t_cost * 100) if t_cost > 0 else 0
+                    
+                    results.append({
+                        "หุ้น": t, "จำนวนหุ้น": sh, "ต้นทุนเฉลี่ย": avg_cost, 
+                        "ราคาปัจจุบัน": curr_p, "กำไร/ขาดทุน ($)": profit_usd, 
+                        "กำไร/ขาดทุน (฿)": profit_thb,
+                        "% เปลี่ยนแปลง": profit_pct, "มูลค่ารวม": val
+                    })
+                    total_v += val
             
             p1, p2, p3, p4 = st.columns(4)
             p1.metric("มูลค่าหุ้นรวม ($)", f"${total_v:,.2f}")
