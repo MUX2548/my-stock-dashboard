@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
-st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.6", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.7", page_icon="📈", layout="wide")
 
 # 🎨 2. ตกแต่ง UI/UX
 st.markdown("""
@@ -139,6 +139,8 @@ def calculate_stats(df_input):
         if action == "นำเงินออกนอกประเทศ (Outward)": cb += a; stat["outward"] += a
         elif action == "นำเงินเข้าประเทศไทย (Inward)": cb -= a; stat["inward"] += a
         elif action == "รับเงินปันผล (Dividend)": cb += a; stat["dividend"] += a
+        # 🌟 เพิ่มเงื่อนไขนำยอด 'กำไรจากการขายหุ้น' มาบวกเข้ากระเป๋าเงินสด
+        elif action == "กำไรจากการขายหุ้น (Profit)": cb += a
         elif action == "ซื้อหุ้น (Buy)" and ticker:
             cb -= val; stat["bought"] += val
             if ticker not in hld: hld[ticker] = {"shares": 0.0, "total_cost": 0.0}
@@ -399,10 +401,11 @@ if st.session_state["logged_in"]:
         
         st.info("💡 **วิธีลบข้อมูลตาราง:** กดเลือก ⬜ หน้าแถวที่ต้องการลบ (มุมซ้ายสุด) แล้วกดไอคอน 🗑️ มุมขวาบนของตาราง หรือกดปุ่ม Delete บนคีย์บอร์ดได้เลยค่ะ")
         
+        # 🌟 เพิ่มตัวเลือก "กำไรจากการขายหุ้น (Profit)" ใน Dropdown
         ed_l = st.data_editor(st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
             column_config={
                 "Date": "วันที่ (DD/MM/YYYY)",
-                "Action": st.column_config.SelectboxColumn("ประเภท", options=["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)", "รับเงินปันผล (Dividend)"]),
+                "Action": st.column_config.SelectboxColumn("ประเภท", options=["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)", "รับเงินปันผล (Dividend)", "กำไรจากการขายหุ้น (Profit)"]),
                 "Ticker": "ชื่อหุ้น",
                 "Price": st.column_config.NumberColumn("ราคา ($)", format="%.4f", step=0.0001),
                 "Shares": st.column_config.NumberColumn("จำนวนหุ้น", format="%.4f", step=0.0001),
@@ -410,7 +413,7 @@ if st.session_state["logged_in"]:
                 "Running_Balance": st.column_config.NumberColumn("ยอดยกมา ($)", disabled=True, format="%.2f"), 
                 "FX_Rate": st.column_config.NumberColumn("เรทเงิน", format="%.4f", step=0.0001), 
                 "WHT_USD": st.column_config.NumberColumn("ภาษีหักฯ ($)", format="%.2f", step=0.01), 
-                "Ref_Doc": None
+                "Ref_Doc": "หมายเหตุ"
             })
             
         if not ed_l.equals(st.session_state.trade_ledger):
@@ -427,11 +430,10 @@ if st.session_state["logged_in"]:
         st.markdown("---")
         st.subheader("📊 พอร์ตโฟลิโอปัจจุบัน (Visual Holdings)")
         
-        # 🌟 ระบบดึงค่าเงินบาท (USD/THB) แบบเรียลไทม์
         try:
             live_fx = yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
         except:
-            live_fx = 35.00 # ค่าสำรองกรณีดึงข้อมูลไม่สำเร็จ
+            live_fx = 35.00
             
         st.info(f"💱 **อัตราแลกเปลี่ยนตลาดโลกปัจจุบัน (USD/THB):** ฿{live_fx:.4f} ต่อ 1 ดอลลาร์")
         
@@ -466,7 +468,6 @@ if st.session_state["logged_in"]:
                         })
                         total_v += val
                     
-                    # 🌟 อัปเดตกล่องตัวเลข 4 กล่อง (เพิ่มสรุปกำไรเป็นเงินบาท)
                     p1, p2, p3, p4 = st.columns(4)
                     p1.metric("มูลค่าหุ้นรวม ($)", f"${total_v:,.2f}")
                     p2.metric("ต้นทุนหุ้นทั้งหมด ($)", f"${total_invested:,.2f}")
@@ -493,7 +494,6 @@ if st.session_state["logged_in"]:
                     def color_profit(val):
                         return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
                     
-                    # 🌟 จัดรูปแบบให้ตารางรองรับคอลัมน์ใหม่ (฿)
                     styled_res = res_df.style.map(color_profit, subset=["กำไร/ขาดทุน ($)", "กำไร/ขาดทุน (฿)", "% เปลี่ยนแปลง"]).format({
                         "จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}",
                         "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}",
