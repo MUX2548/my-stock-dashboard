@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
-st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.2", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.3", page_icon="📈", layout="wide")
 
 # 🎨 2. ตกแต่ง UI/UX
 st.markdown("""
@@ -380,16 +380,19 @@ if st.session_state["logged_in"]:
         
         st.info("💡 **วิธีลบข้อมูลตาราง:** กดเลือก ⬜ หน้าแถวที่ต้องการลบ (มุมซ้ายสุด) แล้วกดไอคอน 🗑️ มุมขวาบนของตาราง หรือกดปุ่ม Delete บนคีย์บอร์ดได้เลยค่ะ")
         
+        # 🌟 ปลดล็อคให้พิมพ์ทศนิยมได้ทุกช่อง
         ed_l = st.data_editor(st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
             column_config={
                 "Date": "วันที่ (DD/MM/YYYY)",
                 "Action": st.column_config.SelectboxColumn("ประเภท", options=["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)", "รับเงินปันผล (Dividend)"]),
                 "Ticker": "ชื่อหุ้น",
-                "Price": st.column_config.NumberColumn("ราคา ($)", format="%.4f"),
-                "Shares": st.column_config.NumberColumn("จำนวนหุ้น", format="%.4f"),
-                "Amount_USD": st.column_config.NumberColumn("จำนวนเงิน ($)", format="%.2f"),
+                "Price": st.column_config.NumberColumn("ราคา ($)", format="%.4f", step=0.0001),
+                "Shares": st.column_config.NumberColumn("จำนวนหุ้น", format="%.4f", step=0.0001),
+                "Amount_USD": st.column_config.NumberColumn("จำนวนเงิน ($)", format="%.2f", step=0.01),
                 "Running_Balance": st.column_config.NumberColumn("ยอดยกมา ($)", disabled=True, format="%.2f"), 
-                "FX_Rate": None, "WHT_USD": None, "Ref_Doc": None
+                "FX_Rate": st.column_config.NumberColumn("เรทเงิน", format="%.4f", step=0.0001), 
+                "WHT_USD": st.column_config.NumberColumn("ภาษีหักฯ ($)", format="%.2f", step=0.01), 
+                "Ref_Doc": None
             })
             
         if not ed_l.equals(st.session_state.trade_ledger):
@@ -493,11 +496,14 @@ if st.session_state["logged_in"]:
         csv_tax = convert_df_to_csv(tax_v)
         t2.download_button(label="📥 โหลดตารางภาษี (Excel/CSV)", data=csv_tax, file_name=f"Tax_Report_{current_date.replace('/','-')}.csv", mime='text/csv', use_container_width=True)
 
+        # 🌟 ปลดล็อคให้พิมพ์ทศนิยมได้
         ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed",
             column_order=["Date", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "WHT_USD", "Ref_Doc"],
             column_config={"Date": st.column_config.Column("วันที่", disabled=True), "Out_USD": st.column_config.NumberColumn("โอนออก ($)", disabled=True), "In_USD": st.column_config.NumberColumn("นำเข้า ($)", disabled=True),
-                           "FX_Rate": st.column_config.NumberColumn("เรทเงิน (บาท/$)", format="%.4f"), "Out_THB": st.column_config.NumberColumn("โอนออก (฿)", disabled=True), "In_THB": st.column_config.NumberColumn("นำเข้า (฿)", disabled=True),
-                           "WHT_USD": st.column_config.NumberColumn("ภาษีหัก ตปท. ($)", format="%.2f"), "Balance_THB": st.column_config.NumberColumn("เงินต้นคงเหลือ (฿)", disabled=True), "Ref_Doc": "หมายเหตุ"})
+                           "FX_Rate": st.column_config.NumberColumn("เรทเงิน (บาท/$)", format="%.4f", step=0.0001), 
+                           "Out_THB": st.column_config.NumberColumn("โอนออก (฿)", disabled=True), "In_THB": st.column_config.NumberColumn("นำเข้า (฿)", disabled=True),
+                           "WHT_USD": st.column_config.NumberColumn("ภาษีหัก ตปท. ($)", format="%.2f", step=0.01), 
+                           "Balance_THB": st.column_config.NumberColumn("เงินต้นคงเหลือ (฿)", disabled=True), "Ref_Doc": "หมายเหตุ"})
         
         if not ed_t[["FX_Rate", "WHT_USD", "Ref_Doc"]].equals(tax_v[["FX_Rate", "WHT_USD", "Ref_Doc"]]):
             ed_t = clean_df_types(ed_t)
