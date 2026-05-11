@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
-st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.3", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.4", page_icon="📈", layout="wide")
 
 # 🎨 2. ตกแต่ง UI/UX
 st.markdown("""
@@ -34,6 +34,10 @@ st.markdown("""
         border-radius: 10px;
         margin-bottom: 20px;
         border-left: 5px solid;
+    }
+    /* ปรับระยะห่างใต้กล่องตัวเลขราคาให้ชิดขึ้น */
+    div[data-testid="stMetricValue"] {
+        padding-bottom: 0px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -235,13 +239,13 @@ tab_list = st.tabs(tabs)
 # ==========================================
 with tab_list[0]:
     st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
-    st.caption(f"📅 ข้อมูลวิเคราะห์ ณ วันที่: {current_date} | 🕒 อัปเดตล่าสุด: {current_time} น.")
+    # 🌟 ปรับขนาดและสีของวันที่ให้ใหญ่และชัดเจนขึ้น
+    st.markdown(f"#### 📅 ข้อมูลวิเคราะห์ ณ วันที่: <span style='color:#4CAF50'>{current_date}</span> &nbsp;|&nbsp; 🕒 อัปเดตล่าสุด: <span style='color:#4CAF50'>{current_time} น.</span>", unsafe_allow_html=True)
     
     if not df.empty:
         last_p = df['Close'].iloc[-1]
         prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
         
-        # 🌟 1. เรดาร์สแกนตลาด
         if market_signal:
             st.markdown("---")
             st.markdown("### 🌐 Market Signal (เรดาร์สแกนภาพรวมตลาด)")
@@ -262,7 +266,6 @@ with tab_list[0]:
                 elif "ลง" in spy_t and v_val > 25: st.error("🚨 **ความเสี่ยงสูง:** ตลาดกำลังผันผวนรุนแรง คุมความเสี่ยงด่วน")
                 else: st.warning("⚠️ **ตลาดไร้ทิศทาง:** ตลาดยังเลือกทางไม่ได้ แนะนำเก็งกำไรในกรอบ")
 
-        # 🌟 2. กล่อง AI สรุปกลยุทธ์การลงทุน (Executive Summary)
         rs_val = df['RS'].iloc[-1]
         stock_is_uptrend = last_p > df['E50'].iloc[-1]
         market_is_good = "ขึ้น" in market_signal["spy_trend"] and market_signal["vix"] < 25
@@ -314,6 +317,8 @@ with tab_list[0]:
         
         with c_r:
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - prev_p:.2f}")
+            # 🌟 เพิ่มวันที่และเวลาแนบชิดใต้ราคาปัจจุบัน
+            st.markdown(f"<div style='margin-top: -15px; margin-bottom: 20px; font-size: 0.9em; color: #a0aab2;'>📅 {current_date} &nbsp; 🕒 {current_time} น.</div>", unsafe_allow_html=True)
             
             if b_p > 0:
                 pl = ((last_p - b_p) / b_p) * 100
@@ -380,7 +385,6 @@ if st.session_state["logged_in"]:
         
         st.info("💡 **วิธีลบข้อมูลตาราง:** กดเลือก ⬜ หน้าแถวที่ต้องการลบ (มุมซ้ายสุด) แล้วกดไอคอน 🗑️ มุมขวาบนของตาราง หรือกดปุ่ม Delete บนคีย์บอร์ดได้เลยค่ะ")
         
-        # 🌟 ปลดล็อคให้พิมพ์ทศนิยมได้ทุกช่อง
         ed_l = st.data_editor(st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
             column_config={
                 "Date": "วันที่ (DD/MM/YYYY)",
@@ -496,7 +500,6 @@ if st.session_state["logged_in"]:
         csv_tax = convert_df_to_csv(tax_v)
         t2.download_button(label="📥 โหลดตารางภาษี (Excel/CSV)", data=csv_tax, file_name=f"Tax_Report_{current_date.replace('/','-')}.csv", mime='text/csv', use_container_width=True)
 
-        # 🌟 ปลดล็อคให้พิมพ์ทศนิยมได้
         ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed",
             column_order=["Date", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "WHT_USD", "Ref_Doc"],
             column_config={"Date": st.column_config.Column("วันที่", disabled=True), "Out_USD": st.column_config.NumberColumn("โอนออก ($)", disabled=True), "In_USD": st.column_config.NumberColumn("นำเข้า ($)", disabled=True),
