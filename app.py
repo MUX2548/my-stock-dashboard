@@ -15,7 +15,6 @@ st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.0", page_icon="�
 # 🎨 2. ตกแต่ง UI/UX ให้ดูโปร (CSS Customization)
 st.markdown("""
     <style>
-    /* ตกแต่งปุ่มให้ดูแพง */
     .stButton>button {
         border-radius: 12px;
         font-weight: bold;
@@ -27,7 +26,6 @@ st.markdown("""
         box-shadow: 0 6px 15px rgba(76, 175, 80, 0.4);
         border-color: #4CAF50;
     }
-    /* ปุ่ม Primary (ปุ่มสีแดง/สีหลัก) */
     .stButton>button[data-baseweb="button"] {
         border-radius: 12px;
     }
@@ -131,7 +129,6 @@ def calculate_stats(df_input):
         r_bals.append(cb)
     return cb, stat, r_bals, hld
 
-# ฟังก์ชันแปลงไฟล์เป็น CSV (Excel)
 @st.cache_data
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8-sig')
@@ -164,7 +161,7 @@ with st.sidebar:
             st.session_state["logged_in"] = False
             st.rerun()
 
-# --- ดึงข้อมูลวิเคราะห์ + 🌟 สัญญาณตลาด (Market Signal) ---
+# --- ดึงข้อมูลวิเคราะห์ + 🌟 สัญญาณตลาด (ปรับปรุงตัวเลขให้ชัดเจน) ---
 @st.cache_data(ttl=300)
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
@@ -178,18 +175,20 @@ def load_pro_data(ticker_symbol, tf):
         
         spy = yf.Ticker("^GSPC").history(period=p, interval=i)
         spy_trend = "N/A"
+        spy_price = 0.0
         if not spy.empty:
             df['RS'] = (df['Close'].pct_change(10) - spy['Close'].pct_change(10)) * 100
+            spy_price = spy['Close'].iloc[-1]
             spy_ema50 = spy['Close'].ewm(span=50).mean().iloc[-1]
-            spy_trend = "ขึ้น 📈" if spy['Close'].iloc[-1] > spy_ema50 else "ลง 📉"
+            spy_trend = "ขึ้น 📈" if spy_price > spy_ema50 else "ลง 📉"
         else: df['RS'] = 0
 
         try:
-            vix = yf.Ticker("^VIX").history(period="1mo", interval="1d")
+            vix = yf.Ticker("^VIX").history(period=p, interval=i) # ซิงค์เวลาตามกราฟหุ้นให้ด้วยเลยค่ะ
             vix_val = vix['Close'].iloc[-1] if not vix.empty else 20.0
         except: vix_val = 20.0
 
-        market_signal = {"spy_trend": spy_trend, "vix": vix_val}
+        market_signal = {"spy_trend": spy_trend, "spy_price": spy_price, "vix": vix_val}
 
         df['E20'] = df['Close'].ewm(span=20).mean()
         df['E50'] = df['Close'].ewm(span=50).mean()
@@ -241,13 +240,17 @@ with tab_list[0]:
             st.markdown("### 🌐 Market Signal (เรดาร์สแกนภาพรวมตลาด)")
             m1, m2, m3 = st.columns(3)
             spy_t = market_signal["spy_trend"]
-            m1.metric("ทิศทางตลาดโลก (S&P 500)", spy_t, "🟢 กระแสน้ำผลักดัน" if "ขึ้น" in spy_t else "🔴 กระแสน้ำกดดัน", delta_color="normal" if "ขึ้น" in spy_t else "inverse")
+            spy_p = market_signal["spy_price"]
+            # เพิ่มตัวเลขโชว์ให้เห็นการขยับของ S&P 500
+            m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f} จุด", f"{spy_t} (กระแสน้ำ{'ผลักดัน' if 'ขึ้น' in spy_t else 'กดดัน'})", delta_color="normal" if "ขึ้น" in spy_t else "inverse")
             
             v_val = market_signal["vix"]
             if v_val < 20: v_stat, v_col = "🟢 คนกล้าซื้อ (Risk ON)", "normal"
             elif v_val < 30: v_stat, v_col = "🟡 เฝ้าระวัง (Neutral)", "off"
             else: v_stat, v_col = "🔴 ตื่นตระหนก (Risk OFF)", "inverse"
             m2.metric("ดัชนีความกลัว (VIX Index)", f"{v_val:.2f}", v_stat, delta_color=v_col)
+            # เพิ่มคำอธิบายด้านล่าง
+            m2.caption("💡 **VIX ยิ่งต่ำ = ตลาดปลอดภัย / VIX ยิ่งสูง = ตลาดผันผวนเทขาย**")
             
             with m3:
                 if "ขึ้น" in spy_t and v_val < 25: st.success("✅ **ตลาดเป็นใจ:** สภาพแวดล้อมปลอดภัย เอื้อต่อการเข้าทำกำไร")
@@ -342,7 +345,6 @@ if st.session_state["logged_in"]:
     with tab_list[1]:
         st.subheader("💼 แดชบอร์ดกระแสเงินสด (Cashflow Overview)")
         col1, col2, col3, col4 = st.columns(4)
-        # ใช้สีอธิบายความหมายที่ชัดเจน
         col1.metric("📤 นำเงินออกสะสม (ลงทุน)", f"${l_stat['outward']:,.2f}")
         col2.metric("📥 นำเงินกลับไทย (ถอน)", f"${l_stat['inward']:,.2f}")
         col3.metric("📈 ต้นทุนหุ้นในพอร์ตรวม", f"${l_stat['bought'] - l_stat['sold']:,.2f}")
@@ -351,7 +353,6 @@ if st.session_state["logged_in"]:
         st.markdown("---")
         h1, h2 = st.columns([8, 2])
         h1.subheader("📝 สมุดบันทึกบัญชีการเทรด (Cloud Ledger)")
-        # 📥 ปุ่ม Export ข้อมูลบัญชีเป็น Excel
         csv_ledger = convert_df_to_csv(st.session_state.trade_ledger)
         h2.download_button(label="📥 โหลดข้อมูล (Excel/CSV)", data=csv_ledger, file_name=f"Trade_Ledger_{current_date.replace('/','-')}.csv", mime='text/csv', use_container_width=True)
         
@@ -411,13 +412,11 @@ if st.session_state["logged_in"]:
                         })
                         total_v += val
                     
-                    # สรุปด้านบน
                     p1, p2, p3 = st.columns(3)
                     p1.metric("มูลค่าหุ้นรวม (Market Value)", f"${total_v:,.2f}")
                     p2.metric("ต้นทุนหุ้นทั้งหมด (Total Cost)", f"${total_invested:,.2f}")
                     p3.metric("กำไร/ขาดทุนรวม (Unrealized P/L)", f"${(total_v-total_invested):,.2f}", f"{((total_v-total_invested)/total_invested*100 if total_invested>0 else 0):.2f}%")
                     
-                    # 📊 สร้างกราฟวงกลมและกราฟแท่ง
                     res_df = pd.DataFrame(results)
                     chart_col1, chart_col2 = st.columns(2)
                     with chart_col1:
@@ -430,7 +429,6 @@ if st.session_state["logged_in"]:
                         fig_bar.update_layout(title="กำไร/ขาดทุนรายตัว (P/L)", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
                         st.plotly_chart(fig_bar, use_container_width=True)
 
-                    # 🔴 จัดรูปแบบตาราง ตัวเลขติดลบให้เป็นสีแดง กำไรเป็นสีเขียว
                     def color_profit(val):
                         return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
                     
@@ -440,7 +438,6 @@ if st.session_state["logged_in"]:
                     })
                     st.dataframe(styled_res, use_container_width=True)
                     
-                    # 📥 ปุ่ม Export พอร์ต
                     csv_port = convert_df_to_csv(res_df)
                     st.download_button(label="📥 ดาวน์โหลดพอร์ตโฟลิโอ (Excel/CSV)", data=csv_port, file_name=f"Portfolio_{current_date.replace('/','-')}.csv", mime='text/csv')
         else:
