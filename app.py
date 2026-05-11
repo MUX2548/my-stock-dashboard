@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
-st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.7", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.8", page_icon="📈", layout="wide")
 
 # 🎨 2. ตกแต่ง UI/UX
 st.markdown("""
@@ -139,7 +139,6 @@ def calculate_stats(df_input):
         if action == "นำเงินออกนอกประเทศ (Outward)": cb += a; stat["outward"] += a
         elif action == "นำเงินเข้าประเทศไทย (Inward)": cb -= a; stat["inward"] += a
         elif action == "รับเงินปันผล (Dividend)": cb += a; stat["dividend"] += a
-        # 🌟 เพิ่มเงื่อนไขนำยอด 'กำไรจากการขายหุ้น' มาบวกเข้ากระเป๋าเงินสด
         elif action == "กำไรจากการขายหุ้น (Profit)": cb += a
         elif action == "ซื้อหุ้น (Buy)" and ticker:
             cb -= val; stat["bought"] += val
@@ -333,7 +332,11 @@ with tab_list[0]:
             f1, f2, f3 = st.columns(3); f1.metric("P/S Ratio", fund.get('ps','N/A')); f2.metric("P/E Ratio", fund.get('pe','N/A')); f3.metric("ROE", fund.get('roe','N/A'))
         
         with c_r:
-            st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{last_p - prev_p:.2f}")
+            # 🌟 ปรับปรุงการแสดงผลราคาปัจจุบัน ให้โชว์ทั้งส่วนต่างและ % อย่างแม่นยำ
+            price_diff = last_p - prev_p
+            pct_diff = (price_diff / prev_p) * 100 if prev_p > 0 else 0
+            st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{price_diff:,.2f} ({pct_diff:,.2f}%)")
+            
             st.markdown(f"<div style='margin-top: -15px; margin-bottom: 20px; font-size: 0.9em; color: #a0aab2;'>📅 {current_date} &nbsp; 🕒 {current_time} น.</div>", unsafe_allow_html=True)
             
             if b_p > 0:
@@ -401,7 +404,6 @@ if st.session_state["logged_in"]:
         
         st.info("💡 **วิธีลบข้อมูลตาราง:** กดเลือก ⬜ หน้าแถวที่ต้องการลบ (มุมซ้ายสุด) แล้วกดไอคอน 🗑️ มุมขวาบนของตาราง หรือกดปุ่ม Delete บนคีย์บอร์ดได้เลยค่ะ")
         
-        # 🌟 เพิ่มตัวเลือก "กำไรจากการขายหุ้น (Profit)" ใน Dropdown
         ed_l = st.data_editor(st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
             column_config={
                 "Date": "วันที่ (DD/MM/YYYY)",
