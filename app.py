@@ -501,6 +501,7 @@ if st.session_state["logged_in"]:
                 column_config={"Date": st.column_config.Column("วันที่", disabled=True), "Out_USD": st.column_config.NumberColumn("โอนออก ($)", disabled=True), "In_USD": st.column_config.NumberColumn("นำเข้า ($)", disabled=True),
                                "FX_Rate": st.column_config.NumberColumn("เรทเงิน (บาท/$)", format="%.4f", step=0.0001), 
                                "Out_THB": st.column_config.NumberColumn("โอนออก (฿)", disabled=True), "In_THB": st.column_config.NumberColumn("นำเข้า (฿)", disabled=True),
+                               
                                "WHT_USD": st.column_config.NumberColumn("ภาษีหัก ตปท. ($)", format="%.2f", step=0.01), 
                                "Balance_THB": st.column_config.NumberColumn("เงินต้นคงเหลือ (฿)", disabled=True), "Ref_Doc": "หมายเหตุ"})
             
