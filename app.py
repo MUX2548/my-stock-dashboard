@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # 1. ตั้งค่าหน้าเพจ
-st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.8", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.9", page_icon="📈", layout="wide")
 
 # 🎨 2. ตกแต่ง UI/UX
 st.markdown("""
@@ -108,7 +108,7 @@ if "logged_in" not in st.session_state:
 
 tz_th = timezone(timedelta(hours=7))
 current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
-current_time = datetime.now(tz_th).strftime("%H:%M")
+current_time = datetime.now(tz_th).strftime("%H:%M:%S") # เพิ่มวินาทีให้เห็นความสดใหม่
 
 def log_visitor():
     try:
@@ -158,10 +158,16 @@ def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
 # ==========================================
-# 🌟 Sidebar
+# 🌟 Sidebar & Real-time Controls
 # ==========================================
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
+    
+    # 🌟 ปุ่ม Force Refresh ดึงข้อมูลใหม่ทันที
+    if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
+        st.cache_data.clear() # ล้างความจำทั้งหมด
+        st.rerun() # รีโหลดแอปใหม่ทันที
+        
     st.info(f"👁️ **ยอดผู้เข้าชมทั้งหมด: {visitor_count} ครั้ง**")
     st.markdown("---")
     
@@ -188,8 +194,8 @@ with st.sidebar:
             st.session_state["logged_in"] = False
             st.rerun()
 
-# --- ดึงข้อมูลวิเคราะห์ ---
-@st.cache_data(ttl=300)
+# --- ดึงข้อมูลวิเคราะห์ (ปรับให้จำแค่ 60 วินาที เพื่อความเรียลไทม์) ---
+@st.cache_data(ttl=60)
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
     p, i = stgs[tf]["p"], stgs[tf]["i"]
@@ -247,6 +253,17 @@ def load_pro_data(ticker_symbol, tf):
     except: return pd.DataFrame(), {}, None, None
 
 df, fund, matrix, market_signal = load_pro_data(ticker, tf_option)
+
+# 🌟 ฟังก์ชันดึงราคาและค่าเงินแบบ Real-time (จำแค่ 60 วินาที)
+@st.cache_data(ttl=60)
+def get_live_price(ticker_sym):
+    try: return yf.Ticker(ticker_sym).history(period="1d")['Close'].iloc[-1]
+    except: return None
+
+@st.cache_data(ttl=60)
+def get_live_fx():
+    try: return yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
+    except: return 35.00
 
 tabs = ["📊 วิเคราะห์กราฟ (Analysis)", "💼 บัญชี (Cloud Sync)", "🧾 ภาษีสรรพากร"] if st.session_state["logged_in"] else ["📊 วิเคราะห์กราฟ (Analysis)"]
 tab_list = st.tabs(tabs)
@@ -332,7 +349,6 @@ with tab_list[0]:
             f1, f2, f3 = st.columns(3); f1.metric("P/S Ratio", fund.get('ps','N/A')); f2.metric("P/E Ratio", fund.get('pe','N/A')); f3.metric("ROE", fund.get('roe','N/A'))
         
         with c_r:
-            # 🌟 ปรับปรุงการแสดงผลราคาปัจจุบัน ให้โชว์ทั้งส่วนต่างและ % อย่างแม่นยำ
             price_diff = last_p - prev_p
             pct_diff = (price_diff / prev_p) * 100 if prev_p > 0 else 0
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{price_diff:,.2f} ({pct_diff:,.2f}%)")
@@ -386,7 +402,7 @@ if st.session_state["logged_in"]:
     st.session_state.trade_ledger["Running_Balance"] = r_bals
 
     # ==========================================
-    # หน้า 2: บัญชีและพอร์ตโฟลิโอ
+    # หน้า 2: บัญชีและพอร์ตโฟลิโอ (Auto Real-time)
     # ==========================================
     with tab_list[1]:
         st.subheader("💼 แดชบอร์ดกระแสเงินสด (Cashflow Overview)")
@@ -400,9 +416,7 @@ if st.session_state["logged_in"]:
         h1, h2 = st.columns([8, 2])
         h1.subheader("📝 สมุดบันทึกบัญชีการเทรด (Cloud Ledger)")
         csv_ledger = convert_df_to_csv(st.session_state.trade_ledger)
-        h2.download_button(label="📥 โหลดข้อมูล (Excel/CSV)", data=csv_ledger, file_name=f"Trade_Ledger_{current_date.replace('/','-')}.csv", mime='text/csv', use_container_width=True)
-        
-        st.info("💡 **วิธีลบข้อมูลตาราง:** กดเลือก ⬜ หน้าแถวที่ต้องการลบ (มุมซ้ายสุด) แล้วกดไอคอน 🗑️ มุมขวาบนของตาราง หรือกดปุ่ม Delete บนคีย์บอร์ดได้เลยค่ะ")
+        h2.download_button(label="📥 โหลดข้อมูล (Excel/CSV)", data=csv_ledger, file_name=f"Trade_Ledger_{datetime.now().strftime('%Y%m%d')}.csv", mime='text/csv', use_container_width=True)
         
         ed_l = st.data_editor(st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
             column_config={
@@ -430,14 +444,10 @@ if st.session_state["logged_in"]:
             st.success("บันทึกสำเร็จ! ข้อมูลปลอดภัย 100%")
 
         st.markdown("---")
-        st.subheader("📊 พอร์ตโฟลิโอปัจจุบัน (Visual Holdings)")
+        st.subheader("📊 พอร์ตโฟลิโอปัจจุบัน (Auto Real-Time Mark to Market)")
         
-        try:
-            live_fx = yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
-        except:
-            live_fx = 35.00
-            
-        st.info(f"💱 **อัตราแลกเปลี่ยนตลาดโลกปัจจุบัน (USD/THB):** ฿{live_fx:.4f} ต่อ 1 ดอลลาร์")
+        live_fx = get_live_fx()
+        st.info(f"💱 **อัตราแลกเปลี่ยนตลาดโลก ณ วินาทีนี้ (USD/THB):** ฿{live_fx:.4f} ต่อ 1 ดอลลาร์")
         
         port_summary, total_invested = [], 0.0
         for t, data in holdings.items():
@@ -449,62 +459,62 @@ if st.session_state["logged_in"]:
         if len(port_summary) > 0:
             current_port_df = pd.DataFrame(port_summary)
             
-            if st.button("🔄 ดึงราคาล่าสุด & คำนวณกำไร/ขาดทุน (Mark to Market)", type="primary", use_container_width=True):
-                with st.spinner("กำลังดึงราคาแบบเรียลไทม์..."):
-                    results, total_v = [], 0.0
-                    for _, row in current_port_df.iterrows():
-                        t, avg_cost, sh, t_cost = row["Ticker"], row["Cost_Price"], row["Shares"], row["Total_Cost"]
-                        try: curr_p = yf.Ticker(t).history(period="1d")['Close'].iloc[-1]
-                        except: curr_p = avg_cost
-                        
-                        val = curr_p * sh
-                        profit_usd = val - t_cost
-                        profit_thb = profit_usd * live_fx
-                        profit_pct = (profit_usd / t_cost * 100) if t_cost > 0 else 0
-                        
-                        results.append({
-                            "หุ้น": t, "จำนวนหุ้น": sh, "ต้นทุนเฉลี่ย": avg_cost, 
-                            "ราคาปัจจุบัน": curr_p, "กำไร/ขาดทุน ($)": profit_usd, 
-                            "กำไร/ขาดทุน (฿)": profit_thb,
-                            "% เปลี่ยนแปลง": profit_pct, "มูลค่ารวม": val
-                        })
-                        total_v += val
-                    
-                    p1, p2, p3, p4 = st.columns(4)
-                    p1.metric("มูลค่าหุ้นรวม ($)", f"${total_v:,.2f}")
-                    p2.metric("ต้นทุนหุ้นทั้งหมด ($)", f"${total_invested:,.2f}")
-                    
-                    total_pl_usd = total_v - total_invested
-                    total_pl_thb = total_pl_usd * live_fx
-                    pl_pct = (total_pl_usd / total_invested * 100) if total_invested > 0 else 0
-                    
-                    p3.metric("กำไร/ขาดทุนรวม ($)", f"${total_pl_usd:,.2f}", f"{pl_pct:.2f}%")
-                    p4.metric("กำไร/ขาดทุนรวม (฿)", f"฿{total_pl_thb:,.2f}", "แปลงจาก USD อัตโนมัติ")
-                    
-                    res_df = pd.DataFrame(results)
-                    chart_col1, chart_col2 = st.columns(2)
-                    with chart_col1:
-                        fig_pie = go.Figure(data=[go.Pie(labels=res_df['หุ้น'], values=res_df['มูลค่ารวม'], hole=.4)])
-                        fig_pie.update_layout(title="สัดส่วนพอร์ต (Allocation)", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
-                        st.plotly_chart(fig_pie, use_container_width=True)
-                    with chart_col2:
-                        bar_colors = ['#00E676' if val >= 0 else '#FF5252' for val in res_df['กำไร/ขาดทุน ($)']]
-                        fig_bar = go.Figure(data=[go.Bar(x=res_df['หุ้น'], y=res_df['กำไร/ขาดทุน ($)'], marker_color=bar_colors)])
-                        fig_bar.update_layout(title="กำไร/ขาดทุนรายตัว (P/L)", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
-                        st.plotly_chart(fig_bar, use_container_width=True)
+            # 🌟 คำนวณอัตโนมัติทันทีที่เข้าหน้านี้ ไม่ต้องมีปุ่มกดอีกต่อไป!
+            results, total_v = [], 0.0
+            for _, row in current_port_df.iterrows():
+                t, avg_cost, sh, t_cost = row["Ticker"], row["Cost_Price"], row["Shares"], row["Total_Cost"]
+                
+                curr_p = get_live_price(t)
+                if curr_p is None: curr_p = avg_cost # ถ้าดึงพัง ให้ใช้ราคาต้นทุนแทนชั่วคราว
+                
+                val = curr_p * sh
+                profit_usd = val - t_cost
+                profit_thb = profit_usd * live_fx
+                profit_pct = (profit_usd / t_cost * 100) if t_cost > 0 else 0
+                
+                results.append({
+                    "หุ้น": t, "จำนวนหุ้น": sh, "ต้นทุนเฉลี่ย": avg_cost, 
+                    "ราคาปัจจุบัน": curr_p, "กำไร/ขาดทุน ($)": profit_usd, 
+                    "กำไร/ขาดทุน (฿)": profit_thb,
+                    "% เปลี่ยนแปลง": profit_pct, "มูลค่ารวม": val
+                })
+                total_v += val
+            
+            p1, p2, p3, p4 = st.columns(4)
+            p1.metric("มูลค่าหุ้นรวม ($)", f"${total_v:,.2f}")
+            p2.metric("ต้นทุนหุ้นทั้งหมด ($)", f"${total_invested:,.2f}")
+            
+            total_pl_usd = total_v - total_invested
+            total_pl_thb = total_pl_usd * live_fx
+            pl_pct = (total_pl_usd / total_invested * 100) if total_invested > 0 else 0
+            
+            p3.metric("กำไร/ขาดทุนรวม ($)", f"${total_pl_usd:,.2f}", f"{pl_pct:.2f}%")
+            p4.metric("กำไร/ขาดทุนรวม (฿)", f"฿{total_pl_thb:,.2f}", "แปลงจาก USD อัตโนมัติ")
+            
+            res_df = pd.DataFrame(results)
+            chart_col1, chart_col2 = st.columns(2)
+            with chart_col1:
+                fig_pie = go.Figure(data=[go.Pie(labels=res_df['หุ้น'], values=res_df['มูลค่ารวม'], hole=.4)])
+                fig_pie.update_layout(title="สัดส่วนพอร์ต (Allocation)", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
+                st.plotly_chart(fig_pie, use_container_width=True)
+            with chart_col2:
+                bar_colors = ['#00E676' if val >= 0 else '#FF5252' for val in res_df['กำไร/ขาดทุน ($)']]
+                fig_bar = go.Figure(data=[go.Bar(x=res_df['หุ้น'], y=res_df['กำไร/ขาดทุน ($)'], marker_color=bar_colors)])
+                fig_bar.update_layout(title="กำไร/ขาดทุนรายตัว (P/L)", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
+                st.plotly_chart(fig_bar, use_container_width=True)
 
-                    def color_profit(val):
-                        return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
-                    
-                    styled_res = res_df.style.map(color_profit, subset=["กำไร/ขาดทุน ($)", "กำไร/ขาดทุน (฿)", "% เปลี่ยนแปลง"]).format({
-                        "จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}",
-                        "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}",
-                        "% เปลี่ยนแปลง": "{:,.2f}%", "มูลค่ารวม": "${:,.2f}"
-                    })
-                    st.dataframe(styled_res, use_container_width=True)
-                    
-                    csv_port = convert_df_to_csv(res_df)
-                    st.download_button(label="📥 ดาวน์โหลดพอร์ตโฟลิโอ (Excel/CSV)", data=csv_port, file_name=f"Portfolio_{current_date.replace('/','-')}.csv", mime='text/csv')
+            def color_profit(val):
+                return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
+            
+            styled_res = res_df.style.map(color_profit, subset=["กำไร/ขาดทุน ($)", "กำไร/ขาดทุน (฿)", "% เปลี่ยนแปลง"]).format({
+                "จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}",
+                "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}",
+                "% เปลี่ยนแปลง": "{:,.2f}%", "มูลค่ารวม": "${:,.2f}"
+            })
+            st.dataframe(styled_res, use_container_width=True)
+            
+            csv_port = convert_df_to_csv(res_df)
+            st.download_button(label="📥 ดาวน์โหลดพอร์ตโฟลิโอ (Excel/CSV)", data=csv_port, file_name=f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", mime='text/csv')
         else:
             st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ตค่ะ)")
 
@@ -534,7 +544,7 @@ if st.session_state["logged_in"]:
         tax_v["Balance_THB"] = t_bals
 
         csv_tax = convert_df_to_csv(tax_v)
-        t2.download_button(label="📥 โหลดตารางภาษี (Excel/CSV)", data=csv_tax, file_name=f"Tax_Report_{current_date.replace('/','-')}.csv", mime='text/csv', use_container_width=True)
+        t2.download_button(label="📥 โหลดตารางภาษี (Excel/CSV)", data=csv_tax, file_name=f"Tax_Report_{datetime.now().strftime('%Y%m%d')}.csv", mime='text/csv', use_container_width=True)
 
         ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed",
             column_order=["Date", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "WHT_USD", "Ref_Doc"],
