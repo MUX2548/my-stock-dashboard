@@ -33,7 +33,7 @@ current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 # ==========================================
 # 2. 🔐 การเชื่อมต่อฐานข้อมูล
 # ==========================================
-@st.cache_resource
+@st.cache_resource(ttl=3600) # รีเซ็ต Cache ทุกๆ 1 ชั่วโมง ป้องกัน Token หมดอายุ
 def init_connection():
     creds_dict = json.loads(st.secrets["google_creds_json"])
     sheet_url = st.secrets["spreadsheet_url"]
@@ -62,6 +62,7 @@ def clean_df_types(df):
 
 def load_ledger_data():
     try:
+        global sh
         ws = sh.worksheet("Ledger")
         records = ws.get_all_records()
         if not records:
@@ -82,12 +83,26 @@ def load_ledger_data():
         df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.strftime("%d/%m/%Y").replace("NaT", "")
     return df[req_cols]
 
+# 🛠️ อัปเกรดฟังก์ชันบันทึกข้อมูล (มีระบบ Auto-Reconnect)
 def save_df_to_sheet(worksheet_name, df):
-    ws = sh.worksheet(worksheet_name)
-    ws.clear()
-    clean_df = clean_df_types(df)
-    data_list = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
-    ws.update(values=data_list, range_name='A1')
+    global sh
+    try:
+        # ทดสอบก่อนว่า Connection ยังอยู่ไหม
+        ws = sh.worksheet(worksheet_name)
+    except:
+        # ถ้าหลุด ให้ต่อใหม่ทันที
+        sh = init_connection()
+        ws = sh.worksheet(worksheet_name)
+        
+    try:
+        ws.clear()
+        clean_df = clean_df_types(df)
+        data_list = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
+        ws.update(values=data_list, range_name='A1')
+        return True
+    except Exception as e:
+        st.error(f"❌ เกิดข้อผิดพลาดขณะเขียนข้อมูลลง Cloud: {e}")
+        return False
 
 if "trade_ledger" not in st.session_state:
     st.session_state.trade_ledger = load_ledger_data()
@@ -301,7 +316,7 @@ tabs = ["📊 วิเคราะห์กราฟ (Analysis)", "💼 บั�
 tab_list = st.tabs(tabs)
 
 # ==========================================
-# หน้า 1: วิเคราะห์กราฟ + Quick Entry + Trader Insights
+# หน้า 1: วิเคราะห์กราฟ
 # ==========================================
 with tab_list[0]:
     h_col1, h_col2 = st.columns([7, 3])
@@ -340,10 +355,10 @@ with tab_list[0]:
                         st.session_state.trade_ledger = pd.concat([st.session_state.trade_ledger, pd.DataFrame([new_row])], ignore_index=True)
                         sorted_df_new, _, _, _, _ = calculate_stats(st.session_state.trade_ledger)
                         st.session_state.trade_ledger = sorted_df_new
-                        save_df_to_sheet("Ledger", st.session_state.trade_ledger)
-                        st.success("บันทึกสำเร็จ!")
-                        time.sleep(1)
-                        st.rerun()
+                        if save_df_to_sheet("Ledger", st.session_state.trade_ledger):
+                            st.success("บันทึกสำเร็จ!")
+                            time.sleep(1)
+                            st.rerun()
 
     if not df.empty:
         last_p = df['Close'].iloc[-1]
@@ -515,7 +530,10 @@ if st.session_state["logged_in"]:
             sorted_ed_l, _, _, n_rb, _ = calculate_stats(ed_l)
             st.session_state.trade_ledger = sorted_ed_l; st.rerun()
         if st.button("💾 บันทึกข้อมูลบัญชีขึ้น Cloud", type="primary", use_container_width=True):
-            save_df_to_sheet("Ledger", st.session_state.trade_ledger); st.success("บันทึกสำเร็จ! โครงสร้างบัญชีถูกต้องตามมาตรฐาน 100%")
+            if save_df_to_sheet("Ledger", st.session_state.trade_ledger):
+                st.success("บันทึกสำเร็จ! โครงสร้างบัญชีถูกต้องตามมาตรฐาน 100%")
+                time.sleep(1)
+                st.rerun()
 
         st.markdown("---")
         st.subheader("📊 พอร์ตโฟลิโอปัจจุบัน (Auto Real-Time Mark to Market)")
@@ -573,11 +591,9 @@ if st.session_state["logged_in"]:
         
         st.info("💡 **หลักการภาษีใหม่:** การนำเงินกลับไทย (Inward) จะถูกหักจาก 'เงินต้นสะสม' ก่อน หากหักเงินต้นหมดแล้ว ยอดที่นำกลับหลังจากนั้นจึงจะถือเป็น 'กำไรที่ต้องเสียภาษี' (ส่วนเงินปันผลถือเป็นรายได้ที่ต้องเสียภาษี 100%)")
         
-        # กรองเฉพาะรายการที่เกี่ยวข้องกับ Cashflow ต่างประเทศ
         tax_idx = st.session_state.trade_ledger['Action'].isin(["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"])
         tax_v = st.session_state.trade_ledger[tax_idx].copy()
         
-        # จัดเตรียมข้อมูล THB
         tax_v["Out_USD"] = np.where(tax_v["Action"] == "นำเงินออกนอกประเทศ (Outward)", tax_v["Amount_USD"], 0.0)
         tax_v["In_USD"] = np.where(tax_v["Action"].isin(["นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"]), tax_v["Amount_USD"], 0.0)
         tax_v["FX_Rate"] = pd.to_numeric(tax_v["FX_Rate"], errors='coerce').fillna(0.0)
@@ -585,7 +601,6 @@ if st.session_state["logged_in"]:
         tax_v["Out_THB"] = tax_v["Out_USD"] * tax_v["FX_Rate"]
         tax_v["In_THB"] = tax_v["In_USD"] * tax_v["FX_Rate"]
         
-        # 📌 อัลกอริทึมคำนวณสระเงินต้น (Capital Pool) แบบนักบัญชี
         capital_pool = 0.0
         taxable_gains_thb = []
         running_bals = []
@@ -602,11 +617,11 @@ if st.session_state["logged_in"]:
                 capital_pool -= in_thb
                 if capital_pool < 0:
                     taxable_gains_thb.append(abs(capital_pool))
-                    capital_pool = 0.0 # รีเซ็ตเงินต้นเป็น 0
+                    capital_pool = 0.0
                 else:
                     taxable_gains_thb.append(0.0)
             elif action == "รับเงินปันผล (Dividend)":
-                taxable_gains_thb.append(in_thb) # ปันผลเป็นกำไร 100% (เงินต้นไม่ลด)
+                taxable_gains_thb.append(in_thb)
             else:
                 taxable_gains_thb.append(0.0)
 
@@ -639,17 +654,19 @@ if st.session_state["logged_in"]:
             st.rerun()
             
         if st.button("💾 บันทึกเรทเงินและภาษีลง Cloud", type="primary", use_container_width=True): 
-            save_df_to_sheet("Ledger", st.session_state.trade_ledger); st.success("บันทึกสำเร็จ!")
+            if save_df_to_sheet("Ledger", st.session_state.trade_ledger):
+                st.success("บันทึกสำเร็จ!")
+                time.sleep(1)
+                st.rerun()
 
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
         with c1: 
             tax_year_str = st.selectbox("📅 เลือกปีภาษีสำหรับคำนวณ", ["2567 (2024)", "2568 (2025)", "2569 (2026)"])
-            selected_year = tax_year_str.split("(")[1][:4] # Extract e.g., 2024
+            selected_year = tax_year_str.split("(")[1][:4]
         with c2: is_resident = st.radio("อาศัยอยู่ในไทยเกิน 180 วันในปีนั้น?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
         with c3: other_income = st.number_input("รายได้ประจำปีอื่นๆ (บาท)", min_value=0.0, value=500000.0, step=50000.0)
 
-        # กรองข้อมูลคำนวณเฉพาะปีภาษีที่เลือก (Strict Accounting Rule)
         tax_v_current_year = tax_v[tax_v['Date'].str.endswith(selected_year)].copy()
         
         sum_out_thb_yr = tax_v_current_year["Out_THB"].sum()
