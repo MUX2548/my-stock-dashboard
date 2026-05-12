@@ -11,7 +11,7 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # ==========================================
-# 1. ตั้งค่าหน้าเพจ
+# 1. ตั้งค่าหน้าเพจ & UI
 # ==========================================
 st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.10", page_icon="📈", layout="wide")
 
@@ -31,7 +31,7 @@ current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 
 # ==========================================
-# 2. 🔐 การเชื่อมต่อฐานข้อมูล
+# 2. 🔐 การเชื่อมต่อฐานข้อมูล (Cloud Database)
 # ==========================================
 @st.cache_resource
 def init_connection():
@@ -102,18 +102,18 @@ def log_visitor():
             timestamp = datetime.now(tz_th).strftime("%d/%m/%Y %H:%M:%S")
             ws.append_row([timestamp])
             st.session_state.has_logged_visit = True
-        total_visits = len(ws.col_values(1))
-        return total_visits
-    except Exception as e:
-        return "N/A"
+        return len(ws.col_values(1))
+    except: return "N/A"
 
 visitor_count = log_visitor()
 
 # ==========================================
-# 3. ลอจิกการคำนวณบัญชี
+# 3. 📊 ลอจิกการบัญชี (New Professional Standard)
 # ==========================================
 def calculate_stats(df_input):
     df = clean_df_types(df_input)
+    
+    # จัดเรียงวันที่ (FIFO)
     if not df.empty and "Date" in df.columns:
         df["Date_Temp"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce")
         df = df.sort_values(by="Date_Temp").drop(columns=["Date_Temp"]).reset_index(drop=True)
@@ -122,28 +122,50 @@ def calculate_stats(df_input):
     stat = {"outward": 0.0, "inward": 0.0, "bought": 0.0, "sold": 0.0, "dividend": 0.0, "realized_profit": 0.0}
     r_bals, hld = [], {}
     
+    # ล้างข้อมูลขยะและประเภทที่ผิดหลักบัญชีออกอัตโนมัติ
+    df = df[~df['Action'].isin(['None', '', 'nan', 'กำไรจากการขายหุ้น (Profit)'])].copy().reset_index(drop=True)
+    
     for idx, row in df.iterrows():
         action = str(row.get("Action", "")).strip()
         ticker = str(row.get("Ticker", "")).strip().upper()
-        p, s, a = row.get("Price", 0.0), row.get("Shares", 0.0), row.get("Amount_USD", 0.0)
-        val = p * s
+        p = float(row.get("Price", 0.0))
+        s = float(row.get("Shares", 0.0))
         
-        if action == "นำเงินออกนอกประเทศ (Outward)": cb += a; stat["outward"] += a
-        elif action == "นำเงินเข้าประเทศไทย (Inward)": cb -= a; stat["inward"] += a
-        elif action == "รับเงินปันผล (Dividend)": cb += a; stat["dividend"] += a
-        elif action == "กำไรจากการขายหุ้น (Profit)": cb += a
+        # ถ้าระบุจำนวนเงินมาให้ใช้ค่าที่ระบุ (สำหรับการโอน/ปันผล) แต่ถ้าซื้อขาย ให้ระบบคูณให้เป๊ะๆ
+        manual_amount = float(row.get("Amount_USD", 0.0))
+        trade_value = p * s
+        a = manual_amount if manual_amount > 0 and action not in ["ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)"] else trade_value
+        
+        if action == "นำเงินออกนอกประเทศ (Outward)": 
+            cb += a; stat["outward"] += a; df.at[idx, "Amount_USD"] = a
+        elif action == "นำเงินเข้าประเทศไทย (Inward)": 
+            cb -= a; stat["inward"] += a; df.at[idx, "Amount_USD"] = a
+        elif action == "รับเงินปันผล (Dividend)": 
+            cb += a; stat["dividend"] += a; df.at[idx, "Amount_USD"] = a
         elif action == "ซื้อหุ้น (Buy)" and ticker:
-            cb -= val; stat["bought"] += val
+            cb -= trade_value; stat["bought"] += trade_value; df.at[idx, "Amount_USD"] = trade_value
             if ticker not in hld: hld[ticker] = {"shares": 0.0, "total_cost": 0.0}
-            hld[ticker]["shares"] += s; hld[ticker]["total_cost"] += val
+            hld[ticker]["shares"] += s
+            hld[ticker]["total_cost"] += trade_value
         elif action == "ขายหุ้น (Sell)" and ticker:
-            cb += val; stat["sold"] += val
+            cb += trade_value; stat["sold"] += trade_value; df.at[idx, "Amount_USD"] = trade_value
             if ticker in hld and hld[ticker]["shares"] > 0:
-                avg = hld[ticker]["total_cost"] / hld[ticker]["shares"]
-                stat["realized_profit"] += val - (avg * s)
-                hld[ticker]["shares"] -= s; hld[ticker]["total_cost"] -= (avg * s)
+                # คำนวณกำไร/ขาดทุนทันทีที่ขาย (Realized P/L)
+                avg_cost = hld[ticker]["total_cost"] / hld[ticker]["shares"]
+                cogs = avg_cost * s
+                realized_pl = trade_value - cogs
+                stat["realized_profit"] += realized_pl
+                hld[ticker]["shares"] -= s
+                hld[ticker]["total_cost"] -= cogs
+                
+                # แนบ P/L ลงในหมายเหตุอัตโนมัติ หากยังไม่มี
+                old_ref = str(row.get("Ref_Doc", "")).replace("nan", "")
+                if "P/L:" not in old_ref:
+                    df.at[idx, "Ref_Doc"] = f"P/L: ${realized_pl:.2f} | {old_ref}"
+        
         r_bals.append(cb)
     
+    df["Running_Balance"] = r_bals
     return df, cb, stat, r_bals, hld
 
 @st.cache_data
@@ -151,7 +173,7 @@ def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
 # ==========================================
-# 4. ดึงข้อมูลทางการเงิน (Independent Fetching System)
+# 4. 🌐 ดึงข้อมูลการเงิน (Independent Fetching System)
 # ==========================================
 @st.cache_data(ttl=60)
 def load_pro_data(ticker_symbol, tf):
@@ -245,7 +267,7 @@ def get_live_fx():
     except: return 35.00
 
 # ==========================================
-# 5. UI: Sidebar
+# 5. UI: Sidebar & Main Framework
 # ==========================================
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
@@ -270,7 +292,7 @@ with st.sidebar:
         st.success("✅ โหมดเจ้าของพอร์ต")
         if st.button("🚪 ออกจากระบบ", use_container_width=True): st.session_state["logged_in"] = False; st.rerun()
 
-# ประมวลผลบัญชีก่อนเพื่อดึงข้อมูลพอร์ตมาใช้วางแผนในหน้า 1
+# ประมวลผลบัญชี (ล้างขยะและคำนวณใหม่ทันที)
 holdings = {}
 if st.session_state["logged_in"]:
     sorted_df, cb, l_stat, r_bals, holdings = calculate_stats(st.session_state.trade_ledger)
@@ -283,10 +305,9 @@ tabs = ["📊 วิเคราะห์กราฟ (Analysis)", "💼 บั�
 tab_list = st.tabs(tabs)
 
 # ==========================================
-# หน้า 1: วิเคราะห์กราฟ (Trader Insights Edition)
+# หน้า 1: วิเคราะห์กราฟ + Quick Entry + Trader Insights
 # ==========================================
 with tab_list[0]:
-    # ส่วนหัวและปุ่ม Pop-up (แสดงเฉพาะตอน Login)
     h_col1, h_col2 = st.columns([7, 3])
     with h_col1:
         st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
@@ -296,11 +317,11 @@ with tab_list[0]:
         if st.session_state["logged_in"]:
             st.markdown("<br>", unsafe_allow_html=True)
             with st.popover("➕ บันทึกเทรดด่วน (Quick Entry)", use_container_width=True):
-                st.markdown(f"**เพิ่มรายการบัญชีสำหรับ `{ticker}` หรือรายการอื่นๆ**")
+                st.markdown(f"**เพิ่มรายการบัญชีสำหรับ `{ticker}`**")
                 with st.form("quick_entry_form"):
                     q_c1, q_c2 = st.columns(2)
                     qe_date = q_c1.text_input("วันที่ (DD/MM/YYYY)", value=current_date)
-                    qe_action = q_c2.selectbox("ประเภท", ["ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)", "นำเงินเข้าประเทศไทย (Inward)", "นำเงินออกนอกประเทศ (Outward)", "รับเงินปันผล (Dividend)", "กำไรจากการขายหุ้น (Profit)"])
+                    qe_action = q_c2.selectbox("ประเภท", ["ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)", "นำเงินเข้าประเทศไทย (Inward)", "นำเงินออกนอกประเทศ (Outward)", "รับเงินปันผล (Dividend)"]) # ตัดกำไรทิ้ง
                     
                     q_c3, q_c4, q_c5 = st.columns(3)
                     qe_ticker = q_c3.text_input("ชื่อหุ้น", value=ticker)
@@ -308,7 +329,7 @@ with tab_list[0]:
                     qe_shares = q_c5.number_input("จำนวนหุ้น", min_value=0.0, format="%.4f")
                     
                     q_c6, q_c7, q_c8 = st.columns(3)
-                    qe_amount = q_c6.number_input("จำนวนเงิน ($)", min_value=0.0, format="%.2f")
+                    qe_amount = q_c6.number_input("จำนวนเงิน (ถ้าโอนเข้า/ออก)", min_value=0.0, format="%.2f")
                     qe_fx = q_c7.number_input("เรทเงิน", min_value=0.0, format="%.4f", value=35.0)
                     qe_wht = q_c8.number_input("ภาษีหักฯ ($)", min_value=0.0, format="%.2f")
                     
@@ -342,53 +363,61 @@ with tab_list[0]:
         sm_flow = market_signal["smart_money"] if market_signal else "N/A"
         is_market_good = "ขึ้น" in spy_t and (0 < v_val < 25) and (0 < vix_ts < 1)
 
-        # ==========================================
-        # 🌐 การวางแผนพอร์ต & ทัศนะจากเทรดเดอร์มือหนึ่ง
-        # ==========================================
-        actual_cost = b_p # ค่าเริ่มต้นจาก Sidebar
-        
-        # ตรวจสอบว่าผู้ใช้ถือหุ้นตัวนี้อยู่หรือไม่
+        # 💼 ดึงต้นทุนจริงมาวางแผน
+        actual_cost = b_p 
         if st.session_state["logged_in"] and holdings.get(ticker, {}).get("shares", 0) > 0.001:
             my_hold = holdings[ticker]
             my_sh = my_hold["shares"]
-            actual_cost = my_hold["total_cost"] / my_sh # ใช้ต้นทุนจริงแทน Sidebar
+            actual_cost = my_hold["total_cost"] / my_sh
             my_val = last_p * my_sh
             my_pl = my_val - my_hold["total_cost"]
             my_pl_pct = (my_pl / my_hold["total_cost"]) * 100
             
             st.markdown(f"""
-            <div style="background-color: rgba(41, 98, 255, 0.1); border-left: 5px solid #2962FF; padding: 20px; border-radius: 8px; margin-top: 20px; margin-bottom: 20px;">
+            <div style="background-color: rgba(41, 98, 255, 0.1); border-left: 5px solid #2962FF; padding: 20px; border-radius: 8px; margin-top: 10px;">
                 <h4 style="margin-top: 0; color: #82B1FF;">💼 สถานะพอร์ตปัจจุบันของคุณ ({ticker})</h4>
                 <div style="display: flex; justify-content: space-between; flex-wrap: wrap; font-size: 1.1em;">
-                    <div><b>จำนวนหุ้นในมือ:</b> {my_sh:,.4f}</div>
-                    <div><b>ต้นทุนเฉลี่ยจริง:</b> ${actual_cost:,.4f}</div>
+                    <div><b>หุ้นในมือ:</b> {my_sh:,.4f}</div>
+                    <div><b>ต้นทุนจริง:</b> ${actual_cost:,.4f}</div>
                     <div><b>มูลค่าปัจจุบัน:</b> ${my_val:,.2f}</div>
                     <div><b>กำไร/ขาดทุน:</b> <span style="color: {'#00E676' if my_pl>=0 else '#FF5252'}; font-weight:bold;">${my_pl:,.2f} ({my_pl_pct:,.2f}%)</span></div>
                 </div>
-                <p style="margin-top: 15px; margin-bottom: 0; font-size: 0.9em; color: #B0BEC5;">
-                    💡 <i>ระบบนำข้อมูลต้นทุนจริงของคุณไปพล็อตลงในกราฟด้านล่าง เพื่อใช้วางแผนการตัดขาดทุนหรือจุดทำกำไรร่วมกับเครื่องมือ AI ครับ</i>
-                </p>
             </div>
             """, unsafe_allow_html=True)
 
+        st.markdown("---")
+        st.markdown("### 🌐 Market Signal (เรดาร์สแกนภาพรวมตลาด)")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f}" if spy_p > 0 else "N/A", spy_t if spy_p > 0 else None, delta_color="normal" if "ขึ้น" in spy_t else "inverse" if "ลง" in spy_t else "off")
+        m1.caption("💡 **ทิศทางเม็ดเงินโลก:** ถ้ายืนเหนือเส้น EMA50 แปลว่าภาพรวมยังเป็นแนวโน้มขาขึ้น")
+        vix_stat = "Risk ON" if 0 < v_val < 20 else "Neutral" if 0 < v_val < 30 else "Panic"
+        m2.metric("ความกลัว (VIX)", f"{v_val:.2f}" if v_val > 0 else "N/A", vix_stat if v_val > 0 else None, delta_color="normal" if 0 < v_val < 25 else "inverse" if v_val >= 25 else "off")
+        m2.caption("💡 **ความผันผวน:** ยิ่งต่ำ (<20) ยิ่งปลอดภัย / ถ้ายิ่งสูง (>30) แปลว่าตลาดตื่นตระหนกตกใจ")
+        ts_label = "🟢 สงบ" if 0 < vix_ts < 1 else "🔴 ตระหนก"
+        m3.metric("โครงสร้าง (VIX/VIX3M)", f"{vix_ts:.2f}" if vix_ts > 0 else "N/A", ts_label if vix_ts > 0 else None, delta_color="normal" if 0 < vix_ts < 1 else "inverse" if vix_ts >= 1 else "off")
+        m3.caption("💡 **วัดสภาวะฉุกเฉิน:** ค่าน้อยกว่า 1 แปลว่าตลาดปกติ (Contango)")
+        m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow if sm_flow != "N/A" else None, delta_color="normal" if "ON" in sm_flow else "inverse" if "OFF" in sm_flow else "off")
+        m4.caption("💡 **ฟันด์โฟลว์สถาบัน:** กล้าถือหุ้นกู้ขยะ (Risk ON) หรือ หนีไปพึ่งพันธบัตร (Risk OFF)")
+
+        # 🤵 ทัศนะจากเทรดเดอร์มือหนึ่ง
         if is_market_good and is_uptrend and is_bullish_macd and rsi_val < 70:
             rec, color = "STRONG BUY / HOLD", "#00E676"
             msg = f"**'จังหวะน้ำขึ้นต้องรีบตัก'** - ตลาดโลกเอื้ออำนวย และ {ticker} กำลังอยู่ในรอบขาขึ้นเต็มตัว กราฟมีโมเมนตัมเชิงบวกชัดเจน แนะนำให้ทยอยสะสม (Buy on Dip) หรือถือรันเทรนด์ต่อเพื่อทำกำไรคำโตครับ"
         elif is_uptrend and rsi_val >= 70:
             rec, color = "HOLD / TAKE PROFIT", "#FFD600"
-            msg = f"**'ระวังความร้อนแรง'** - หุ้นยังเป็นขาขึ้นแข็งแกร่ง แต่เข้าเขต Overbought (ซื้อมากเกินไป) มืออาชีพจะไม่ไล่ราคาตรงนี้ แนะนำให้ถือรันเทรนด์โดยยกจุดตัดขาดทุน (Trailing Stop) ตามขึ้นมา หรือพิจารณาแบ่งขายทำกำไรบางส่วนครับ"
+            msg = f"**'ระวังความร้อนแรง'** - หุ้นยังเป็นขาขึ้นแข็งแกร่ง แต่เข้าเขต Overbought มืออาชีพจะไม่ไล่ราคาตรงนี้ แนะนำให้ถือรันเทรนด์โดยยกจุดตัดขาดทุนตามขึ้นมา หรือแบ่งขายทำกำไรบางส่วนครับ"
         elif not is_uptrend and is_bullish_macd and rsi_val < 35:
             rec, color = "SPECULATIVE BUY", "#2962FF"
-            msg = f"**'ลุ้นรีบาวด์ในโซนล่าง'** - หุ้นยังอยู่ในเทรนด์ขาลง แต่เริ่มมีสัญญาณแรงซื้อกลับและลงลึกจนเข้าเขต Oversold เหมาะสำหรับสายซิ่งที่ต้องการเก็งกำไรระยะสั้น (เล่นรอบเด้ง) แต่ต้องตั้งจุด Stop loss ให้รัดกุมครับ"
+            msg = f"**'ลุ้นรีบาวด์ในโซนล่าง'** - หุ้นยังอยู่ในเทรนด์ขาลง แต่เริ่มมีสัญญาณแรงซื้อกลับ เหมาะสำหรับสายซิ่งที่ต้องการเก็งกำไรระยะสั้น แต่ต้องตั้งจุด Stop loss ให้รัดกุมครับ"
         elif not is_uptrend:
             rec, color = "AVOID / WAIT", "#FF5252"
-            msg = f"**'รักษาเงินต้นคือหัวใจ'** - ภาพรวมของ {ticker} เสียทรงขาขึ้นและหลุดเส้นค่าเฉลี่ยสำคัญ โมเมนตัมยังดูอ่อนแอ แนะนำให้ทับมือรอดูสถานการณ์ (Wait & See) หรือหาโอกาสจากหุ้นตัวอื่นที่กราฟแข็งแรงกว่านี้ครับ"
+            msg = f"**'รักษาเงินต้นคือหัวใจ'** - ภาพรวมเสียทรงขาขึ้นและหลุดเส้นค่าเฉลี่ยสำคัญ โมเมนตัมดูอ่อนแอ แนะนำให้ทับมือรอดูสถานการณ์ (Wait & See) ไปก่อนครับ"
         else:
             rec, color = "NEUTRAL / SIDEWAY", "#B0BEC5"
-            msg = f"**'ตลาดรอเลือกทาง'** - กราฟกำลังแกว่งตัวออกข้าง (Sideway) สัญญาณยังขัดแย้งกัน แนะนำให้เทรดสั้นๆ ในกรอบ (ซื้อใกล้แนวรับ - ขายใกล้แนวต้าน) หรือรอดูจนกว่าราคาจะเบรกเอาท์เลือกทิศทางที่ชัดเจนครับ"
+            msg = f"**'ตลาดรอเลือกทาง'** - กราฟกำลังแกว่งตัวออกข้าง (Sideway) สัญญาณขัดแย้งกัน แนะนำให้เทรดสั้นๆ ในกรอบ (แนวรับ-แนวต้าน) หรือรอดูจนกว่าราคาจะเลือกทิศทางครับ"
 
         st.markdown(f"""
-        <div style="background-color: #1E1E1E; border: 1px solid #333; border-left: 8px solid {color}; padding: 25px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+        <div style="background-color: #1E1E1E; border: 1px solid #333; border-left: 8px solid {color}; padding: 25px; border-radius: 12px; margin-top: 20px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
             <h3 style="color: {color}; margin-top: 0; margin-bottom: 15px; font-size: 1.6rem; display: flex; align-items: center;">
                 <span style="font-size: 2rem; margin-right: 12px;">🤵</span> ทัศนะจากเทรดเดอร์มือหนึ่ง: {rec}
             </h3>
@@ -401,19 +430,6 @@ with tab_list[0]:
         </div>
         """, unsafe_allow_html=True)
 
-        st.markdown("### 🌐 Market Signal (เรดาร์สแกนภาพรวมตลาด)")
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f}" if spy_p > 0 else "N/A", spy_t if spy_p > 0 else None, delta_color="normal" if "ขึ้น" in spy_t else "inverse" if "ลง" in spy_t else "off")
-        m1.caption("💡 **นิยาม:** ทิศทางเม็ดเงินระดับโลก หากยืนเหนือเส้นค่าเฉลี่ย 50 วัน (EMA50) สะท้อนว่าภาพรวมตลาดยังอยู่ในแนวโน้มขาขึ้น")
-        vix_stat = "Risk ON" if 0 < v_val < 20 else "Neutral" if 0 < v_val < 30 else "Panic"
-        m2.metric("ความกลัว (VIX)", f"{v_val:.2f}" if v_val > 0 else "N/A", vix_stat if v_val > 0 else None, delta_color="normal" if 0 < v_val < 25 else "inverse" if v_val >= 25 else "off")
-        m2.caption("💡 **นิยาม:** ยิ่งต่ำ (<20) ตลาดยิ่งปลอดภัย / ถ้ายิ่งสูง (>30) แปลว่านักลงทุนตื่นตระหนก ซื้อประกันความเสี่ยงและพร้อมเทขาย")
-        ts_label = "🟢 สงบ" if 0 < vix_ts < 1 else "🔴 ตระหนก"
-        m3.metric("โครงสร้าง (VIX/VIX3M)", f"{vix_ts:.2f}" if vix_ts > 0 else "N/A", ts_label if vix_ts > 0 else None, delta_color="normal" if 0 < vix_ts < 1 else "inverse" if vix_ts >= 1 else "off")
-        m3.caption("💡 **นิยาม:** ความผันผวนระยะสั้นเทียบระยะยาว หากน้อยกว่า 1 แปลว่าตลาดอยู่ในภาวะปกติ (Contango)")
-        m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow if sm_flow != "N/A" else None, delta_color="normal" if "ON" in sm_flow else "inverse" if "OFF" in sm_flow else "off")
-        m4.caption("💡 **นิยาม:** หากสถาบันกล้าซื้อหุ้นกู้ขยะ (HYG) แปลว่ากล้าเสี่ยง (Risk ON) แต่ถ้าหนีไปถือพันธบัตร (IEF) แปลว่ากลัว (Risk OFF)")
-
         rs_val = df['RS'].iloc[-1]
         rs_t = f" | **Relative Strength:** {'🟢 ชนะตลาด' if rs_val > 0 else '🔴 อ่อนแอกว่าตลาด'} ({rs_val:.2f}%)" if not np.isnan(rs_val) else ""
         if matrix: st.info(f"🔮 **ทิศทาง {tf_option}:** {matrix['tr']} | **เป้าหมาย (Harmonic Matrix):** {matrix['l']:,.2f} - {matrix['u']:,.2f} {rs_t}")
@@ -425,10 +441,7 @@ with tab_list[0]:
             fig.add_trace(go.Scatter(x=df.index, y=df['Trendline'], line=dict(color='rgba(255, 255, 255, 0.4)', dash='dot', width=2), name="Trend"), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['E20'], line=dict(color='#00E676', width=2.5), name="EMA 20"), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['E50'], line=dict(color='#FF6D00', width=2.5), name="EMA 50"), row=1, col=1)
-            
-            # วาดเส้นต้นทุนจริงลงในกราฟ
             if actual_cost > 0: fig.add_hline(y=actual_cost, line_dash="dash", line_color="cyan", annotation_text="ต้นทุนเฉลี่ย", row=1, col=1)
-            
             v_c = ['#00E676' if df['Close'].iloc[i] > df['Open'].iloc[i] else '#FF5252' for i in range(len(df))]
             fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=v_c, name="Vol"), row=2, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['Vol_SMA'], line=dict(color='rgba(255, 255, 255, 0.5)', width=1.5), name="Vol Avg"), row=2, col=1)
@@ -449,16 +462,13 @@ with tab_list[0]:
             pct_diff = (price_diff / prev_p) * 100 if prev_p > 0 else 0
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{price_diff:,.2f} ({pct_diff:,.2f}%)")
             st.markdown(f"<div style='margin-top: -15px; margin-bottom: 20px; font-size: 0.9em; color: #a0aab2;'>📅 {current_date} &nbsp; 🕒 {current_time} น.</div>", unsafe_allow_html=True)
-            
-            # ใช้ต้นทุนจริงจากพอร์ตมาคำนวณจุดตัดขาดทุน
             if actual_cost > 0:
                 pl = ((last_p - actual_cost) / actual_cost) * 100
-                st.write(f"**กำไร/ขาดทุน (อ้างอิงต้นทุน):** {pl:.2f}%")
+                st.write(f"**กำไร/ขาดทุนอ้างอิง:** {pl:.2f}%")
                 sl = df['E50'].iloc[-1] * 0.99 if actual_cost == 0 else actual_cost * 0.92
                 st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
                 ra = t_cap * (r_pct / 100); rps = last_p - sl
                 if rps > 0: st.success(f"🧮 **ซื้อเพิ่มได้สูงสุด:** {ra/rps:.2f} หุ้น")
-            
             st.markdown("---")
             st.subheader("🤖 สรุปสัญญาณเทคนิค")
             tr_s = "🟢 ขาขึ้น" if is_uptrend else "🔴 ขาลง"
@@ -473,26 +483,6 @@ with tab_list[0]:
             st.write(f"**รับ:** {df['E50'].iloc[-1]:.2f}")
     else:
         st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ")
-        st.info('''
-        💡 **สาเหตุที่เป็นไปได้ และวิธีแก้ไข:**
-        1. **พิมพ์ชื่อย่อหุ้นผิด:** หรือหุ้นตัวนี้ไม่มีข้อมูลในฐานข้อมูลของ Yahoo Finance
-        2. **อินเทอร์เน็ตขัดข้อง (Cache ค้าง):** แนะนำให้กดปุ่ม **'🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้'** ที่เมนูด้านซ้ายเพื่อล้างแคช
-        3. **เซิร์ฟเวอร์ถูกบล็อกชั่วคราว:** ลองเปลี่ยนเป็นหุ้นยอดฮิต (เช่น AAPL) หากยังดึงไม่ได้เหมือนกัน ให้รอสักพักแล้วลองใหม่ค่ะ
-        ''')
-
-    st.markdown("---")
-    with st.expander("⭐ ประเมินความแม่นยำของระบบวิเคราะห์"):
-        with st.form("feedback_form", clear_on_submit=True):
-            st.write(f"คุณมีความคิดเห็นอย่างไรกับการวิเคราะห์กราฟของหุ้น **{ticker}** ในครั้งนี้?")
-            rating = st.slider("ระดับความแม่นยำและประโยชน์ที่ได้รับ (1 = แย่, 5 = แม่นยำ/มีประโยชน์มาก)", 1, 5, 5)
-            comment = st.text_area("ข้อเสนอแนะเพิ่มเติม (Optional):")
-            if st.form_submit_button("ส่งฟีดแบ็ก (Submit)"):
-                try:
-                    fb_ws = sh.worksheet("Feedback")
-                    timestamp = datetime.now(tz_th).strftime("%d/%m/%Y %H:%M:%S")
-                    fb_ws.append_row([timestamp, ticker, rating, comment])
-                    st.success("🙏 ขอบคุณสำหรับฟีดแบ็กค่ะ!")
-                except Exception as e: st.error("⚠️ ไม่สามารถส่งข้อมูลได้ กรุณาตรวจสอบว่าสร้างชีต 'Feedback' แล้วหรือยังคะ")
 
 # ==========================================
 # หน้า 2 & 3: บัญชี พอร์ตโฟลิโอ และภาษี
@@ -505,30 +495,33 @@ if st.session_state["logged_in"]:
         col2.metric("📥 นำเงินกลับไทย (ถอน)", f"${l_stat['inward']:,.2f}")
         col3.metric("📈 ต้นทุนหุ้นในพอร์ตรวม", f"${l_stat['bought'] - l_stat['sold']:,.2f}")
         col4.metric("💰 เงินสดคงเหลือ (พร้อมเทรด)", f"${cb:,.2f}", "💵 Cash Balance")
+        
         st.markdown("---")
         h1, h2 = st.columns([8, 2])
         h1.subheader("📝 สมุดบันทึกบัญชีการเทรด (Cloud Ledger)")
         csv_ledger = convert_df_to_csv(st.session_state.trade_ledger)
         h2.download_button(label="📥 โหลดข้อมูล (Excel/CSV)", data=csv_ledger, file_name=f"Trade_Ledger_{datetime.now().strftime('%Y%m%d')}.csv", mime='text/csv', use_container_width=True)
+        
+        st.info("💡 **Tips จากนักบัญชี:** ตอนซื้อ/ขายหุ้น กรอกแค่ 'ราคา' และ 'จำนวนหุ้น' ระบบจะคำนวณจำนวนเงินและอัปเดตยอดยกมาให้อัตโนมัติครับ")
         ed_l = st.data_editor(st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
             column_config={
                 "Date": "วันที่ (DD/MM/YYYY)",
-                "Action": st.column_config.SelectboxColumn("ประเภท", options=["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)", "รับเงินปันผล (Dividend)", "กำไรจากการขายหุ้น (Profit)"]),
+                "Action": st.column_config.SelectboxColumn("ประเภท", options=["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)", "รับเงินปันผล (Dividend)"], required=True),
                 "Ticker": "ชื่อหุ้น",
                 "Price": st.column_config.NumberColumn("ราคา ($)", format="%.4f", step=0.0001),
                 "Shares": st.column_config.NumberColumn("จำนวนหุ้น", format="%.4f", step=0.0001),
-                "Amount_USD": st.column_config.NumberColumn("จำนวนเงิน ($)", format="%.2f", step=0.01),
-                "Running_Balance": st.column_config.NumberColumn("ยอดยกมา ($)", disabled=True, format="%.2f"), 
+                "Amount_USD": st.column_config.NumberColumn("จำนวนเงินสุทธิ ($)", format="%.2f", step=0.01, help="ยอดเงินรวม (ระบบจะคำนวณให้อัตโนมัติหากเป็นการซื้อ/ขาย)"),
+                "Running_Balance": st.column_config.NumberColumn("ยอดเงินสดคงเหลือ ($)", disabled=True, format="%.2f", help="Cash Balance ต้องไม่ติดลบ"), 
                 "FX_Rate": st.column_config.NumberColumn("เรทเงิน", format="%.4f", step=0.0001), 
                 "WHT_USD": st.column_config.NumberColumn("ภาษีหักฯ ($)", format="%.2f", step=0.01), 
-                "Ref_Doc": "หมายเหตุ"
+                "Ref_Doc": st.column_config.TextColumn("หมายเหตุ (กำไร/ขาดทุน)")
             })
         if not ed_l.equals(st.session_state.trade_ledger):
             ed_l = clean_df_types(ed_l)
             sorted_ed_l, _, _, n_rb, _ = calculate_stats(ed_l)
             st.session_state.trade_ledger = sorted_ed_l; st.rerun()
         if st.button("💾 บันทึกข้อมูลบัญชีขึ้น Cloud", type="primary", use_container_width=True):
-            save_df_to_sheet("Ledger", st.session_state.trade_ledger); st.success("บันทึกสำเร็จ! ข้อมูลปลอดภัย 100%")
+            save_df_to_sheet("Ledger", st.session_state.trade_ledger); st.success("บันทึกสำเร็จ! โครงสร้างบัญชีถูกต้องตามมาตรฐาน 100%")
 
         st.markdown("---")
         st.subheader("📊 พอร์ตโฟลิโอปัจจุบัน (Auto Real-Time Mark to Market)")
