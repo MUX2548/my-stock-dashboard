@@ -1,4 +1,5 @@
 import json
+import time
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
@@ -152,7 +153,7 @@ def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
 # ==========================================
-# 4. ดึงข้อมูลทางการเงิน
+# 4. ดึงข้อมูลทางการเงิน (Advanced Radar Edition)
 # ==========================================
 @st.cache_data(ttl=60)
 def load_pro_data(ticker_symbol, tf):
@@ -165,22 +166,43 @@ def load_pro_data(ticker_symbol, tf):
         df = df.dropna(subset=['Close'])
         if df.empty: return pd.DataFrame(), {}, None, None
         
-        spy = yf.Ticker("^GSPC").history(period=p, interval=i)
-        spy_trend = "N/A"
-        spy_price = 0.0
-        if not spy.empty:
-            df['RS'] = (df['Close'].pct_change(10) - spy['Close'].pct_change(10)) * 100
-            spy_price = spy['Close'].iloc[-1]
-            spy_ema50 = spy['Close'].ewm(span=50).mean().iloc[-1]
-            spy_trend = "ขึ้น 📈" if spy_price > spy_ema50 else "ลง 📉"
-        else: df['RS'] = 0
-
+        # --- Advanced Market Radar System ---
+        market_signal = None
         try:
-            vix = yf.Ticker("^VIX").history(period=p, interval=i)
-            vix_val = vix['Close'].iloc[-1] if not vix.empty else 20.0
-        except: vix_val = 20.0
-
-        market_signal = {"spy_trend": spy_trend, "spy_price": spy_price, "vix": vix_val}
+            mkt_tickers = ["^GSPC", "^VIX", "^VIX3M", "HYG", "IEF"]
+            mkt_data = yf.download(mkt_tickers, period="6mo", progress=False)
+            
+            if 'Close' in mkt_data.columns.levels[0] if isinstance(mkt_data.columns, pd.MultiIndex) else False:
+                close_data = mkt_data['Close']
+            else:
+                close_data = mkt_data
+                
+            # 1. S&P 500 Trend
+            df['RS'] = (df['Close'].pct_change(10) - close_data['^GSPC'].pct_change(10)) * 100
+            spy_p = close_data['^GSPC'].iloc[-1]
+            spy_ema50 = close_data['^GSPC'].ewm(span=50).mean().iloc[-1]
+            spy_trend = "ขึ้น 📈" if spy_p > spy_ema50 else "ลง 📉"
+            
+            # 2. VIX Absolute
+            vix_val = close_data['^VIX'].iloc[-1]
+            
+            # 3. VIX Term Structure
+            vix3m_val = close_data['^VIX3M'].iloc[-1]
+            vix_ts = vix_val / vix3m_val
+            
+            # 4. Smart Money Flow (Credit Spreads Proxy)
+            hyg_ief_ratio = close_data['HYG'] / close_data['IEF']
+            ratio_ema20 = hyg_ief_ratio.ewm(span=20).mean().iloc[-1]
+            smart_money = "Risk ON 🟢" if hyg_ief_ratio.iloc[-1] > ratio_ema20 else "Risk OFF 🔴"
+            
+            market_signal = {
+                "spy_trend": spy_trend, "spy_price": spy_p,
+                "vix": vix_val, "vix_ts": vix_ts, "smart_money": smart_money
+            }
+        except Exception as e:
+            market_signal = None
+            df['RS'] = 0
+        # ------------------------------------
 
         df['E20'] = df['Close'].ewm(span=20).mean()
         df['E50'] = df['Close'].ewm(span=50).mean()
@@ -271,14 +293,14 @@ with st.sidebar:
             st.rerun()
 
 # 🌟 โหลดข้อมูลกราฟหลัก
-with st.spinner(f"⏳ กำลังดึงข้อมูลกราฟ {ticker} และเรดาร์ตลาดโลก... (อาจใช้เวลา 5-10 วินาที)"):
+with st.spinner(f"⏳ กำลังประมวลผลข้อมูล AI Advanced Radar... (อาจใช้เวลา 5-10 วินาที)"):
     df, fund, matrix, market_signal = load_pro_data(ticker, tf_option)
 
 tabs = ["📊 วิเคราะห์กราฟ (Analysis)", "💼 บัญชี (Cloud Sync)", "🧾 ภาษีสรรพากร"] if st.session_state["logged_in"] else ["📊 วิเคราะห์กราฟ (Analysis)"]
 tab_list = st.tabs(tabs)
 
 # ==========================================
-# หน้า 1: วิเคราะห์กราฟ
+# หน้า 1: วิเคราะห์กราฟ (อัปเกรดเรดาร์)
 # ==========================================
 with tab_list[0]:
     st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
@@ -290,44 +312,44 @@ with tab_list[0]:
         
         if market_signal:
             st.markdown("---")
-            st.markdown("### 🌐 Market Signal (เรดาร์สแกนภาพรวมตลาด)")
-            m1, m2, m3 = st.columns(3)
+            st.markdown("### 🌐 Advanced Market Radar (เรดาร์สแกนตลาดเชิงลึก)")
+            
+            m1, m2, m3, m4 = st.columns(4)
+            
+            # S&P 500
             spy_t = market_signal["spy_trend"]
             spy_p = market_signal["spy_price"]
-            m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f} จุด", f"{spy_t} (กระแสน้ำ{'ผลักดัน' if 'ขึ้น' in spy_t else 'กดดัน'})", delta_color="normal" if "ขึ้น" in spy_t else "inverse")
+            m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f}", spy_t, delta_color="normal" if "ขึ้น" in spy_t else "inverse")
             
+            # VIX Index
             v_val = market_signal["vix"]
-            if v_val < 20: v_stat, v_col = "🟢 คนกล้าซื้อ (Risk ON)", "normal"
+            if v_val < 20: v_stat, v_col = "🟢 ปกติ (Risk ON)", "normal"
             elif v_val < 30: v_stat, v_col = "🟡 เฝ้าระวัง (Neutral)", "off"
             else: v_stat, v_col = "🔴 ตื่นตระหนก (Risk OFF)", "inverse"
-            m2.metric("ดัชนีความกลัว (VIX Index)", f"{v_val:.2f}", v_stat, delta_color=v_col)
-            m2.caption("💡 **VIX ยิ่งต่ำ = ตลาดปลอดภัย / VIX ยิ่งสูง = ตลาดผันผวนเทขาย**")
+            m2.metric("ดัชนีความกลัว (VIX)", f"{v_val:.2f}", v_stat, delta_color=v_col)
             
-            with m3:
-                if "ขึ้น" in spy_t and v_val < 25: st.success("✅ **ตลาดเป็นใจ:** สภาพแวดล้อมปลอดภัย เอื้อต่อการเข้าทำกำไร")
-                elif "ลง" in spy_t and v_val > 25: st.error("🚨 **ความเสี่ยงสูง:** ตลาดกำลังผันผวนรุนแรง คุมความเสี่ยงด่วน")
-                else: st.warning("⚠️ **ตลาดไร้ทิศทาง:** ตลาดยังเลือกทางไม่ได้ แนะนำเก็งกำไรในกรอบ")
+            # VIX Term Structure
+            vix_ts = market_signal["vix_ts"]
+            ts_label = "🟢 Contango (ตลาดสงบ)" if vix_ts < 1 else "🔴 Backwardation (ตระหนกหนัก)"
+            m3.metric("โครงสร้างผันผวน (VIX/VIX3M)", f"{vix_ts:.2f}", ts_label, delta_color="normal" if vix_ts < 1 else "inverse")
+            
+            # Smart Money Flow
+            sm_flow = market_signal["smart_money"]
+            m4.metric("เงินทุนรายใหญ่ (HYG/IEF)", "Credit Spread", sm_flow, delta_color="normal" if "ON" in sm_flow else "inverse")
+            
+            # AI Executive Summary
+            st.markdown("#### 🤖 AI Radar Summary:")
+            if "ขึ้น" in spy_t and v_val < 25 and vix_ts < 1 and "ON" in sm_flow:
+                st.success("✅ **ไฟเขียวทุกมิติ (Strong Bullish):** กระแสเงินสดรายใหญ่ยังคงไหลเข้า ตลาดมีเสถียรภาพสูง เป็นจังหวะที่ดีมากในการเก็งกำไรและรันเทรนด์")
+            elif "ลง" in spy_t and (v_val > 25 or vix_ts > 1 or "OFF" in sm_flow):
+                st.error("🚨 **ไฟแดงเตือนภัย (Strong Bearish / Panic):** สถาบันเทขายตั๋วหนี้ขยะ โครงสร้างความผันผวนกลับหัว แนะนำชะลอการลงทุนใหม่และคุมความเสี่ยงอย่างเข้มงวด")
+            else:
+                st.warning("⚠️ **สภาวะก้ำกึ่ง (Mixed Signals):** สัญญาณชี้นำตลาดยังขัดแย้งกันเอง แนะนำให้ลดขนาดไม้เทรด (Position Sizing) ลง และเน้นซื้อขายในกรอบไปก่อน")
 
         rs_val = df['RS'].iloc[-1]
-        stock_is_uptrend = last_p > df['E50'].iloc[-1]
-        market_is_good = "ขึ้น" in market_signal["spy_trend"] and market_signal["vix"] < 25
-        market_is_bad = "ลง" in market_signal["spy_trend"] and market_signal["vix"] > 25
-
-        st.markdown("### 🤖 AI Executive Summary (สรุปแผนการลงทุน)")
-        if market_is_good and stock_is_uptrend:
-            st.success(f"**🌟 กลยุทธ์ (Action Plan): ทยอยสะสม / รันเทรนด์**\n\n**'น้ำขึ้น และเรือวิ่งฉลุย'** - สภาพตลาดโลกเป็นใจ และกราฟของหุ้น {ticker} เป็นขาขึ้นชัดเจน ถือเป็นจังหวะที่ดีในการถือครอง (Hold) หรือหาจังหวะย่อซื้อสะสมเพิ่มค่ะ")
-        elif market_is_bad and not stock_is_uptrend:
-            st.error(f"**🚨 กลยุทธ์ (Action Plan): หลีกเลี่ยง / รอดูสถานการณ์**\n\n**'พายุเข้า และเรือกำลังรั่ว'** - ตลาดรวมผันผวนหนัก และหุ้น {ticker} ก็เป็นขาลงอ่อนแอกว่าตลาด แนะนำให้หลีกเลี่ยงการลงทุนในตอนนี้ หรือถ้ามีของอยู่ควรพิจารณาตัดขาดทุน (Stop Loss) ค่ะ")
-        elif market_is_good and not stock_is_uptrend:
-            st.warning(f"**⚠️ กลยุทธ์ (Action Plan): Wait & See (รอดูอาการ)**\n\n**'น้ำขึ้น แต่เรือเครื่องดับ'** - ถึงแม้ตลาดรวมจะดี แต่หุ้น {ticker} กำลังเป็นขาลง แนะนำให้รอดูจนกว่ากราฟจะกลับตัวทะลุเส้นแนวต้านได้ หรือเปลี่ยนไปเล่นตัวอื่นที่กราฟสวยกว่าค่ะ")
-        elif market_is_bad and stock_is_uptrend:
-            st.info(f"**🛡️ กลยุทธ์ (Action Plan): ถืออย่างระมัดระวัง (Cautious Hold)**\n\n**'คลื่นลมแรง แต่เรือแกร่ง'** - หุ้น {ticker} แข็งแกร่งสวนทางตลาดที่กำลังแย่ สามารถถือได้แต่ต้องตั้งจุดหนี (Stop Loss) ไว้ให้ชัดเจน เพื่อป้องกันแรงเทขายตกใจจากตลาดรวมค่ะ")
-        else:
-            st.info(f"**🔍 กลยุทธ์ (Action Plan): เก็งกำไรระยะสั้น / ไซด์เวย์**\n\nตลาดและหุ้น {ticker} อยู่ในสภาวะก้ำกึ่ง (Sideway) แนะนำให้ซื้อที่แนวรับ-ขายที่แนวต้าน หรือรอดูทิศทางที่ชัดเจนก่อนเข้าซื้อไม้ใหญ่ค่ะ")
-
         st.markdown("---")
         rs_t = f" | **Relative Strength:** {'🟢 ชนะตลาด' if rs_val > 0 else '🔴 อ่อนแอกว่าตลาด'} ({rs_val:.2f}%)" if not np.isnan(rs_val) else ""
-        if matrix: st.info(f"🔮 **ทิศทาง {tf_option}:** {matrix['tr']} | **เป้าหมาย:** {matrix['l']:,.2f} - {matrix['u']:,.2f} (Harmonic Matrix){rs_t}")
+        if matrix: st.info(f"🔮 **ทิศทาง {tf_option}:** {matrix['tr']} | **เป้าหมาย (Harmonic Matrix):** {matrix['l']:,.2f} - {matrix['u']:,.2f} {rs_t}")
         
         c_l, c_r = st.columns([7, 3])
         with c_l:
