@@ -11,7 +11,7 @@ import numpy as np
 from datetime import datetime, timezone, timedelta
 
 # ==========================================
-# 1. ตั้งค่าหน้าเพจ & UI
+# 1. ตั้งค่าหน้าเพจ
 # ==========================================
 st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.10", page_icon="📈", layout="wide")
 
@@ -31,7 +31,7 @@ current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 
 # ==========================================
-# 2. 🔐 การเชื่อมต่อฐานข้อมูล (Cloud Database)
+# 2. 🔐 การเชื่อมต่อฐานข้อมูล
 # ==========================================
 @st.cache_resource
 def init_connection():
@@ -102,18 +102,19 @@ def log_visitor():
             timestamp = datetime.now(tz_th).strftime("%d/%m/%Y %H:%M:%S")
             ws.append_row([timestamp])
             st.session_state.has_logged_visit = True
-        return len(ws.col_values(1))
-    except: return "N/A"
+        total_visits = len(ws.col_values(1))
+        return total_visits
+    except Exception as e:
+        return "N/A"
 
 visitor_count = log_visitor()
 
 # ==========================================
-# 3. 📊 ลอจิกการบัญชี (New Professional Standard)
+# 3. 📊 ลอจิกการบัญชี
 # ==========================================
 def calculate_stats(df_input):
     df = clean_df_types(df_input)
     
-    # จัดเรียงวันที่ (FIFO)
     if not df.empty and "Date" in df.columns:
         df["Date_Temp"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce")
         df = df.sort_values(by="Date_Temp").drop(columns=["Date_Temp"]).reset_index(drop=True)
@@ -122,7 +123,6 @@ def calculate_stats(df_input):
     stat = {"outward": 0.0, "inward": 0.0, "bought": 0.0, "sold": 0.0, "dividend": 0.0, "realized_profit": 0.0}
     r_bals, hld = [], {}
     
-    # ล้างข้อมูลขยะและประเภทที่ผิดหลักบัญชีออกอัตโนมัติ
     df = df[~df['Action'].isin(['None', '', 'nan', 'กำไรจากการขายหุ้น (Profit)'])].copy().reset_index(drop=True)
     
     for idx, row in df.iterrows():
@@ -131,7 +131,6 @@ def calculate_stats(df_input):
         p = float(row.get("Price", 0.0))
         s = float(row.get("Shares", 0.0))
         
-        # ถ้าระบุจำนวนเงินมาให้ใช้ค่าที่ระบุ (สำหรับการโอน/ปันผล) แต่ถ้าซื้อขาย ให้ระบบคูณให้เป๊ะๆ
         manual_amount = float(row.get("Amount_USD", 0.0))
         trade_value = p * s
         a = manual_amount if manual_amount > 0 and action not in ["ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)"] else trade_value
@@ -150,7 +149,6 @@ def calculate_stats(df_input):
         elif action == "ขายหุ้น (Sell)" and ticker:
             cb += trade_value; stat["sold"] += trade_value; df.at[idx, "Amount_USD"] = trade_value
             if ticker in hld and hld[ticker]["shares"] > 0:
-                # คำนวณกำไร/ขาดทุนทันทีที่ขาย (Realized P/L)
                 avg_cost = hld[ticker]["total_cost"] / hld[ticker]["shares"]
                 cogs = avg_cost * s
                 realized_pl = trade_value - cogs
@@ -158,7 +156,6 @@ def calculate_stats(df_input):
                 hld[ticker]["shares"] -= s
                 hld[ticker]["total_cost"] -= cogs
                 
-                # แนบ P/L ลงในหมายเหตุอัตโนมัติ หากยังไม่มี
                 old_ref = str(row.get("Ref_Doc", "")).replace("nan", "")
                 if "P/L:" not in old_ref:
                     df.at[idx, "Ref_Doc"] = f"P/L: ${realized_pl:.2f} | {old_ref}"
@@ -173,7 +170,7 @@ def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
 # ==========================================
-# 4. 🌐 ดึงข้อมูลการเงิน (Independent Fetching System)
+# 4. 🌐 ดึงข้อมูลการเงิน
 # ==========================================
 @st.cache_data(ttl=60)
 def load_pro_data(ticker_symbol, tf):
@@ -292,7 +289,6 @@ with st.sidebar:
         st.success("✅ โหมดเจ้าของพอร์ต")
         if st.button("🚪 ออกจากระบบ", use_container_width=True): st.session_state["logged_in"] = False; st.rerun()
 
-# ประมวลผลบัญชี (ล้างขยะและคำนวณใหม่ทันที)
 holdings = {}
 if st.session_state["logged_in"]:
     sorted_df, cb, l_stat, r_bals, holdings = calculate_stats(st.session_state.trade_ledger)
@@ -321,7 +317,7 @@ with tab_list[0]:
                 with st.form("quick_entry_form"):
                     q_c1, q_c2 = st.columns(2)
                     qe_date = q_c1.text_input("วันที่ (DD/MM/YYYY)", value=current_date)
-                    qe_action = q_c2.selectbox("ประเภท", ["ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)", "นำเงินเข้าประเทศไทย (Inward)", "นำเงินออกนอกประเทศ (Outward)", "รับเงินปันผล (Dividend)"]) # ตัดกำไรทิ้ง
+                    qe_action = q_c2.selectbox("ประเภท", ["ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)", "นำเงินเข้าประเทศไทย (Inward)", "นำเงินออกนอกประเทศ (Outward)", "รับเงินปันผล (Dividend)"])
                     
                     q_c3, q_c4, q_c5 = st.columns(3)
                     qe_ticker = q_c3.text_input("ชื่อหุ้น", value=ticker)
@@ -363,7 +359,6 @@ with tab_list[0]:
         sm_flow = market_signal["smart_money"] if market_signal else "N/A"
         is_market_good = "ขึ้น" in spy_t and (0 < v_val < 25) and (0 < vix_ts < 1)
 
-        # 💼 ดึงต้นทุนจริงมาวางแผน
         actual_cost = b_p 
         if st.session_state["logged_in"] and holdings.get(ticker, {}).get("shares", 0) > 0.001:
             my_hold = holdings[ticker]
@@ -389,17 +384,16 @@ with tab_list[0]:
         st.markdown("### 🌐 Market Signal (เรดาร์สแกนภาพรวมตลาด)")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f}" if spy_p > 0 else "N/A", spy_t if spy_p > 0 else None, delta_color="normal" if "ขึ้น" in spy_t else "inverse" if "ลง" in spy_t else "off")
-        m1.caption("💡 **ทิศทางเม็ดเงินโลก:** ถ้ายืนเหนือเส้น EMA50 แปลว่าภาพรวมยังเป็นแนวโน้มขาขึ้น")
+        m1.caption("💡 **นิยาม:** ทิศทางเม็ดเงินระดับโลก หากยืนเหนือเส้นค่าเฉลี่ย 50 วัน (EMA50) สะท้อนว่าภาพรวมตลาดยังอยู่ในแนวโน้มขาขึ้น")
         vix_stat = "Risk ON" if 0 < v_val < 20 else "Neutral" if 0 < v_val < 30 else "Panic"
         m2.metric("ความกลัว (VIX)", f"{v_val:.2f}" if v_val > 0 else "N/A", vix_stat if v_val > 0 else None, delta_color="normal" if 0 < v_val < 25 else "inverse" if v_val >= 25 else "off")
-        m2.caption("💡 **ความผันผวน:** ยิ่งต่ำ (<20) ยิ่งปลอดภัย / ถ้ายิ่งสูง (>30) แปลว่าตลาดตื่นตระหนกตกใจ")
+        m2.caption("💡 **นิยาม:** ยิ่งต่ำ (<20) ตลาดยิ่งปลอดภัย / ถ้ายิ่งสูง (>30) แปลว่านักลงทุนตื่นตระหนก ซื้อประกันความเสี่ยงและพร้อมเทขาย")
         ts_label = "🟢 สงบ" if 0 < vix_ts < 1 else "🔴 ตระหนก"
         m3.metric("โครงสร้าง (VIX/VIX3M)", f"{vix_ts:.2f}" if vix_ts > 0 else "N/A", ts_label if vix_ts > 0 else None, delta_color="normal" if 0 < vix_ts < 1 else "inverse" if vix_ts >= 1 else "off")
-        m3.caption("💡 **วัดสภาวะฉุกเฉิน:** ค่าน้อยกว่า 1 แปลว่าตลาดปกติ (Contango)")
+        m3.caption("💡 **นิยาม:** ความผันผวนระยะสั้นเทียบระยะยาว หากน้อยกว่า 1 แปลว่าตลาดอยู่ในภาวะปกติ (Contango)")
         m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow if sm_flow != "N/A" else None, delta_color="normal" if "ON" in sm_flow else "inverse" if "OFF" in sm_flow else "off")
-        m4.caption("💡 **ฟันด์โฟลว์สถาบัน:** กล้าถือหุ้นกู้ขยะ (Risk ON) หรือ หนีไปพึ่งพันธบัตร (Risk OFF)")
+        m4.caption("💡 **นิยาม:** หากสถาบันกล้าซื้อหุ้นกู้ขยะ (HYG) แปลว่ากล้าเสี่ยง (Risk ON) แต่ถ้าหนีไปถือพันธบัตร (IEF) แปลว่ากลัว (Risk OFF)")
 
-        # 🤵 ทัศนะจากเทรดเดอร์มือหนึ่ง
         if is_market_good and is_uptrend and is_bullish_macd and rsi_val < 70:
             rec, color = "STRONG BUY / HOLD", "#00E676"
             msg = f"**'จังหวะน้ำขึ้นต้องรีบตัก'** - ตลาดโลกเอื้ออำนวย และ {ticker} กำลังอยู่ในรอบขาขึ้นเต็มตัว กราฟมีโมเมนตัมเชิงบวกชัดเจน แนะนำให้ทยอยสะสม (Buy on Dip) หรือถือรันเทรนด์ต่อเพื่อทำกำไรคำโตครับ"
@@ -485,7 +479,7 @@ with tab_list[0]:
         st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ")
 
 # ==========================================
-# หน้า 2 & 3: บัญชี พอร์ตโฟลิโอ และภาษี
+# หน้า 2: บัญชีและพอร์ตโฟลิโอ
 # ==========================================
 if st.session_state["logged_in"]:
     with tab_list[1]:
@@ -510,8 +504,8 @@ if st.session_state["logged_in"]:
                 "Ticker": "ชื่อหุ้น",
                 "Price": st.column_config.NumberColumn("ราคา ($)", format="%.4f", step=0.0001),
                 "Shares": st.column_config.NumberColumn("จำนวนหุ้น", format="%.4f", step=0.0001),
-                "Amount_USD": st.column_config.NumberColumn("จำนวนเงินสุทธิ ($)", format="%.2f", step=0.01, help="ยอดเงินรวม (ระบบจะคำนวณให้อัตโนมัติหากเป็นการซื้อ/ขาย)"),
-                "Running_Balance": st.column_config.NumberColumn("ยอดเงินสดคงเหลือ ($)", disabled=True, format="%.2f", help="Cash Balance ต้องไม่ติดลบ"), 
+                "Amount_USD": st.column_config.NumberColumn("จำนวนเงินสุทธิ ($)", format="%.2f", step=0.01),
+                "Running_Balance": st.column_config.NumberColumn("ยอดเงินสดคงเหลือ ($)", disabled=True, format="%.2f"), 
                 "FX_Rate": st.column_config.NumberColumn("เรทเงิน", format="%.4f", step=0.0001), 
                 "WHT_USD": st.column_config.NumberColumn("ภาษีหักฯ ($)", format="%.2f", step=0.01), 
                 "Ref_Doc": st.column_config.TextColumn("หมายเหตุ (กำไร/ขาดทุน)")
@@ -570,58 +564,128 @@ if st.session_state["logged_in"]:
             st.download_button(label="📥 ดาวน์โหลดพอร์ตโฟลิโอ (Excel/CSV)", data=csv_port, file_name=f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", mime='text/csv')
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ตค่ะ)")
 
+# ==========================================
+# หน้า 3: ภาษีสรรพากร (Tax Accountant Logic)
+# ==========================================
     with tab_list[2]:
         t1, t2 = st.columns([8, 2])
         t1.subheader("🧾 ระบบประเมินภาษีสรรพากร ภ.ง.ด. 90")
+        
+        st.info("💡 **หลักการภาษีใหม่:** การนำเงินกลับไทย (Inward) จะถูกหักจาก 'เงินต้นสะสม' ก่อน หากหักเงินต้นหมดแล้ว ยอดที่นำกลับหลังจากนั้นจึงจะถือเป็น 'กำไรที่ต้องเสียภาษี' (ส่วนเงินปันผลถือเป็นรายได้ที่ต้องเสียภาษี 100%)")
+        
+        # กรองเฉพาะรายการที่เกี่ยวข้องกับ Cashflow ต่างประเทศ
         tax_idx = st.session_state.trade_ledger['Action'].isin(["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"])
         tax_v = st.session_state.trade_ledger[tax_idx].copy()
+        
+        # จัดเตรียมข้อมูล THB
         tax_v["Out_USD"] = np.where(tax_v["Action"] == "นำเงินออกนอกประเทศ (Outward)", tax_v["Amount_USD"], 0.0)
         tax_v["In_USD"] = np.where(tax_v["Action"].isin(["นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"]), tax_v["Amount_USD"], 0.0)
         tax_v["FX_Rate"] = pd.to_numeric(tax_v["FX_Rate"], errors='coerce').fillna(0.0)
         tax_v["WHT_USD"] = pd.to_numeric(tax_v["WHT_USD"], errors='coerce').fillna(0.0)
-        tax_v["Out_THB"], tax_v["In_THB"] = tax_v["Out_USD"] * tax_v["FX_Rate"], tax_v["In_USD"] * tax_v["FX_Rate"]
-        t_bals, c_t_bal = [], 0.0
+        tax_v["Out_THB"] = tax_v["Out_USD"] * tax_v["FX_Rate"]
+        tax_v["In_THB"] = tax_v["In_USD"] * tax_v["FX_Rate"]
+        
+        # 📌 อัลกอริทึมคำนวณสระเงินต้น (Capital Pool) แบบนักบัญชี
+        capital_pool = 0.0
+        taxable_gains_thb = []
+        running_bals = []
+
         for i, r in tax_v.iterrows():
-            c_t_bal += (r["Out_THB"] - r["In_THB"]); t_bals.append(c_t_bal)
-        tax_v["Balance_THB"] = t_bals
+            action = r['Action']
+            out_thb = r['Out_THB']
+            in_thb = r['In_THB']
+
+            if action == "นำเงินออกนอกประเทศ (Outward)":
+                capital_pool += out_thb
+                taxable_gains_thb.append(0.0)
+            elif action == "นำเงินเข้าประเทศไทย (Inward)":
+                capital_pool -= in_thb
+                if capital_pool < 0:
+                    taxable_gains_thb.append(abs(capital_pool))
+                    capital_pool = 0.0 # รีเซ็ตเงินต้นเป็น 0
+                else:
+                    taxable_gains_thb.append(0.0)
+            elif action == "รับเงินปันผล (Dividend)":
+                taxable_gains_thb.append(in_thb) # ปันผลเป็นกำไร 100% (เงินต้นไม่ลด)
+            else:
+                taxable_gains_thb.append(0.0)
+
+            running_bals.append(capital_pool)
+
+        tax_v['Taxable_Gain_THB'] = taxable_gains_thb
+        tax_v['Balance_THB'] = running_bals
+
         csv_tax = convert_df_to_csv(tax_v)
-        t2.download_button(label="📥 โหลดตารางภาษี (Excel/CSV)", data=csv_tax, file_name=f"Tax_Report_{datetime.now().strftime('%Y%m%d')}.csv", mime='text/csv', use_container_width=True)
+        t2.download_button(label="📥 โหลดตารางภาษี (Excel)", data=csv_tax, file_name=f"Tax_Report_{datetime.now().strftime('%Y%m%d')}.csv", mime='text/csv', use_container_width=True)
+        
         ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed",
-            column_order=["Date", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "WHT_USD", "Ref_Doc"],
-            column_config={"Date": st.column_config.Column("วันที่", disabled=True), "Out_USD": st.column_config.NumberColumn("โอนออก ($)", disabled=True), "In_USD": st.column_config.NumberColumn("นำเข้า ($)", disabled=True), "FX_Rate": st.column_config.NumberColumn("เรทเงิน (บาท/$)", format="%.4f", step=0.0001), "Out_THB": st.column_config.NumberColumn("โอนออก (฿)", disabled=True), "In_THB": st.column_config.NumberColumn("นำเข้า (฿)", disabled=True), "WHT_USD": st.column_config.NumberColumn("ภาษีหัก ตปท. ($)", format="%.2f", step=0.01), "Balance_THB": st.column_config.NumberColumn("เงินต้นคงเหลือ (฿)", disabled=True), "Ref_Doc": "หมายเหตุ"})
-        if not ed_t[["FX_Rate", "WHT_USD", "Ref_Doc"]].equals(tax_v[["FX_Rate", "WHT_USD", "Ref_Doc"]]):
+            column_order=["Date", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "Taxable_Gain_THB", "WHT_USD"],
+            column_config={
+                "Date": st.column_config.Column("วันที่", disabled=True), 
+                "Out_USD": st.column_config.NumberColumn("โอนออก ($)", disabled=True), 
+                "In_USD": st.column_config.NumberColumn("นำเข้า/ปันผล ($)", disabled=True), 
+                "FX_Rate": st.column_config.NumberColumn("เรทเงิน (บาท/$)", format="%.4f", step=0.0001), 
+                "Out_THB": st.column_config.NumberColumn("โอนออก (฿)", disabled=True), 
+                "In_THB": st.column_config.NumberColumn("นำเข้า (฿)", disabled=True), 
+                "Balance_THB": st.column_config.NumberColumn("สระเงินต้นคงเหลือ (฿)", disabled=True),
+                "Taxable_Gain_THB": st.column_config.NumberColumn("ส่วนกำไรที่ต้องเสียภาษี (฿)", disabled=True),
+                "WHT_USD": st.column_config.NumberColumn("ภาษีหัก ตปท. ($)", format="%.2f", step=0.01)
+            })
+            
+        if not ed_t[["FX_Rate", "WHT_USD"]].equals(tax_v[["FX_Rate", "WHT_USD"]]):
             ed_t = clean_df_types(ed_t)
             st.session_state.trade_ledger.loc[tax_idx, "FX_Rate"] = ed_t["FX_Rate"].values
             st.session_state.trade_ledger.loc[tax_idx, "WHT_USD"] = ed_t["WHT_USD"].values
-            st.session_state.trade_ledger.loc[tax_idx, "Ref_Doc"] = ed_t["Ref_Doc"].values; st.rerun()
-        if st.button("💾 บันทึกอัตราแลกเปลี่ยนลง Cloud", type="primary", use_container_width=True): save_df_to_sheet("Ledger", st.session_state.trade_ledger); st.success("บันทึกสำเร็จ!")
-        sum_out_thb, sum_in_thb = tax_v["Out_THB"].sum(), tax_v["In_THB"].sum()
-        sum_wht_thb, net_tax_gain = (tax_v["WHT_USD"] * tax_v["FX_Rate"]).sum(), max(0, sum_in_thb - sum_out_thb)
-        st.markdown("---")
-        cf1, cf2, cf3 = st.columns(3)
-        cf1.metric("📤 ยอดโอนออกรวม", f"฿{sum_out_thb:,.2f}"); cf2.metric("📥 ยอดนำกลับรวม", f"฿{sum_in_thb:,.2f}"); cf3.metric("🚨 ส่วนเกินทุนสุทธิ", f"฿{net_tax_gain:,.2f}", "หักล้างเงินต้นแล้ว", delta_color="inverse")
+            st.rerun()
+            
+        if st.button("💾 บันทึกเรทเงินและภาษีลง Cloud", type="primary", use_container_width=True): 
+            save_df_to_sheet("Ledger", st.session_state.trade_ledger); st.success("บันทึกสำเร็จ!")
+
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
-        with c1: tax_year = st.selectbox("📅 เลือกปีภาษี", ["2567 (2024)", "2568 (2025)", "2569 (2026)"])
-        with c2: is_resident = st.radio("อาศัยอยู่ในไทยเกิน 180 วัน?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
-        with c3: other_income = st.number_input("รายได้ประจำต่อปี (บาท)", min_value=0.0, value=500000.0, step=50000.0)
-        with st.expander("📝 บันทึกค่าลดหย่อนส่วนบุคคล", expanded=True):
+        with c1: 
+            tax_year_str = st.selectbox("📅 เลือกปีภาษีสำหรับคำนวณ", ["2567 (2024)", "2568 (2025)", "2569 (2026)"])
+            selected_year = tax_year_str.split("(")[1][:4] # Extract e.g., 2024
+        with c2: is_resident = st.radio("อาศัยอยู่ในไทยเกิน 180 วันในปีนั้น?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
+        with c3: other_income = st.number_input("รายได้ประจำปีอื่นๆ (บาท)", min_value=0.0, value=500000.0, step=50000.0)
+
+        # กรองข้อมูลคำนวณเฉพาะปีภาษีที่เลือก (Strict Accounting Rule)
+        tax_v_current_year = tax_v[tax_v['Date'].str.endswith(selected_year)].copy()
+        
+        sum_out_thb_yr = tax_v_current_year["Out_THB"].sum()
+        sum_in_thb_yr = tax_v_current_year["In_THB"].sum()
+        net_tax_gain_yr = tax_v_current_year["Taxable_Gain_THB"].sum()
+        sum_wht_thb_yr = (tax_v_current_year["WHT_USD"] * tax_v_current_year["FX_Rate"]).sum()
+
+        st.markdown(f"#### 📊 สรุปยอดเงินของปีภาษี {selected_year} เท่านั้น")
+        cf1, cf2, cf3 = st.columns(3)
+        cf1.metric("📤 ยอดโอนออกปีนี้", f"฿{sum_out_thb_yr:,.2f}")
+        cf2.metric("📥 ยอดนำกลับ/ปันผลปีนี้", f"฿{sum_in_thb_yr:,.2f}")
+        cf3.metric("🚨 กำไรที่ต้องเสียภาษีปีนี้", f"฿{net_tax_gain_yr:,.2f}", "คำนวณหลังหักเงินต้นสะสมแล้ว", delta_color="inverse")
+
+        st.markdown("---")
+        with st.expander("📝 บันทึกค่าลดหย่อนส่วนบุคคล (ตามเกณฑ์สรรพากร)", expanded=True):
             col_d1, col_d2 = st.columns(2)
             spouse_deduction = col_d1.checkbox("มีคู่สมรส (ไม่มีรายได้)")
             children_count = col_d2.number_input("จำนวนบุตร (คนละ 30,000)", min_value=0, step=1)
             c_inv1, c_inv2, c_inv3 = st.columns(3)
-            life_ins = c_inv1.number_input("เบี้ยประกันชีวิต", min_value=0.0, step=5000.0)
-            health_ins = c_inv2.number_input("เบี้ยประกันสุขภาพ", min_value=0.0, step=5000.0)
+            life_ins = c_inv1.number_input("เบี้ยประกันชีวิต (Max 100k)", min_value=0.0, step=5000.0)
+            health_ins = c_inv2.number_input("เบี้ยประกันสุขภาพ (Max 25k)", min_value=0.0, step=5000.0)
             pvd = c_inv3.number_input("กองทุน PVD / กบข.", min_value=0.0, step=5000.0)
             ssf = c_inv1.number_input("ซื้อ SSF", min_value=0.0, step=5000.0)
             rmf = c_inv2.number_input("ซื้อ RMF", min_value=0.0, step=5000.0)
             donate = c_inv3.number_input("เงินบริจาค", min_value=0.0, step=1000.0)
+            
         total_deductions = min(other_income * 0.5, 100000.0) + 60000.0 + (60000.0 if spouse_deduction else 0.0) + (children_count * 30000.0) + min(life_ins + min(health_ins, 25000.0), 100000.0) + min(ssf + rmf + pvd, 500000.0) + donate
-        if st.button(f"📊 คำนวณภาษีสุทธิ ปี {tax_year}", type="primary", use_container_width=True):
-            if "ไม่ถึง" in is_resident: st.success("🎉 ได้รับยกเว้นภาษี")
-            elif net_tax_gain <= 0: st.success("🎉 ยังไม่มีกำไรส่วนเกิน ไม่ต้องเสียภาษีค่ะ")
+        
+        if st.button(f"📊 ประเมินภาษีสุทธิ ภ.ง.ด. 90 ประจำปี {selected_year}", type="primary", use_container_width=True):
+            if "ไม่ถึง" in is_resident: 
+                st.success("🎉 ได้รับยกเว้นภาษีต่างประเทศ (เนื่องจากอาศัยในไทยไม่ถึง 180 วันในปีภาษีนั้น)")
+            elif net_tax_gain_yr <= 0: 
+                st.success(f"🎉 ในปี {selected_year} คุณยังไม่มีส่วนกำไรที่ถูกดึงกลับเข้าประเทศ (ดึงกลับเฉพาะเงินต้น) จึงไม่ต้องนำมาคำนวณรวมเพื่อเสียภาษีครับ")
             else:
-                net_inc, net_inc_without = max(0, (other_income + net_tax_gain) - total_deductions), max(0, other_income - total_deductions)
+                net_inc = max(0, (other_income + net_tax_gain_yr) - total_deductions)
+                net_inc_without = max(0, other_income - total_deductions)
                 def calc_tax(n):
                     if n > 5000000: return (n-5000000)*0.35 + 1265000
                     if n > 2000000: return (n-2000000)*0.30 + 365000
@@ -632,6 +696,9 @@ if st.session_state["logged_in"]:
                     if n > 150000: return (n-150000)*0.05
                     return 0
                 tax_raw = calc_tax(net_inc) - calc_tax(net_inc_without)
-                st.subheader(f"ผลการคำนวณ ภ.ง.ด. 90 (ประจำปี {tax_year})")
+                final_tax = max(0, tax_raw - sum_wht_thb_yr)
+                
+                st.subheader(f"ผลการประเมิน ภ.ง.ด. 90 (ประจำปี {selected_year})")
                 r1, r2 = st.columns(2)
-                r1.metric("ภาษีจากพอร์ต ตปท.", f"฿{tax_raw:,.2f}"); r2.metric("🚨 ภาษีที่ต้องจ่ายเพิ่มจริง", f"฿{max(0, tax_raw - sum_wht_thb):,.2f}")
+                r1.metric("ภาษีที่เกิดจากพอร์ต ตปท.", f"฿{tax_raw:,.2f}")
+                r2.metric(f"🚨 ภาษีที่ต้องจ่ายเพิ่มจริง (หักเครดิต ตปท. ฿{sum_wht_thb_yr:,.2f} แล้ว)", f"฿{final_tax:,.2f}")
