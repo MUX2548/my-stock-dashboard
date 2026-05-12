@@ -164,10 +164,8 @@ def load_pro_data(ticker_symbol, tf):
         df = df.dropna(subset=['Close'])
         if df.empty: return pd.DataFrame(), {}, None, None
         
-        # --- ระบบดึงข้อมูลแยกส่วน ป้องกัน N/A ---
         market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 0.0, "vix_ts": 0.0, "smart_money": "N/A"}
         
-        # 1. S&P 500
         try:
             spy = yf.Ticker("^GSPC").history(period=p, interval=i)
             if not spy.empty:
@@ -179,21 +177,17 @@ def load_pro_data(ticker_symbol, tf):
             else: df['RS'] = 0
         except: df['RS'] = 0
 
-        # 2. VIX
         try:
             vix = yf.Ticker("^VIX").history(period="1mo")
-            if not vix.empty:
-                market_signal["vix"] = float(vix['Close'].iloc[-1])
+            if not vix.empty: market_signal["vix"] = float(vix['Close'].iloc[-1])
         except: pass
 
-        # 3. VIX3M (Term Structure)
         try:
             vix3m = yf.Ticker("^VIX3M").history(period="1mo")
             if not vix3m.empty and market_signal["vix"] > 0:
                 market_signal["vix_ts"] = float(market_signal["vix"] / vix3m['Close'].iloc[-1])
         except: pass
 
-        # 4. Smart Money (HYG/IEF)
         try:
             hyg = yf.Ticker("HYG").history(period="6mo")['Close']
             ief = yf.Ticker("IEF").history(period="6mo")['Close']
@@ -204,7 +198,6 @@ def load_pro_data(ticker_symbol, tf):
                 ratio_ema20 = hyg_ief_ratio.ewm(span=20).mean().iloc[-1]
                 market_signal["smart_money"] = "Risk ON 🟢" if hyg_ief_ratio.iloc[-1] > ratio_ema20 else "Risk OFF 🔴"
         except: pass
-        # ----------------------------------------
 
         df['E20'] = df['Close'].ewm(span=20).mean()
         df['E50'] = df['Close'].ewm(span=50).mean()
@@ -306,21 +299,29 @@ with tab_list[0]:
         is_market_good = "ขึ้น" in spy_t and (0 < v_val < 25) and (0 < vix_ts < 1)
 
         # ==========================================
-        # 🌐 Advanced Market Radar (โชว์ด้านบนสุดเสมอ)
+        # 🌐 Advanced Market Radar (พร้อมคำอธิบาย)
         # ==========================================
         st.markdown("---")
         st.markdown("### 🌐 Market Signal (เรดาร์สแกนภาพรวมตลาด)")
         m1, m2, m3, m4 = st.columns(4)
         
+        # 1. S&P 500
         m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f}" if spy_p > 0 else "N/A", spy_t if spy_p > 0 else None, delta_color="normal" if "ขึ้น" in spy_t else "inverse" if "ลง" in spy_t else "off")
+        m1.caption("💡 **นิยาม:** ทิศทางเม็ดเงินระดับโลก หากยืนเหนือเส้นค่าเฉลี่ย 50 วัน (EMA50) สะท้อนว่าภาพรวมตลาดยังอยู่ในแนวโน้มขาขึ้น")
         
+        # 2. VIX
         vix_stat = "Risk ON" if 0 < v_val < 20 else "Neutral" if 0 < v_val < 30 else "Panic"
         m2.metric("ความกลัว (VIX)", f"{v_val:.2f}" if v_val > 0 else "N/A", vix_stat if v_val > 0 else None, delta_color="normal" if 0 < v_val < 25 else "inverse" if v_val >= 25 else "off")
+        m2.caption("💡 **นิยาม:** ยิ่งต่ำ (<20) ตลาดยิ่งปลอดภัย / ถ้ายิ่งสูง (>30) แปลว่านักลงทุนตื่นตระหนก ซื้อประกันความเสี่ยงและพร้อมเทขาย")
         
+        # 3. VIX Term Structure
         ts_label = "🟢 สงบ" if 0 < vix_ts < 1 else "🔴 ตระหนก"
         m3.metric("โครงสร้าง (VIX/VIX3M)", f"{vix_ts:.2f}" if vix_ts > 0 else "N/A", ts_label if vix_ts > 0 else None, delta_color="normal" if 0 < vix_ts < 1 else "inverse" if vix_ts >= 1 else "off")
+        m3.caption("💡 **นิยาม:** ความผันผวนระยะสั้นเทียบระยะยาว หากน้อยกว่า 1 แปลว่าตลาดอยู่ในภาวะปกติ (Contango)")
         
+        # 4. Smart Money Flow
         m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow if sm_flow != "N/A" else None, delta_color="normal" if "ON" in sm_flow else "inverse" if "OFF" in sm_flow else "off")
+        m4.caption("💡 **นิยาม:** หากสถาบันกล้าซื้อหุ้นกู้ขยะ (HYG) แปลว่ากล้าเสี่ยง (Risk ON) แต่ถ้าหนีไปถือพันธบัตร (IEF) แปลว่ากลัว (Risk OFF)")
 
         # ==========================================
         # 🤵 ทัศนะจากเทรดเดอร์มือหนึ่ง
