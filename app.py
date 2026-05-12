@@ -271,62 +271,66 @@ with tab_list[0]:
     st.markdown(f"#### 📅 ข้อมูล ณ วันที่: <span style='color:#4CAF50'>{current_date}</span> &nbsp;|&nbsp; 🕒 อัปเดตล่าสุด: <span style='color:#4CAF50'>{current_time} น.</span>", unsafe_allow_html=True)
     
     if not df.empty:
+        # กำหนดตัวแปรพื้นฐานทั้งหมดก่อนนำไปใช้ ป้องกัน NameError 100%
         last_p = df['Close'].iloc[-1]
         prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
+        rsi_val = df['RSI'].iloc[-1]
+        is_uptrend = last_p > df['E50'].iloc[-1]
+        is_bullish_macd = df['MACD'].iloc[-1] > df['Sig'].iloc[-1]
         
+        spy_t = market_signal["spy_trend"] if market_signal else "N/A"
+        v_val = market_signal["vix"] if market_signal else 20.0
+        vix_ts = market_signal["vix_ts"] if market_signal else 1.0
+        sm_flow = market_signal["smart_money"] if market_signal else "Neutral"
+        is_market_good = "ขึ้น" in spy_t and v_val < 25 and vix_ts < 1
+
+        # ==========================================
+        # 🤵 ทัศนะจากเทรดเดอร์มือหนึ่ง (Top Section)
+        # ==========================================
+        if is_market_good and is_uptrend and is_bullish_macd and rsi_val < 70:
+            rec, color = "STRONG BUY / HOLD", "#00E676" # สีเขียว
+            msg = f"**'จังหวะน้ำขึ้นต้องรีบตัก'** - ตลาดโลกเอื้ออำนวย และ {ticker} กำลังอยู่ในรอบขาขึ้นเต็มตัว กราฟมีโมเมนตัมเชิงบวกชัดเจน แนะนำให้ทยอยสะสม (Buy on Dip) หรือถือรันเทรนด์ต่อเพื่อทำกำไรคำโตครับ"
+        elif is_uptrend and rsi_val >= 70:
+            rec, color = "HOLD / TAKE PROFIT", "#FFD600" # สีเหลือง
+            msg = f"**'ระวังความร้อนแรง'** - หุ้นยังเป็นขาขึ้นแข็งแกร่ง แต่เข้าเขต Overbought (ซื้อมากเกินไป) มืออาชีพจะไม่ไล่ราคาตรงนี้ แนะนำให้ถือรันเทรนด์โดยยกจุดตัดขาดทุน (Trailing Stop) ตามขึ้นมา หรือพิจารณาแบ่งขายทำกำไรบางส่วนครับ"
+        elif not is_uptrend and is_bullish_macd and rsi_val < 35:
+            rec, color = "SPECULATIVE BUY", "#2962FF" # สีฟ้า
+            msg = f"**'ลุ้นรีบาวด์ในโซนล่าง'** - หุ้นยังอยู่ในเทรนด์ขาลง แต่เริ่มมีสัญญาณแรงซื้อกลับและลงลึกจนเข้าเขต Oversold เหมาะสำหรับสายซิ่งที่ต้องการเก็งกำไรระยะสั้น (เล่นรอบเด้ง) แต่ต้องตั้งจุด Stop loss ให้รัดกุมครับ"
+        elif not is_uptrend:
+            rec, color = "AVOID / WAIT", "#FF5252" # สีแดง
+            msg = f"**'รักษาเงินต้นคือหัวใจ'** - ภาพรวมของ {ticker} เสียทรงขาขึ้นและหลุดเส้นค่าเฉลี่ยสำคัญ โมเมนตัมยังดูอ่อนแอ แนะนำให้ทับมือรอดูสถานการณ์ (Wait & See) หรือหาโอกาสจากหุ้นตัวอื่นที่กราฟแข็งแรงกว่านี้ครับ"
+        else:
+            rec, color = "NEUTRAL / SIDEWAY", "#B0BEC5" # สีเทา
+            msg = f"**'ตลาดรอเลือกทาง'** - กราฟกำลังแกว่งตัวออกข้าง (Sideway) สัญญาณยังขัดแย้งกัน แนะนำให้เทรดสั้นๆ ในกรอบ (ซื้อใกล้แนวรับ - ขายใกล้แนวต้าน) หรือรอดูจนกว่าราคาจะเบรกเอาท์เลือกทิศทางที่ชัดเจนครับ"
+
+        # ดีไซน์กล่องบทวิเคราะห์ให้ดูพรีเมียม สวยงาม
+        st.markdown(f"""
+        <div style="background-color: #1E1E1E; border: 1px solid #333; border-left: 8px solid {color}; padding: 25px; border-radius: 12px; margin-top: 10px; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+            <h3 style="color: {color}; margin-top: 0; margin-bottom: 15px; font-size: 1.6rem; display: flex; align-items: center;">
+                <span style="font-size: 2rem; margin-right: 12px;">🤵</span> ทัศนะจากเทรดเดอร์มือหนึ่ง: {rec}
+            </h3>
+            <p style="font-size: 1.15rem; line-height: 1.6; color: #E0E0E0; margin-bottom: 20px;">{msg}</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 20px; font-size: 1rem; color: #B0BEC5; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+                <span><b>📊 เทรนด์:</b> <span style="color: {'#00E676' if is_uptrend else '#FF5252'};">{'ขาขึ้น (Uptrend)' if is_uptrend else 'ขาลง (Downtrend)'}</span></span>
+                <span><b>⚡ โมเมนตัม:</b> <span style="color: {'#00E676' if is_bullish_macd else '#FF5252'};">{'เชิงบวก (Bullish)' if is_bullish_macd else 'เชิงลบ (Bearish)'}</span></span>
+                <span><b>🌡️ ความร้อนแรง (RSI):</b> <span style="color: {'#FFD600' if rsi_val >= 70 else '#2962FF' if rsi_val <= 30 else '#E0E0E0'};">{rsi_val:.2f}</span></span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ==========================================
+        # 🌐 Advanced Market Radar
+        # ==========================================
         if market_signal and market_signal["spy_price"] > 0:
-            st.markdown("---")
             st.markdown("### 🌐 Advanced Market Radar (เรดาร์สแกนตลาดเชิงลึก)")
             m1, m2, m3, m4 = st.columns(4)
-            spy_t, spy_p = market_signal["spy_trend"], market_signal["spy_price"]
+            spy_p = market_signal["spy_price"]
             m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f}", spy_t, delta_color="normal" if "ขึ้น" in spy_t else "inverse")
-            v_val = market_signal["vix"]
             m2.metric("ความกลัว (VIX)", f"{v_val:.2f}", "Risk ON" if v_val < 20 else "Neutral" if v_val < 30 else "Panic", delta_color="normal" if v_val < 25 else "inverse")
-            vix_ts = market_signal["vix_ts"]
             m3.metric("โครงสร้าง (VIX/VIX3M)", f"{vix_ts:.2f}", "🟢 สงบ" if vix_ts < 1 else "🔴 ตระหนก", delta_color="normal" if vix_ts < 1 else "inverse")
-            sm_flow = market_signal["smart_money"]
             m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow, delta_color="normal" if "ON" in sm_flow else "inverse")
+            st.markdown("<br>", unsafe_allow_html=True) # เว้นบรรทัดนิดนึง
 
-            # 🤵 สรุปทัศนะนักเทรดมือหนึ่ง (Professional Insight)
-            st.markdown("---")
-            st.markdown("### 🤵 ทัศนะจากเทรดเดอร์มือหนึ่ง (Professional Analysis)")
-            
-            # --- กลไกตัดสินใจ (Logic Engine) ---
-            # 1. เทรนด์
-            is_uptrend = last_p > df['E50'].iloc[-1]
-            # 2. โมเมนตัม
-            is_bullish_macd = df['MACD'].iloc[-1] > df['Sig'].iloc[-1]
-            # 3. แรงซื้อขาย
-            rsi_val = df['RSI'].iloc[-1]
-            # 4. สภาพตลาด
-            is_market_good = "ขึ้น" in spy_t and v_val < 25 and vix_ts < 1
-            
-            # --- ตัดสินใจ Recommendation ---
-            if is_market_good and is_uptrend and is_bullish_macd and rsi_val < 70:
-                rec, color, msg = "STRONG BUY / HOLD", "#00E676", f"**'จังหวะน้ำขึ้นต้องรีบตัก'** - ตลาดโลกเป็นใจ และ {ticker} กำลังเข้าสู่รอบขาขึ้นเต็มตัว กราฟเพิ่งทะลุแนวต้านสำคัญพร้อมวอลุ่ม แนะนำให้ทยอยสะสมหรือรันเทรนด์ต่อค่ะ"
-            elif is_market_good and is_uptrend and rsi_val > 75:
-                rec, color, msg = "HOLD / PARTIAL SELL", "#FFD600", f"**'ระวังความร้อนแรงเกินไป'** - ถึงแม้จะเป็นขาขึ้นแต่ RSI เข้าเขตซื้อมากเกินไป (Overbought) นักเทรดมือหนึ่งจะยังไม่ซื้อเพิ่มที่ตรงนี้ แต่จะถือต่อพร้อมเลื่อนจุด Stop Loss ขึ้นมาตาม หรือขายทำกำไรบางส่วน (Take Profit) ค่ะ"
-            elif not is_uptrend and is_bullish_macd and rsi_val < 35:
-                rec, color, msg = "SPECULATIVE BUY (REBOUND)", "#2962FF", f"**'ลุ้นเด้งในขาลง'** - หุ้นยังเป็นขาลงชัดเจน แต่เริ่มมีสัญญาณกลับตัวระยะสั้น (Bullish Divergence) เหมาะสำหรับสายซิ่งช้อนซื้อเพื่อเล่นเด้งสั้นๆ แต่ต้องมีวินัยในการคัดลอสสูงมากค่ะ"
-            elif not is_market_good or (not is_uptrend and not is_bullish_macd):
-                rec, color, msg = "AVOID / SELL / WAIT", "#FF5252", f"**'รักษาเงินต้นคือหัวใจ'** - ภาพรวมตลาดโลกดูไม่ดี และกราฟ {ticker} เสียทรงขาขึ้นชัดเจน หลุดเส้นค่าเฉลี่ย 50 วัน นักเทรดมือหนึ่งจะเลือกยืนดูนอกสนาม (Wait & See) หรือขายทิ้งเพื่อรักษาเงินต้นไว้รอรอบใหม่ที่ชัดเจนกว่านี้ค่ะ"
-            else:
-                rec, color, msg = "NEUTRAL / SIDEWAY", "#B0BEC5", f"**'ตลาดยังไม่เลือกข้าง'** - หุ้นแกว่งตัวออกข้างในกรอบแคบๆ สัญญาณเทคนิคขัดแย้งกัน แนะนำให้เทรดแบบ Buy Low Sell High ในกรอบแนวรับ-แนวต้านไปก่อน จนกว่าราคาจะเลือกทิศทางที่ชัดเจนค่ะ"
-
-            st.markdown(f"""
-            <div style="padding: 20px; border-radius: 15px; border-left: 10px solid {color}; background-color: rgba(255,255,255,0.05);">
-                <h2 style="color: {color}; margin-top:0;">{rec}</h2>
-                <p style="font-size: 1.1em; line-height: 1.6;">{msg}</p>
-                <hr style="border: 0.5px solid rgba(255,255,255,0.1);">
-                <div style="display: flex; gap: 20px;">
-                    <span><b>📊 Trend:</b> {'Strong' if is_uptrend else 'Weak'}</span>
-                    <span><b>⚡ Momentum:</b> {'Bullish' if is_bullish_macd else 'Bearish'}</span>
-                    <span><b>🎈 RSI:</b> {rsi_val:.2f}</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown("---")
         rs_val = df['RS'].iloc[-1]
         rs_t = f" | **Relative Strength:** {'🟢 ชนะตลาด' if rs_val > 0 else '🔴 อ่อนแอกว่าตลาด'} ({rs_val:.2f}%)" if not np.isnan(rs_val) else ""
         if matrix: st.info(f"🔮 **ทิศทาง {tf_option}:** {matrix['tr']} | **เป้าหมาย (Harmonic Matrix):** {matrix['l']:,.2f} - {matrix['u']:,.2f} {rs_t}")
@@ -368,9 +372,9 @@ with tab_list[0]:
                 if rps > 0: st.success(f"🧮 **ซื้อได้สูงสุด:** {ra/rps:.2f} หุ้น")
             st.markdown("---")
             st.subheader("🤖 สรุปสัญญาณเทคนิค")
-            tr_s = "🟢 ขาขึ้น" if last_p > df['E50'].iloc[-1] else "🔴 ขาลง"
-            mc_s = "🟢 แรงซื้อได้เปรียบ" if df['MACD'].iloc[-1] > df['Sig'].iloc[-1] else "🔴 แรงขายกดดัน"
-            rsi_s = "🔴 ซื้อมากไป" if rsi_val > 70 else "🟢 ขายมากไป" if rsi_val < 30 else "🟡 กลางๆ"
+            tr_s = "🟢 ขาขึ้น" if is_uptrend else "🔴 ขาลง"
+            mc_s = "🟢 แรงซื้อได้เปรียบ" if is_bullish_macd else "🔴 แรงขายกดดัน"
+            rsi_s = "🔴 ซื้อมากไป" if rsi_val >= 70 else "🟢 ขายมากไป" if rsi_val <= 30 else "🟡 กลางๆ"
             st.write(f"**เทรนด์ (EMA 50):** {tr_s}")
             st.write(f"**รอบสวิง (MACD):** {mc_s}")
             st.write(f"**แรงซื้อขาย (RSI):** {rsi_s}")
@@ -402,7 +406,7 @@ with tab_list[0]:
                 except Exception as e: st.error("⚠️ ไม่สามารถส่งข้อมูลได้ กรุณาตรวจสอบว่าสร้างชีต 'Feedback' แล้วหรือยังคะ")
 
 # ==========================================
-# หน้า 2 & 3: บัญชี พอร์ตโฟลิโอ และภาษี (เหมือนเดิม ข้อมูลไม่หาย)
+# หน้า 2 & 3: บัญชี พอร์ตโฟลิโอ และภาษี
 # ==========================================
 if st.session_state["logged_in"]:
     sorted_df, cb, l_stat, r_bals, holdings = calculate_stats(st.session_state.trade_ledger)
