@@ -151,7 +151,7 @@ def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
 # ==========================================
-# 4. ดึงข้อมูลทางการเงิน (Advanced Radar)
+# 4. ดึงข้อมูลทางการเงิน (Independent Fetching System)
 # ==========================================
 @st.cache_data(ttl=60)
 def load_pro_data(ticker_symbol, tf):
@@ -164,26 +164,47 @@ def load_pro_data(ticker_symbol, tf):
         df = df.dropna(subset=['Close'])
         if df.empty: return pd.DataFrame(), {}, None, None
         
+        # --- ระบบดึงข้อมูลแยกส่วน ป้องกัน N/A ---
         market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 0.0, "vix_ts": 0.0, "smart_money": "N/A"}
+        
+        # 1. S&P 500
         try:
-            mkt_tickers = ["^GSPC", "^VIX", "^VIX3M", "HYG", "IEF"]
-            mkt_data = yf.download(mkt_tickers, period="6mo", progress=False)
-            if 'Close' in mkt_data.columns.levels[0] if isinstance(mkt_data.columns, pd.MultiIndex) else False:
-                close_data = mkt_data['Close']
-            else: close_data = mkt_data
-            df['RS'] = (df['Close'].pct_change(10) - close_data['^GSPC'].pct_change(10)) * 100
-            spy_p = close_data['^GSPC'].dropna().iloc[-1]
-            spy_ema50 = close_data['^GSPC'].ewm(span=50).mean().dropna().iloc[-1]
-            market_signal["spy_price"] = spy_p
-            market_signal["spy_trend"] = "ขึ้น 📈" if spy_p > spy_ema50 else "ลง 📉"
-            vix_val = close_data['^VIX'].dropna().iloc[-1]
-            market_signal["vix"] = vix_val
-            vix3m_val = close_data['^VIX3M'].dropna().iloc[-1]
-            market_signal["vix_ts"] = vix_val / vix3m_val
-            hyg_ief_ratio = close_data['HYG'].dropna() / close_data['IEF'].dropna()
-            ratio_ema20 = hyg_ief_ratio.ewm(span=20).mean().dropna().iloc[-1]
-            market_signal["smart_money"] = "Risk ON 🟢" if hyg_ief_ratio.iloc[-1] > ratio_ema20 else "Risk OFF 🔴"
+            spy = yf.Ticker("^GSPC").history(period=p, interval=i)
+            if not spy.empty:
+                df['RS'] = (df['Close'].pct_change(10) - spy['Close'].pct_change(10)) * 100
+                spy_p = spy['Close'].iloc[-1]
+                spy_ema50 = spy['Close'].ewm(span=50).mean().iloc[-1]
+                market_signal["spy_price"] = float(spy_p)
+                market_signal["spy_trend"] = "ขึ้น 📈" if spy_p > spy_ema50 else "ลง 📉"
+            else: df['RS'] = 0
         except: df['RS'] = 0
+
+        # 2. VIX
+        try:
+            vix = yf.Ticker("^VIX").history(period="1mo")
+            if not vix.empty:
+                market_signal["vix"] = float(vix['Close'].iloc[-1])
+        except: pass
+
+        # 3. VIX3M (Term Structure)
+        try:
+            vix3m = yf.Ticker("^VIX3M").history(period="1mo")
+            if not vix3m.empty and market_signal["vix"] > 0:
+                market_signal["vix_ts"] = float(market_signal["vix"] / vix3m['Close'].iloc[-1])
+        except: pass
+
+        # 4. Smart Money (HYG/IEF)
+        try:
+            hyg = yf.Ticker("HYG").history(period="6mo")['Close']
+            ief = yf.Ticker("IEF").history(period="6mo")['Close']
+            if not hyg.empty and not ief.empty:
+                df_sm = pd.concat([hyg, ief], axis=1).dropna()
+                df_sm.columns = ['HYG', 'IEF']
+                hyg_ief_ratio = df_sm['HYG'] / df_sm['IEF']
+                ratio_ema20 = hyg_ief_ratio.ewm(span=20).mean().iloc[-1]
+                market_signal["smart_money"] = "Risk ON 🟢" if hyg_ief_ratio.iloc[-1] > ratio_ema20 else "Risk OFF 🔴"
+        except: pass
+        # ----------------------------------------
 
         df['E20'] = df['Close'].ewm(span=20).mean()
         df['E50'] = df['Close'].ewm(span=50).mean()
@@ -277,7 +298,6 @@ with tab_list[0]:
         is_uptrend = last_p > df['E50'].iloc[-1]
         is_bullish_macd = df['MACD'].iloc[-1] > df['Sig'].iloc[-1]
         
-        # --- ตัวแปร Market Signal (ป้องกันพังด้วยค่าเริ่มต้น) ---
         spy_t = market_signal["spy_trend"] if market_signal else "N/A"
         spy_p = market_signal["spy_price"] if market_signal else 0.0
         v_val = market_signal["vix"] if market_signal else 0.0
@@ -286,7 +306,7 @@ with tab_list[0]:
         is_market_good = "ขึ้น" in spy_t and (0 < v_val < 25) and (0 < vix_ts < 1)
 
         # ==========================================
-        # 🌐 Advanced Market Radar (ส่วนที่ 1: ภาพรวมตลาดโลก)
+        # 🌐 Advanced Market Radar (โชว์ด้านบนสุดเสมอ)
         # ==========================================
         st.markdown("---")
         st.markdown("### 🌐 Market Signal (เรดาร์สแกนภาพรวมตลาด)")
@@ -303,7 +323,7 @@ with tab_list[0]:
         m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow if sm_flow != "N/A" else None, delta_color="normal" if "ON" in sm_flow else "inverse" if "OFF" in sm_flow else "off")
 
         # ==========================================
-        # 🤵 ทัศนะจากเทรดเดอร์มือหนึ่ง (ส่วนที่ 2: สรุปกลยุทธ์)
+        # 🤵 ทัศนะจากเทรดเดอร์มือหนึ่ง
         # ==========================================
         if is_market_good and is_uptrend and is_bullish_macd and rsi_val < 70:
             rec, color = "STRONG BUY / HOLD", "#00E676" # สีเขียว
