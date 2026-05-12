@@ -33,7 +33,7 @@ current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 # ==========================================
 # 2. 🔐 การเชื่อมต่อฐานข้อมูล
 # ==========================================
-@st.cache_resource(ttl=3600) # รีเซ็ต Cache ทุกๆ 1 ชั่วโมง ป้องกัน Token หมดอายุ
+@st.cache_resource(ttl=3600)
 def init_connection():
     creds_dict = json.loads(st.secrets["google_creds_json"])
     sheet_url = st.secrets["spreadsheet_url"]
@@ -83,14 +83,11 @@ def load_ledger_data():
         df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.strftime("%d/%m/%Y").replace("NaT", "")
     return df[req_cols]
 
-# 🛠️ อัปเกรดฟังก์ชันบันทึกข้อมูล (มีระบบ Auto-Reconnect)
 def save_df_to_sheet(worksheet_name, df):
     global sh
     try:
-        # ทดสอบก่อนว่า Connection ยังอยู่ไหม
         ws = sh.worksheet(worksheet_name)
     except:
-        # ถ้าหลุด ให้ต่อใหม่ทันที
         sh = init_connection()
         ws = sh.worksheet(worksheet_name)
         
@@ -117,8 +114,7 @@ def log_visitor():
             timestamp = datetime.now(tz_th).strftime("%d/%m/%Y %H:%M:%S")
             ws.append_row([timestamp])
             st.session_state.has_logged_visit = True
-        total_visits = len(ws.col_values(1))
-        return total_visits
+        return len(ws.col_values(1))
     except Exception as e:
         return "N/A"
 
@@ -247,8 +243,27 @@ def load_pro_data(ticker_symbol, tf):
             slope, intercept = np.polyfit(x, y, 1)
             df['Trendline'] = slope * x + intercept
         else: df['Trendline'] = np.nan
+        
+        # 📌 ดึงข้อมูลพื้นฐานอย่างละเอียด (อัปเกรด)
         info = s.info
-        fund = {"ps": f"{info.get('priceToSalesTrailing12Months', 0):.2f}", "pe": f"{info.get('trailingPE', 0):.2f}", "roe": f"{info.get('returnOnEquity', 0)*100:.2f}%"}
+        ps_v = info.get('priceToSalesTrailing12Months')
+        pe_v = info.get('trailingPE')
+        roe_v = info.get('returnOnEquity')
+        rev_v = info.get('revenueGrowth')
+        
+        ps_v = float(ps_v) if ps_v is not None else 0.0
+        pe_v = float(pe_v) if pe_v is not None else 0.0
+        roe_v = float(roe_v) if roe_v is not None else 0.0
+        rev_v = float(rev_v) if rev_v is not None else 0.0
+        
+        fund = {
+            "ps_val": ps_v, "pe_val": pe_v, "roe_val": roe_v, "rev_val": rev_v,
+            "ps": f"{ps_v:.2f}", 
+            "pe": f"{pe_v:.2f}", 
+            "roe": f"{roe_v*100:.2f}%",
+            "rev_growth": f"{rev_v*100:.2f}%"
+        }
+        
         last = df['Close'].iloc[-1]
         v = df['Close'].pct_change().tail(14).std()
         tr = "ขึ้น 📈" if last > df['E50'].iloc[-1] else "ลง 📉"
@@ -374,6 +389,9 @@ with tab_list[0]:
         sm_flow = market_signal["smart_money"] if market_signal else "N/A"
         is_market_good = "ขึ้น" in spy_t and (0 < v_val < 25) and (0 < vix_ts < 1)
 
+        # วิเคราะห์ปัจจัยพื้นฐาน (เช็คหุ้นซิ่ง)
+        is_speculative = (fund.get('pe_val', 0) <= 0) or (fund.get('roe_val', 0) < 0)
+
         actual_cost = b_p 
         if st.session_state["logged_in"] and holdings.get(ticker, {}).get("shares", 0) > 0.001:
             my_hold = holdings[ticker]
@@ -463,8 +481,20 @@ with tab_list[0]:
             fig.update_layout(template="plotly_dark", height=800, margin=dict(l=0,r=0,t=0,b=0), showlegend=False)
             fig.update_xaxes(rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
+            
             st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
-            f1, f2, f3 = st.columns(3); f1.metric("P/S Ratio", fund.get('ps','N/A')); f2.metric("P/E Ratio", fund.get('pe','N/A')); f3.metric("ROE", fund.get('roe','N/A'))
+            f1, f2, f3, f4 = st.columns(4)
+            f1.metric("P/S Ratio", fund.get('ps','N/A'))
+            f2.metric("P/E Ratio", fund.get('pe','N/A'))
+            f3.metric("ROE", fund.get('roe','N/A'))
+            f4.metric("Rev Growth (YoY)", fund.get('rev_growth','N/A'))
+            
+            if is_speculative:
+                st.markdown("""
+                <div style="background-color: rgba(255, 82, 82, 0.1); border-left: 5px solid #FF5252; padding: 10px; border-radius: 5px; margin-top: 10px;">
+                    <span style="color: #FF5252;">⚠️ <b>Warning (High Speculation):</b> หุ้นตัวนี้ยังขาดทุน (P/E=0) หรือ ROE ติดลบ จัดเป็นหุ้นเก็งกำไรความเสี่ยงสูง ระบบจะปรับลดเพดานเข้าซื้อลงครึ่งหนึ่งอัตโนมัติ</span>
+                </div>
+                """, unsafe_allow_html=True)
         
         with c_r:
             price_diff = last_p - prev_p
@@ -476,8 +506,16 @@ with tab_list[0]:
                 st.write(f"**กำไร/ขาดทุนอ้างอิง:** {pl:.2f}%")
                 sl = df['E50'].iloc[-1] * 0.99 if actual_cost == 0 else actual_cost * 0.92
                 st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
-                ra = t_cap * (r_pct / 100); rps = last_p - sl
-                if rps > 0: st.success(f"🧮 **ซื้อเพิ่มได้สูงสุด:** {ra/rps:.2f} หุ้น")
+                
+                # 📌 Smart Position Sizing: หั่นความเสี่ยงครึ่งนึงอัตโนมัติถ้าพื้นฐานแย่
+                adjusted_r_pct = r_pct / 2.0 if is_speculative else r_pct
+                ra = t_cap * (adjusted_r_pct / 100.0)
+                rps = last_p - sl
+                
+                if rps > 0: 
+                    st.success(f"🧮 **ซื้อเพิ่มได้สูงสุด:** {ra/rps:.2f} หุ้น")
+                    if is_speculative:
+                        st.caption(f"💡 *ระบบปรับลดความเสี่ยงต่อไม้จาก {r_pct}% เหลือ {adjusted_r_pct}% เพื่อจำกัดความเสียหายจากความผันผวน*")
             st.markdown("---")
             st.subheader("🤖 สรุปสัญญาณเทคนิค")
             tr_s = "🟢 ขาขึ้น" if is_uptrend else "🔴 ขาลง"
@@ -492,6 +530,26 @@ with tab_list[0]:
             st.write(f"**รับ:** {df['E50'].iloc[-1]:.2f}")
     else:
         st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ")
+        st.info('''
+        💡 **สาเหตุที่เป็นไปได้ และวิธีแก้ไข:**
+        1. **พิมพ์ชื่อย่อหุ้นผิด:** หรือหุ้นตัวนี้ไม่มีข้อมูลในฐานข้อมูลของ Yahoo Finance
+        2. **อินเทอร์เน็ตขัดข้อง (Cache ค้าง):** แนะนำให้กดปุ่ม **'🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้'** ที่เมนูด้านซ้ายเพื่อล้างแคช
+        3. **เซิร์ฟเวอร์ถูกบล็อกชั่วคราว:** ลองเปลี่ยนเป็นหุ้นยอดฮิต (เช่น AAPL) หากยังดึงไม่ได้เหมือนกัน ให้รอสักพักแล้วลองใหม่ค่ะ
+        ''')
+
+    st.markdown("---")
+    with st.expander("⭐ ประเมินความแม่นยำของระบบวิเคราะห์"):
+        with st.form("feedback_form", clear_on_submit=True):
+            st.write(f"คุณมีความคิดเห็นอย่างไรกับการวิเคราะห์กราฟของหุ้น **{ticker}** ในครั้งนี้?")
+            rating = st.slider("ระดับความแม่นยำและประโยชน์ที่ได้รับ (1 = แย่, 5 = แม่นยำ/มีประโยชน์มาก)", 1, 5, 5)
+            comment = st.text_area("ข้อเสนอแนะเพิ่มเติม (Optional):")
+            if st.form_submit_button("ส่งฟีดแบ็ก (Submit)"):
+                try:
+                    fb_ws = sh.worksheet("Feedback")
+                    timestamp = datetime.now(tz_th).strftime("%d/%m/%Y %H:%M:%S")
+                    fb_ws.append_row([timestamp, ticker, rating, comment])
+                    st.success("🙏 ขอบคุณสำหรับฟีดแบ็กค่ะ!")
+                except Exception as e: st.error("⚠️ ไม่สามารถส่งข้อมูลได้ กรุณาตรวจสอบว่าสร้างชีต 'Feedback' แล้วหรือยังคะ")
 
 # ==========================================
 # หน้า 2: บัญชีและพอร์ตโฟลิโอ
@@ -663,7 +721,7 @@ if st.session_state["logged_in"]:
         c1, c2, c3 = st.columns(3)
         with c1: 
             tax_year_str = st.selectbox("📅 เลือกปีภาษีสำหรับคำนวณ", ["2567 (2024)", "2568 (2025)", "2569 (2026)"])
-            selected_year = tax_year_str.split("(")[1][:4]
+            selected_year = tax_year_str.split("(")[1][:4] 
         with c2: is_resident = st.radio("อาศัยอยู่ในไทยเกิน 180 วันในปีนั้น?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
         with c3: other_income = st.number_input("รายได้ประจำปีอื่นๆ (บาท)", min_value=0.0, value=500000.0, step=50000.0)
 
