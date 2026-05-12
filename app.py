@@ -115,7 +115,6 @@ visitor_count = log_visitor()
 def calculate_stats(df_input):
     df = clean_df_types(df_input)
     
-    # จัดเรียงวันที่อัตโนมัติ
     if not df.empty and "Date" in df.columns:
         df["Date_Temp"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce")
         df = df.sort_values(by="Date_Temp").drop(columns=["Date_Temp"]).reset_index(drop=True)
@@ -167,7 +166,7 @@ def load_pro_data(ticker_symbol, tf):
         if df.empty: return pd.DataFrame(), {}, None, None
         
         # --- Advanced Market Radar System ---
-        market_signal = None
+        market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 20.0, "vix_ts": 1.0, "smart_money": "Neutral 🟡"}
         try:
             mkt_tickers = ["^GSPC", "^VIX", "^VIX3M", "HYG", "IEF"]
             mkt_data = yf.download(mkt_tickers, period="6mo", progress=False)
@@ -179,28 +178,25 @@ def load_pro_data(ticker_symbol, tf):
                 
             # 1. S&P 500 Trend
             df['RS'] = (df['Close'].pct_change(10) - close_data['^GSPC'].pct_change(10)) * 100
-            spy_p = close_data['^GSPC'].iloc[-1]
-            spy_ema50 = close_data['^GSPC'].ewm(span=50).mean().iloc[-1]
-            spy_trend = "ขึ้น 📈" if spy_p > spy_ema50 else "ลง 📉"
+            spy_p = close_data['^GSPC'].dropna().iloc[-1]
+            spy_ema50 = close_data['^GSPC'].ewm(span=50).mean().dropna().iloc[-1]
+            market_signal["spy_price"] = spy_p
+            market_signal["spy_trend"] = "ขึ้น 📈" if spy_p > spy_ema50 else "ลง 📉"
             
             # 2. VIX Absolute
-            vix_val = close_data['^VIX'].iloc[-1]
+            vix_val = close_data['^VIX'].dropna().iloc[-1]
+            market_signal["vix"] = vix_val
             
             # 3. VIX Term Structure
-            vix3m_val = close_data['^VIX3M'].iloc[-1]
-            vix_ts = vix_val / vix3m_val
+            vix3m_val = close_data['^VIX3M'].dropna().iloc[-1]
+            market_signal["vix_ts"] = vix_val / vix3m_val
             
-            # 4. Smart Money Flow (Credit Spreads Proxy)
-            hyg_ief_ratio = close_data['HYG'] / close_data['IEF']
-            ratio_ema20 = hyg_ief_ratio.ewm(span=20).mean().iloc[-1]
-            smart_money = "Risk ON 🟢" if hyg_ief_ratio.iloc[-1] > ratio_ema20 else "Risk OFF 🔴"
+            # 4. Smart Money Flow
+            hyg_ief_ratio = close_data['HYG'].dropna() / close_data['IEF'].dropna()
+            ratio_ema20 = hyg_ief_ratio.ewm(span=20).mean().dropna().iloc[-1]
+            market_signal["smart_money"] = "Risk ON 🟢" if hyg_ief_ratio.iloc[-1] > ratio_ema20 else "Risk OFF 🔴"
             
-            market_signal = {
-                "spy_trend": spy_trend, "spy_price": spy_p,
-                "vix": vix_val, "vix_ts": vix_ts, "smart_money": smart_money
-            }
         except Exception as e:
-            market_signal = None
             df['RS'] = 0
         # ------------------------------------
 
@@ -310,7 +306,7 @@ with tab_list[0]:
         last_p = df['Close'].iloc[-1]
         prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
         
-        if market_signal:
+        if market_signal and market_signal["spy_price"] > 0:
             st.markdown("---")
             st.markdown("### 🌐 Advanced Market Radar (เรดาร์สแกนตลาดเชิงลึก)")
             
@@ -330,8 +326,8 @@ with tab_list[0]:
             
             # VIX Term Structure
             vix_ts = market_signal["vix_ts"]
-            ts_label = "🟢 Contango (ตลาดสงบ)" if vix_ts < 1 else "🔴 Backwardation (ตระหนกหนัก)"
-            m3.metric("โครงสร้างผันผวน (VIX/VIX3M)", f"{vix_ts:.2f}", ts_label, delta_color="normal" if vix_ts < 1 else "inverse")
+            ts_label = "🟢 Contango" if vix_ts < 1 else "🔴 Backwardation"
+            m3.metric("ผันผวน (VIX/VIX3M)", f"{vix_ts:.2f}", ts_label, delta_color="normal" if vix_ts < 1 else "inverse")
             
             # Smart Money Flow
             sm_flow = market_signal["smart_money"]
