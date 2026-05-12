@@ -9,44 +9,28 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timezone, timedelta
 
+# ==========================================
 # 1. ตั้งค่าหน้าเพจ
+# ==========================================
 st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.10", page_icon="📈", layout="wide")
 
-# 🎨 2. ตกแต่ง UI/UX (อิงตามต้นฉบับ 100%)
 st.markdown("""
     <style>
-    .stButton>button {
-        border-radius: 12px;
-        font-weight: bold;
-        transition: all 0.3s ease;
-        border: 1px solid #4CAF50;
-    }
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 15px rgba(76, 175, 80, 0.4);
-        border-color: #4CAF50;
-    }
-    .stButton>button[data-baseweb="button"] {
-        border-radius: 12px;
-    }
-    .summary-box {
-        padding: 20px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-        border-left: 5px solid;
-    }
-    div[data-testid="stMetricValue"] {
-        padding-bottom: 0px;
-    }
-    /* แต่งสี Spinner ให้ดูพรีเมียม */
-    .stSpinner > div > div {
-        border-top-color: #deff9a !important;
-    }
+    .stButton>button { border-radius: 12px; font-weight: bold; transition: all 0.3s ease; border: 1px solid #4CAF50; }
+    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(76, 175, 80, 0.4); border-color: #4CAF50; }
+    .stButton>button[data-baseweb="button"] { border-radius: 12px; }
+    .summary-box { padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid; }
+    div[data-testid="stMetricValue"] { padding-bottom: 0px; }
+    .stSpinner > div > div { border-top-color: #deff9a !important; }
     </style>
 """, unsafe_allow_html=True)
 
+tz_th = timezone(timedelta(hours=7))
+current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
+current_time = datetime.now(tz_th).strftime("%H:%M:%S")
+
 # ==========================================
-# 🔐 การเชื่อมต่อฐานข้อมูล
+# 2. 🔐 การเชื่อมต่อฐานข้อมูล
 # ==========================================
 @st.cache_resource
 def init_connection():
@@ -110,10 +94,6 @@ if "trade_ledger" not in st.session_state:
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
-tz_th = timezone(timedelta(hours=7))
-current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
-current_time = datetime.now(tz_th).strftime("%H:%M:%S")
-
 def log_visitor():
     try:
         ws = sh.worksheet("Visitor_Log")
@@ -128,14 +108,16 @@ def log_visitor():
 
 visitor_count = log_visitor()
 
+# ==========================================
+# 3. ลอจิกการคำนวณบัญชี
+# ==========================================
 def calculate_stats(df_input):
     df = clean_df_types(df_input)
     
-    # --- Backend Fix: เรียงวันที่อัตโนมัติป้องกันยอดคงเหลือเพี้ยน ---
+    # จัดเรียงวันที่อัตโนมัติ
     if not df.empty and "Date" in df.columns:
         df["Date_Temp"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce")
         df = df.sort_values(by="Date_Temp").drop(columns=["Date_Temp"]).reset_index(drop=True)
-    # --------------------------------------------------------
         
     cb = 0.0
     stat = {"outward": 0.0, "inward": 0.0, "bought": 0.0, "sold": 0.0, "dividend": 0.0, "realized_profit": 0.0}
@@ -163,7 +145,6 @@ def calculate_stats(df_input):
                 hld[ticker]["shares"] -= s; hld[ticker]["total_cost"] -= (avg * s)
         r_bals.append(cb)
     
-    # ส่งคืน DataFrame ที่เรียงแล้วด้วย
     return df, cb, stat, r_bals, hld
 
 @st.cache_data
@@ -171,42 +152,8 @@ def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
 # ==========================================
-# 🌟 Sidebar (Original)
+# 4. ดึงข้อมูลทางการเงิน
 # ==========================================
-with st.sidebar:
-    st.title("🛡️ Strategic Hub")
-    
-    if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-        
-    st.info(f"👁️ **ยอดผู้เข้าชมทั้งหมด: {visitor_count} ครั้ง**")
-    st.markdown("---")
-    
-    ticker = st.text_input("🔎 ชื่อหุ้น / ดัชนี", value="NVTS").upper()
-    tf_option = st.radio("เลือกความละเอียด:", ["1D (รายวัน)", "1W (รายสัปดาห์)", "1M (รายเดือน)"], index=0)
-    
-    st.markdown("---")
-    st.subheader("🧮 เครื่องมือคำนวณ (Public)")
-    t_cap = st.number_input("เงินทุนรวม (USD)", value=10000.0)
-    r_pct = st.slider("ความเสี่ยงต่อไม้ (%)", 1.0, 5.0, 2.0)
-    b_p = st.number_input("ราคาต้นทุนที่ซื้อ (USD)", min_value=0.0, step=0.1)
-    
-    st.markdown("---")
-    if not st.session_state["logged_in"]:
-        pwd = st.text_input("🔑 รหัสผ่าน (สำหรับเจ้าของ)", type="password")
-        if st.button("🔓 เข้าสู่ระบบ", use_container_width=True, type="primary"):
-            if pwd == st.secrets.get("app_password", "123456"):
-                st.session_state["logged_in"] = True
-                st.rerun()
-            else: st.error("❌ รหัสผ่านไม่ถูกต้อง")
-    else:
-        st.success("✅ โหมดเจ้าของพอร์ต")
-        if st.button("🚪 ออกจากระบบ", use_container_width=True):
-            st.session_state["logged_in"] = False
-            st.rerun()
-
-# --- ดึงข้อมูลวิเคราะห์ ---
 @st.cache_data(ttl=60)
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
@@ -264,7 +211,6 @@ def load_pro_data(ticker_symbol, tf):
         return df, fund, mat, market_signal
     except: return pd.DataFrame(), {}, None, None
 
-# --- Backend Fix: ฟังก์ชันดึงราคาพอร์ตแบบกลุ่ม (Batch) แก้อาการโหลดช้า ---
 @st.cache_data(ttl=60)
 def get_batch_live_prices(tickers):
     if not tickers: return {}
@@ -288,7 +234,43 @@ def get_live_fx():
     try: return yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
     except: return 35.00
 
-# 🌟 โชว์ Spinner ตอนกำลังโหลดข้อมูลกราฟหลัก
+# ==========================================
+# 5. UI: Sidebar
+# ==========================================
+with st.sidebar:
+    st.title("🛡️ Strategic Hub")
+    
+    if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+        
+    st.info(f"👁️ **ยอดผู้เข้าชมทั้งหมด: {visitor_count} ครั้ง**")
+    st.markdown("---")
+    
+    ticker = st.text_input("🔎 ชื่อหุ้น / ดัชนี", value="NVTS").upper()
+    tf_option = st.radio("เลือกความละเอียด:", ["1D (รายวัน)", "1W (รายสัปดาห์)", "1M (รายเดือน)"], index=0)
+    
+    st.markdown("---")
+    st.subheader("🧮 เครื่องมือคำนวณ (Public)")
+    t_cap = st.number_input("เงินทุนรวม (USD)", value=10000.0)
+    r_pct = st.slider("ความเสี่ยงต่อไม้ (%)", 1.0, 5.0, 2.0)
+    b_p = st.number_input("ราคาต้นทุนที่ซื้อ (USD)", min_value=0.0, step=0.1)
+    
+    st.markdown("---")
+    if not st.session_state["logged_in"]:
+        pwd = st.text_input("🔑 รหัสผ่าน (สำหรับเจ้าของ)", type="password")
+        if st.button("🔓 เข้าสู่ระบบ", use_container_width=True, type="primary"):
+            if pwd == st.secrets.get("app_password", "123456"):
+                st.session_state["logged_in"] = True
+                st.rerun()
+            else: st.error("❌ รหัสผ่านไม่ถูกต้อง")
+    else:
+        st.success("✅ โหมดเจ้าของพอร์ต")
+        if st.button("🚪 ออกจากระบบ", use_container_width=True):
+            st.session_state["logged_in"] = False
+            st.rerun()
+
+# 🌟 โหลดข้อมูลกราฟหลัก
 with st.spinner(f"⏳ กำลังดึงข้อมูลกราฟ {ticker} และเรดาร์ตลาดโลก... (อาจใช้เวลา 5-10 วินาที)"):
     df, fund, matrix, market_signal = load_pro_data(ticker, tf_option)
 
@@ -296,57 +278,147 @@ tabs = ["📊 วิเคราะห์กราฟ (Analysis)", "💼 บั�
 tab_list = st.tabs(tabs)
 
 # ==========================================
-# หน้า 1: วิเคราะห์กราฟ (Original UI 100%)
+# หน้า 1: วิเคราะห์กราฟ
 # ==========================================
-# --- TAB 1: Analysis (คัดลอกตั้งแต่บรรทัดนี้เป็นต้นไป) ---
 with tab_list[0]:
-    if not df_chart.empty:
-        last_p = df_chart['Close'].iloc[-1]
-        st.markdown(f"## 📈 หุ้น: {ticker} | ราคาล่าสุด: ${last_p:,.2f}")
+    st.markdown(f"## 📈 วิเคราะห์หุ้น: {ticker}")
+    st.markdown(f"#### 📅 ข้อมูลวิเคราะห์ ณ วันที่: <span style='color:#4CAF50'>{current_date}</span> &nbsp;|&nbsp; 🕒 อัปเดตล่าสุด: <span style='color:#4CAF50'>{current_time} น.</span>", unsafe_allow_html=True)
+    
+    if not df.empty:
+        last_p = df['Close'].iloc[-1]
+        prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
         
-        if market:
+        if market_signal:
+            st.markdown("---")
+            st.markdown("### 🌐 Market Signal (เรดาร์สแกนภาพรวมตลาด)")
             m1, m2, m3 = st.columns(3)
-            m1.metric("S&P 500", f"{market['spy_price']:,.2f}", market['spy_trend'])
-            v_val = market['vix']
-            m2.metric("VIX Index", f"{v_val:.2f}", "Risk-OFF" if v_val > 25 else "Risk-ON")
+            spy_t = market_signal["spy_trend"]
+            spy_p = market_signal["spy_price"]
+            m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f} จุด", f"{spy_t} (กระแสน้ำ{'ผลักดัน' if 'ขึ้น' in spy_t else 'กดดัน'})", delta_color="normal" if "ขึ้น" in spy_t else "inverse")
+            
+            v_val = market_signal["vix"]
+            if v_val < 20: v_stat, v_col = "🟢 คนกล้าซื้อ (Risk ON)", "normal"
+            elif v_val < 30: v_stat, v_col = "🟡 เฝ้าระวัง (Neutral)", "off"
+            else: v_stat, v_col = "🔴 ตื่นตระหนก (Risk OFF)", "inverse"
+            m2.metric("ดัชนีความกลัว (VIX Index)", f"{v_val:.2f}", v_stat, delta_color=v_col)
+            m2.caption("💡 **VIX ยิ่งต่ำ = ตลาดปลอดภัย / VIX ยิ่งสูง = ตลาดผันผวนเทขาย**")
+            
             with m3:
-                if market['vix'] < 25 and "ขึ้น" in market['spy_trend']: st.success("✅ ตลาดปลอดภัย")
-                else: st.warning("⚠️ ระวังความผันผวน")
+                if "ขึ้น" in spy_t and v_val < 25: st.success("✅ **ตลาดเป็นใจ:** สภาพแวดล้อมปลอดภัย เอื้อต่อการเข้าทำกำไร")
+                elif "ลง" in spy_t and v_val > 25: st.error("🚨 **ความเสี่ยงสูง:** ตลาดกำลังผันผวนรุนแรง คุมความเสี่ยงด่วน")
+                else: st.warning("⚠️ **ตลาดไร้ทิศทาง:** ตลาดยังเลือกทางไม่ได้ แนะนำเก็งกำไรในกรอบ")
 
-        # กราฟหลัก
-        fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.45, 0.15, 0.2, 0.2])
-        fig.add_trace(go.Candlestick(x=df_chart.index, open=df_chart['Open'], high=df_chart['High'], low=df_chart['Low'], close=df_chart['Close'], name="Price"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['E50'], line=dict(color='#FF6D00'), name="EMA 50"), row=1, col=1)
-        fig.add_trace(go.Bar(x=df_chart.index, y=df_chart['Volume'], name="Vol"), row=2, col=1)
-        fig.add_trace(go.Scatter(x=df_chart.index, y=df_chart['RSI'], line=dict(color='#BA68C8'), name="RSI"), row=3, col=1)
-        fig.add_trace(go.Bar(x=df_chart.index, y=df_chart['Hist'], name="MACD"), row=4, col=1)
-        fig.update_layout(template="plotly_dark", height=800, xaxis_rangeslider_visible=False)
-        st.plotly_chart(fig, use_container_width=True)
+        rs_val = df['RS'].iloc[-1]
+        stock_is_uptrend = last_p > df['E50'].iloc[-1]
+        market_is_good = "ขึ้น" in market_signal["spy_trend"] and market_signal["vix"] < 25
+        market_is_bad = "ลง" in market_signal["spy_trend"] and market_signal["vix"] > 25
 
-        # สรุปสัญญาณ
-        st.subheader("🤖 AI Technical Summary")
-        c1, c2, c3 = st.columns(3)
-        c1.write(f"**เทรนด์ (EMA 50):** {'🟢 ขาขึ้น' if last_p > df_chart['E50'].iloc[-1] else '🔴 ขาลง'}")
-        c2.write(f"**แรงซื้อ (RSI):** {df_chart['RSI'].iloc[-1]:.2f}")
-        c3.write(f"**เป้าหมาย:** {matrix['l']:,.2f} - {matrix['u']:,.2f}")
+        st.markdown("### 🤖 AI Executive Summary (สรุปแผนการลงทุน)")
+        if market_is_good and stock_is_uptrend:
+            st.success(f"**🌟 กลยุทธ์ (Action Plan): ทยอยสะสม / รันเทรนด์**\n\n**'น้ำขึ้น และเรือวิ่งฉลุย'** - สภาพตลาดโลกเป็นใจ และกราฟของหุ้น {ticker} เป็นขาขึ้นชัดเจน ถือเป็นจังหวะที่ดีในการถือครอง (Hold) หรือหาจังหวะย่อซื้อสะสมเพิ่มค่ะ")
+        elif market_is_bad and not stock_is_uptrend:
+            st.error(f"**🚨 กลยุทธ์ (Action Plan): หลีกเลี่ยง / รอดูสถานการณ์**\n\n**'พายุเข้า และเรือกำลังรั่ว'** - ตลาดรวมผันผวนหนัก และหุ้น {ticker} ก็เป็นขาลงอ่อนแอกว่าตลาด แนะนำให้หลีกเลี่ยงการลงทุนในตอนนี้ หรือถ้ามีของอยู่ควรพิจารณาตัดขาดทุน (Stop Loss) ค่ะ")
+        elif market_is_good and not stock_is_uptrend:
+            st.warning(f"**⚠️ กลยุทธ์ (Action Plan): Wait & See (รอดูอาการ)**\n\n**'น้ำขึ้น แต่เรือเครื่องดับ'** - ถึงแม้ตลาดรวมจะดี แต่หุ้น {ticker} กำลังเป็นขาลง แนะนำให้รอดูจนกว่ากราฟจะกลับตัวทะลุเส้นแนวต้านได้ หรือเปลี่ยนไปเล่นตัวอื่นที่กราฟสวยกว่าค่ะ")
+        elif market_is_bad and stock_is_uptrend:
+            st.info(f"**🛡️ กลยุทธ์ (Action Plan): ถืออย่างระมัดระวัง (Cautious Hold)**\n\n**'คลื่นลมแรง แต่เรือแกร่ง'** - หุ้น {ticker} แข็งแกร่งสวนทางตลาดที่กำลังแย่ สามารถถือได้แต่ต้องตั้งจุดหนี (Stop Loss) ไว้ให้ชัดเจน เพื่อป้องกันแรงเทขายตกใจจากตลาดรวมค่ะ")
+        else:
+            st.info(f"**🔍 กลยุทธ์ (Action Plan): เก็งกำไรระยะสั้น / ไซด์เวย์**\n\nตลาดและหุ้น {ticker} อยู่ในสภาวะก้ำกึ่ง (Sideway) แนะนำให้ซื้อที่แนวรับ-ขายที่แนวต้าน หรือรอดูทิศทางที่ชัดเจนก่อนเข้าซื้อไม้ใหญ่ค่ะ")
+
+        st.markdown("---")
+        rs_t = f" | **Relative Strength:** {'🟢 ชนะตลาด' if rs_val > 0 else '🔴 อ่อนแอกว่าตลาด'} ({rs_val:.2f}%)" if not np.isnan(rs_val) else ""
+        if matrix: st.info(f"🔮 **ทิศทาง {tf_option}:** {matrix['tr']} | **เป้าหมาย:** {matrix['l']:,.2f} - {matrix['u']:,.2f} (Harmonic Matrix){rs_t}")
         
+        c_l, c_r = st.columns([7, 3])
+        with c_l:
+            fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.45, 0.15, 0.2, 0.2])
+            fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['Trendline'], line=dict(color='rgba(255, 255, 255, 0.4)', dash='dot', width=2), name="Trend"), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['E20'], line=dict(color='#00E676', width=2.5), name="EMA 20"), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['E50'], line=dict(color='#FF6D00', width=2.5), name="EMA 50"), row=1, col=1)
+            if b_p > 0: fig.add_hline(y=b_p, line_dash="dash", line_color="cyan", annotation_text="ต้นทุน", row=1, col=1)
+            
+            v_c = ['#00E676' if df['Close'].iloc[i] > df['Open'].iloc[i] else '#FF5252' for i in range(len(df))]
+            fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=v_c, name="Vol"), row=2, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['Vol_SMA'], line=dict(color='rgba(255, 255, 255, 0.5)', width=1.5), name="Vol Avg"), row=2, col=1)
+            
+            fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#BA68C8', width=2), name="RSI"), row=3, col=1)
+            fig.add_hline(y=70, line_dash="dot", line_color="red", row=3, col=1)
+            fig.add_hline(y=30, line_dash="dot", line_color="green", row=3, col=1)
+            
+            fig.add_trace(go.Bar(x=df.index, y=df['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df['Hist']], name="MACD Hist"), row=4, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='#2962FF', width=2), name="MACD"), row=4, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=df['Sig'], line=dict(color='#FF6D00', width=2), name="Signal"), row=4, col=1)
+
+            fig.update_layout(template="plotly_dark", height=800, margin=dict(l=0,r=0,t=0,b=0), showlegend=False)
+            fig.update_xaxes(rangeslider_visible=False)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
+            f1, f2, f3 = st.columns(3); f1.metric("P/S Ratio", fund.get('ps','N/A')); f2.metric("P/E Ratio", fund.get('pe','N/A')); f3.metric("ROE", fund.get('roe','N/A'))
+        
+        with c_r:
+            price_diff = last_p - prev_p
+            pct_diff = (price_diff / prev_p) * 100 if prev_p > 0 else 0
+            st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{price_diff:,.2f} ({pct_diff:,.2f}%)")
+            
+            st.markdown(f"<div style='margin-top: -15px; margin-bottom: 20px; font-size: 0.9em; color: #a0aab2;'>📅 {current_date} &nbsp; 🕒 {current_time} น.</div>", unsafe_allow_html=True)
+            
+            if b_p > 0:
+                pl = ((last_p - b_p) / b_p) * 100
+                st.write(f"**กำไร/ขาดทุนของคุณ:** {pl:.2f}%")
+                sl = df['E50'].iloc[-1] * 0.99 if b_p == 0 else b_p * 0.92
+                st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
+                ra = t_cap * (r_pct / 100); rps = last_p - sl
+                if rps > 0: st.success(f"🧮 **ซื้อได้สูงสุด:** {ra/rps:.2f} หุ้น")
+            
+            st.markdown("---")
+            st.subheader("🤖 สรุปสัญญาณเทคนิค")
+            tr_s = "🟢 ขาขึ้น" if last_p > df['E50'].iloc[-1] else "🔴 ขาลง"
+            mc_s = "🟢 แรงซื้อได้เปรียบ" if df['MACD'].iloc[-1] > df['Sig'].iloc[-1] else "🔴 แรงขายกดดัน"
+            rs_val = df['RSI'].iloc[-1]
+            rsi_s = "🔴 ซื้อมากไป" if rs_val > 70 else "🟢 ขายมากไป" if rs_val < 30 else "🟡 กลางๆ"
+            
+            st.write(f"**เทรนด์ (EMA 50):** {tr_s}")
+            st.write(f"**รอบสวิง (MACD):** {mc_s}")
+            st.write(f"**แรงซื้อขาย (RSI):** {rsi_s}")
+            
+            st.markdown("---")
+            st.subheader("🚧 แนวรับ-ต้าน")
+            st.write(f"**ต้าน:** {df['High'].tail(20).max():.2f}")
+            st.write(f"**รับ:** {df['E50'].iloc[-1]:.2f}")
     else:
         st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ")
         st.info('''
         💡 **สาเหตุที่เป็นไปได้ และวิธีแก้ไข:**
         1. **พิมพ์ชื่อย่อหุ้นผิด:** หรือหุ้นตัวนี้ไม่มีข้อมูลในฐานข้อมูลของ Yahoo Finance
         2. **อินเทอร์เน็ตขัดข้อง (Cache ค้าง):** แนะนำให้กดปุ่ม **'🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้'** ที่เมนูด้านซ้ายเพื่อล้างแคช
-        3. **เซิร์ฟเวอร์ถูกบล็อกชั่วคราว (Rate Limit):** ลองเปลี่ยนเป็นหุ้นตัวอื่น (เช่น AAPL) หากยังดึงไม่ได้เหมือนกัน แสดงว่าติดข้อจำกัดของ Yahoo ให้รอสักพักแล้วลองใหม่ค่ะ
+        3. **เซิร์ฟเวอร์ถูกบล็อกชั่วคราว:** ลองเปลี่ยนเป็นหุ้นยอดฮิต (เช่น AAPL) หากยังดึงไม่ได้เหมือนกัน ให้รอสักพักแล้วลองใหม่ค่ะ
         ''')
 
+    st.markdown("---")
+    with st.expander("⭐ ประเมินความแม่นยำของระบบวิเคราะห์"):
+        with st.form("feedback_form", clear_on_submit=True):
+            st.write(f"คุณมีความคิดเห็นอย่างไรกับการวิเคราะห์กราฟของหุ้น **{ticker}** ในครั้งนี้?")
+            rating = st.slider("ระดับความแม่นยำและประโยชน์ที่ได้รับ (1 = แย่, 5 = แม่นยำ/มีประโยชน์มาก)", 1, 5, 5)
+            comment = st.text_area("ข้อเสนอแนะเพิ่มเติม (Optional):")
+            
+            if st.form_submit_button("ส่งฟีดแบ็ก (Submit)"):
+                try:
+                    fb_ws = sh.worksheet("Feedback")
+                    timestamp = datetime.now(tz_th).strftime("%d/%m/%Y %H:%M:%S")
+                    fb_ws.append_row([timestamp, ticker, rating, comment])
+                    st.success("🙏 ขอบคุณสำหรับฟีดแบ็กค่ะ!")
+                except Exception as e:
+                    st.error("⚠️ ไม่สามารถส่งข้อมูลได้ กรุณาตรวจสอบว่าสร้างชีต 'Feedback' แล้วหรือยังคะ")
+
+# ==========================================
+# หน้า 2 & 3: บัญชี พอร์ตโฟลิโอ และภาษี
+# ==========================================
 if st.session_state["logged_in"]:
-    # นำ DataFrame ที่เรียงวันที่แล้วมาใช้
     sorted_df, cb, l_stat, r_bals, holdings = calculate_stats(st.session_state.trade_ledger)
     st.session_state.trade_ledger = sorted_df
 
-    # ==========================================
-    # หน้า 2: บัญชีและพอร์ตโฟลิโอ (Original UI 100%)
-    # ==========================================
     with tab_list[1]:
         st.subheader("💼 แดชบอร์ดกระแสเงินสด (Cashflow Overview)")
         col1, col2, col3, col4 = st.columns(4)
@@ -402,15 +474,12 @@ if st.session_state["logged_in"]:
             current_port_df = pd.DataFrame(port_summary)
             results, total_v = [], 0.0
             
-            # --- Backend Fix: ดึงราคาแบบกลุ่มแก้ปัญหาคอขวด ---
             active_tickers = current_port_df["Ticker"].tolist()
             with st.spinner("⏳ กำลังวิ่งไปเก็บราคาล่าสุดของหุ้นทุกตัวในพอร์ต... (รอแป๊บนึงนะคะ)"):
                 batch_prices = get_batch_live_prices(active_tickers)
                 
                 for _, row in current_port_df.iterrows():
                     t, avg_cost, sh, t_cost = row["Ticker"], row["Cost_Price"], row["Shares"], row["Total_Cost"]
-                    
-                    # เลือกราราคาจาก Batch (ถ้าไม่ได้ใช้ต้นทุนเดิมแทน)
                     curr_p = batch_prices.get(t, avg_cost)
                     
                     val = curr_p * sh
@@ -449,7 +518,6 @@ if st.session_state["logged_in"]:
                 fig_bar.update_layout(title="กำไร/ขาดทุนรายตัว (P/L)", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
                 st.plotly_chart(fig_bar, use_container_width=True)
 
-            # --- แก้บั๊ก ValueError: ยึดรูปแบบ Code ดั้งเดิม 100% ---
             def color_profit(val):
                 return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
             
@@ -459,16 +527,12 @@ if st.session_state["logged_in"]:
                 "% เปลี่ยนแปลง": "{:,.2f}%", "มูลค่ารวม": "${:,.2f}"
             })
             st.dataframe(styled_res, use_container_width=True)
-            # ------------------------------------------------
             
             csv_port = convert_df_to_csv(res_df)
             st.download_button(label="📥 ดาวน์โหลดพอร์ตโฟลิโอ (Excel/CSV)", data=csv_port, file_name=f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", mime='text/csv')
         else:
             st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ตค่ะ)")
 
-    # ==========================================
-    # หน้า 3: ภาษีสรรพากร (Original UI 100%)
-    # ==========================================
     with tab_list[2]:
         t1, t2 = st.columns([8, 2])
         t1.subheader("🧾 ระบบประเมินภาษีสรรพากร ภ.ง.ด. 90")
