@@ -164,7 +164,7 @@ def load_pro_data(ticker_symbol, tf):
         df = df.dropna(subset=['Close'])
         if df.empty: return pd.DataFrame(), {}, None, None
         
-        market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 20.0, "vix_ts": 1.0, "smart_money": "Neutral 🟡"}
+        market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 0.0, "vix_ts": 0.0, "smart_money": "N/A"}
         try:
             mkt_tickers = ["^GSPC", "^VIX", "^VIX3M", "HYG", "IEF"]
             mkt_data = yf.download(mkt_tickers, period="6mo", progress=False)
@@ -271,21 +271,39 @@ with tab_list[0]:
     st.markdown(f"#### 📅 ข้อมูล ณ วันที่: <span style='color:#4CAF50'>{current_date}</span> &nbsp;|&nbsp; 🕒 อัปเดตล่าสุด: <span style='color:#4CAF50'>{current_time} น.</span>", unsafe_allow_html=True)
     
     if not df.empty:
-        # กำหนดตัวแปรพื้นฐานทั้งหมดก่อนนำไปใช้ ป้องกัน NameError 100%
         last_p = df['Close'].iloc[-1]
         prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
         rsi_val = df['RSI'].iloc[-1]
         is_uptrend = last_p > df['E50'].iloc[-1]
         is_bullish_macd = df['MACD'].iloc[-1] > df['Sig'].iloc[-1]
         
+        # --- ตัวแปร Market Signal (ป้องกันพังด้วยค่าเริ่มต้น) ---
         spy_t = market_signal["spy_trend"] if market_signal else "N/A"
-        v_val = market_signal["vix"] if market_signal else 20.0
-        vix_ts = market_signal["vix_ts"] if market_signal else 1.0
-        sm_flow = market_signal["smart_money"] if market_signal else "Neutral"
-        is_market_good = "ขึ้น" in spy_t and v_val < 25 and vix_ts < 1
+        spy_p = market_signal["spy_price"] if market_signal else 0.0
+        v_val = market_signal["vix"] if market_signal else 0.0
+        vix_ts = market_signal["vix_ts"] if market_signal else 0.0
+        sm_flow = market_signal["smart_money"] if market_signal else "N/A"
+        is_market_good = "ขึ้น" in spy_t and (0 < v_val < 25) and (0 < vix_ts < 1)
 
         # ==========================================
-        # 🤵 ทัศนะจากเทรดเดอร์มือหนึ่ง (Top Section)
+        # 🌐 Advanced Market Radar (ส่วนที่ 1: ภาพรวมตลาดโลก)
+        # ==========================================
+        st.markdown("---")
+        st.markdown("### 🌐 Market Signal (เรดาร์สแกนภาพรวมตลาด)")
+        m1, m2, m3, m4 = st.columns(4)
+        
+        m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f}" if spy_p > 0 else "N/A", spy_t if spy_p > 0 else None, delta_color="normal" if "ขึ้น" in spy_t else "inverse" if "ลง" in spy_t else "off")
+        
+        vix_stat = "Risk ON" if 0 < v_val < 20 else "Neutral" if 0 < v_val < 30 else "Panic"
+        m2.metric("ความกลัว (VIX)", f"{v_val:.2f}" if v_val > 0 else "N/A", vix_stat if v_val > 0 else None, delta_color="normal" if 0 < v_val < 25 else "inverse" if v_val >= 25 else "off")
+        
+        ts_label = "🟢 สงบ" if 0 < vix_ts < 1 else "🔴 ตระหนก"
+        m3.metric("โครงสร้าง (VIX/VIX3M)", f"{vix_ts:.2f}" if vix_ts > 0 else "N/A", ts_label if vix_ts > 0 else None, delta_color="normal" if 0 < vix_ts < 1 else "inverse" if vix_ts >= 1 else "off")
+        
+        m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow if sm_flow != "N/A" else None, delta_color="normal" if "ON" in sm_flow else "inverse" if "OFF" in sm_flow else "off")
+
+        # ==========================================
+        # 🤵 ทัศนะจากเทรดเดอร์มือหนึ่ง (ส่วนที่ 2: สรุปกลยุทธ์)
         # ==========================================
         if is_market_good and is_uptrend and is_bullish_macd and rsi_val < 70:
             rec, color = "STRONG BUY / HOLD", "#00E676" # สีเขียว
@@ -303,9 +321,8 @@ with tab_list[0]:
             rec, color = "NEUTRAL / SIDEWAY", "#B0BEC5" # สีเทา
             msg = f"**'ตลาดรอเลือกทาง'** - กราฟกำลังแกว่งตัวออกข้าง (Sideway) สัญญาณยังขัดแย้งกัน แนะนำให้เทรดสั้นๆ ในกรอบ (ซื้อใกล้แนวรับ - ขายใกล้แนวต้าน) หรือรอดูจนกว่าราคาจะเบรกเอาท์เลือกทิศทางที่ชัดเจนครับ"
 
-        # ดีไซน์กล่องบทวิเคราะห์ให้ดูพรีเมียม สวยงาม
         st.markdown(f"""
-        <div style="background-color: #1E1E1E; border: 1px solid #333; border-left: 8px solid {color}; padding: 25px; border-radius: 12px; margin-top: 10px; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+        <div style="background-color: #1E1E1E; border: 1px solid #333; border-left: 8px solid {color}; padding: 25px; border-radius: 12px; margin-top: 20px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
             <h3 style="color: {color}; margin-top: 0; margin-bottom: 15px; font-size: 1.6rem; display: flex; align-items: center;">
                 <span style="font-size: 2rem; margin-right: 12px;">🤵</span> ทัศนะจากเทรดเดอร์มือหนึ่ง: {rec}
             </h3>
@@ -317,19 +334,6 @@ with tab_list[0]:
             </div>
         </div>
         """, unsafe_allow_html=True)
-
-        # ==========================================
-        # 🌐 Advanced Market Radar
-        # ==========================================
-        if market_signal and market_signal["spy_price"] > 0:
-            st.markdown("### 🌐 Advanced Market Radar (เรดาร์สแกนตลาดเชิงลึก)")
-            m1, m2, m3, m4 = st.columns(4)
-            spy_p = market_signal["spy_price"]
-            m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f}", spy_t, delta_color="normal" if "ขึ้น" in spy_t else "inverse")
-            m2.metric("ความกลัว (VIX)", f"{v_val:.2f}", "Risk ON" if v_val < 20 else "Neutral" if v_val < 30 else "Panic", delta_color="normal" if v_val < 25 else "inverse")
-            m3.metric("โครงสร้าง (VIX/VIX3M)", f"{vix_ts:.2f}", "🟢 สงบ" if vix_ts < 1 else "🔴 ตระหนก", delta_color="normal" if vix_ts < 1 else "inverse")
-            m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow, delta_color="normal" if "ON" in sm_flow else "inverse")
-            st.markdown("<br>", unsafe_allow_html=True) # เว้นบรรทัดนิดนึง
 
         rs_val = df['RS'].iloc[-1]
         rs_t = f" | **Relative Strength:** {'🟢 ชนะตลาด' if rs_val > 0 else '🔴 อ่อนแอกว่าตลาด'} ({rs_val:.2f}%)" if not np.isnan(rs_val) else ""
