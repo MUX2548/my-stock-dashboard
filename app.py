@@ -121,7 +121,7 @@ def log_visitor():
 visitor_count = log_visitor()
 
 # ==========================================
-# 3. 📊 ลอจิกการบัญชี
+# 3. 📊 ลอจิกการบัญชี (New Professional Standard)
 # ==========================================
 def calculate_stats(df_input):
     df = clean_df_types(df_input)
@@ -244,17 +244,11 @@ def load_pro_data(ticker_symbol, tf):
             df['Trendline'] = slope * x + intercept
         else: df['Trendline'] = np.nan
         
-        # 📌 ดึงข้อมูลพื้นฐานอย่างละเอียด (อัปเกรด)
         info = s.info
-        ps_v = info.get('priceToSalesTrailing12Months')
-        pe_v = info.get('trailingPE')
-        roe_v = info.get('returnOnEquity')
-        rev_v = info.get('revenueGrowth')
-        
-        ps_v = float(ps_v) if ps_v is not None else 0.0
-        pe_v = float(pe_v) if pe_v is not None else 0.0
-        roe_v = float(roe_v) if roe_v is not None else 0.0
-        rev_v = float(rev_v) if rev_v is not None else 0.0
+        ps_v = float(info.get('priceToSalesTrailing12Months', 0) or 0)
+        pe_v = float(info.get('trailingPE', 0) or 0)
+        roe_v = float(info.get('returnOnEquity', 0) or 0)
+        rev_v = float(info.get('revenueGrowth', 0) or 0)
         
         fund = {
             "ps_val": ps_v, "pe_val": pe_v, "roe_val": roe_v, "rev_val": rev_v,
@@ -294,7 +288,7 @@ def get_live_fx():
     except: return 35.00
 
 # ==========================================
-# 5. UI: Sidebar & Main Framework
+# 5. UI: Sidebar
 # ==========================================
 with st.sidebar:
     st.title("🛡️ Strategic Hub")
@@ -358,7 +352,6 @@ with tab_list[0]:
                     qe_amount = q_c6.number_input("จำนวนเงิน (ถ้าโอนเข้า/ออก)", min_value=0.0, format="%.2f")
                     qe_fx = q_c7.number_input("เรทเงิน", min_value=0.0, format="%.4f", value=35.0)
                     qe_wht = q_c8.number_input("ภาษีหักฯ ($)", min_value=0.0, format="%.2f")
-                    
                     qe_ref = st.text_input("หมายเหตุ")
                     
                     if st.form_submit_button("💾 บันทึกข้อมูลลง Cloud", type="primary", use_container_width=True):
@@ -388,8 +381,6 @@ with tab_list[0]:
         vix_ts = market_signal["vix_ts"] if market_signal else 0.0
         sm_flow = market_signal["smart_money"] if market_signal else "N/A"
         is_market_good = "ขึ้น" in spy_t and (0 < v_val < 25) and (0 < vix_ts < 1)
-
-        # วิเคราะห์ปัจจัยพื้นฐาน (เช็คหุ้นซิ่ง)
         is_speculative = (fund.get('pe_val', 0) <= 0) or (fund.get('roe_val', 0) < 0)
 
         actual_cost = b_p 
@@ -507,7 +498,6 @@ with tab_list[0]:
                 sl = df['E50'].iloc[-1] * 0.99 if actual_cost == 0 else actual_cost * 0.92
                 st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
                 
-                # 📌 Smart Position Sizing: หั่นความเสี่ยงครึ่งนึงอัตโนมัติถ้าพื้นฐานแย่
                 adjusted_r_pct = r_pct / 2.0 if is_speculative else r_pct
                 ra = t_cap * (adjusted_r_pct / 100.0)
                 rps = last_p - sl
@@ -530,26 +520,6 @@ with tab_list[0]:
             st.write(f"**รับ:** {df['E50'].iloc[-1]:.2f}")
     else:
         st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ")
-        st.info('''
-        💡 **สาเหตุที่เป็นไปได้ และวิธีแก้ไข:**
-        1. **พิมพ์ชื่อย่อหุ้นผิด:** หรือหุ้นตัวนี้ไม่มีข้อมูลในฐานข้อมูลของ Yahoo Finance
-        2. **อินเทอร์เน็ตขัดข้อง (Cache ค้าง):** แนะนำให้กดปุ่ม **'🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้'** ที่เมนูด้านซ้ายเพื่อล้างแคช
-        3. **เซิร์ฟเวอร์ถูกบล็อกชั่วคราว:** ลองเปลี่ยนเป็นหุ้นยอดฮิต (เช่น AAPL) หากยังดึงไม่ได้เหมือนกัน ให้รอสักพักแล้วลองใหม่ค่ะ
-        ''')
-
-    st.markdown("---")
-    with st.expander("⭐ ประเมินความแม่นยำของระบบวิเคราะห์"):
-        with st.form("feedback_form", clear_on_submit=True):
-            st.write(f"คุณมีความคิดเห็นอย่างไรกับการวิเคราะห์กราฟของหุ้น **{ticker}** ในครั้งนี้?")
-            rating = st.slider("ระดับความแม่นยำและประโยชน์ที่ได้รับ (1 = แย่, 5 = แม่นยำ/มีประโยชน์มาก)", 1, 5, 5)
-            comment = st.text_area("ข้อเสนอแนะเพิ่มเติม (Optional):")
-            if st.form_submit_button("ส่งฟีดแบ็ก (Submit)"):
-                try:
-                    fb_ws = sh.worksheet("Feedback")
-                    timestamp = datetime.now(tz_th).strftime("%d/%m/%Y %H:%M:%S")
-                    fb_ws.append_row([timestamp, ticker, rating, comment])
-                    st.success("🙏 ขอบคุณสำหรับฟีดแบ็กค่ะ!")
-                except Exception as e: st.error("⚠️ ไม่สามารถส่งข้อมูลได้ กรุณาตรวจสอบว่าสร้างชีต 'Feedback' แล้วหรือยังคะ")
 
 # ==========================================
 # หน้า 2: บัญชีและพอร์ตโฟลิโอ
