@@ -250,7 +250,6 @@ def load_pro_data(ticker_symbol, tf):
         df['MACD'] = df['Close'].ewm(span=12).mean() - df['Close'].ewm(span=26).mean()
         df['Sig'] = df['MACD'].ewm(span=9).mean()
         df['Hist'] = df['MACD'] - df['Sig']
-        df['Vol_SMA'] = df['Volume'].rolling(window=20).mean()
         if len(df) > 1:
             y, x = df['Close'].values, np.arange(len(df['Close'].values))
             slope, intercept = np.polyfit(x, y, 1)
@@ -467,4 +466,83 @@ with tab_list[0]:
                 pl = ((last_p - actual_cost) / actual_cost) * 100
                 st.write(f"**กำไร/ขาดทุนอ้างอิง:** {pl:.2f}%")
                 sl = df['E50'].iloc[-1] * 0.99 if b_p == 0 else actual_cost * 0.92
-                st.error(f"🛡
+                st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
+                
+                adjusted_r_pct = r_pct / 2.0 if is_speculative else r_pct
+                ra = t_cap * (adjusted_r_pct / 100.0)
+                rps = last_p - sl
+                
+                if rps > 0: 
+                    st.success(f"🧮 **ซื้อเพิ่มได้สูงสุด:** {ra/rps:.2f} หุ้น")
+            
+            st.markdown("---")
+            st.subheader("🤖 สรุปทางเทคนิค")
+            st.write(f"**เทรนด์:** {'🟢 ขาขึ้น' if is_uptrend else '🔴 ขาลง'}")
+            st.write(f"**แรงซื้อ:** {'🟢 ได้เปรียบ' if is_bullish_macd else '🔴 อ่อนแอ'}")
+            st.write(f"**RSI:** {rsi_val:.2f}")
+    else:
+        st.warning(f"❌ ไม่พบข้อมูลหุ้น '{ticker}'")
+
+# ==========================================
+# หน้า 2: บัญชีและพอร์ตโฟลิโอ
+# ==========================================
+if st.session_state["logged_in"]:
+    with tab_list[1]:
+        st.subheader("💼 แดชบอร์ดกระแสเงินสด (Cashflow Overview)")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("📤 นำเงินออกสะสม (ลงทุน)", f"${l_stat['outward']:,.2f}")
+        col2.metric("📥 นำเงินกลับไทย (ถอน)", f"${l_stat['inward']:,.2f}")
+        col3.metric("📈 ต้นทุนหุ้นในพอร์ตรวม", f"${l_stat['bought'] - l_stat['sold']:,.2f}")
+        col4.metric("💰 เงินสดคงเหลือ (พร้อมเทรด)", f"${cb:,.2f}", "💵 Cash Balance")
+        
+        st.markdown("---")
+        h1, h2 = st.columns([8, 2])
+        h1.subheader("📝 สมุดบันทึกบัญชีการเทรด (Cloud Ledger)")
+        csv_ledger = convert_df_to_csv(st.session_state.trade_ledger)
+        h2.download_button(label="📥 โหลดข้อมูล (Excel/CSV)", data=csv_ledger, file_name=f"Trade_Ledger_{datetime.now().strftime('%Y%m%d')}.csv", mime='text/csv', use_container_width=True)
+        
+        st.info("💡 **Tips จากนักบัญชี:** ตอนซื้อ/ขายหุ้น กรอกแค่ 'ราคา' และ 'จำนวนหุ้น' ระบบจะคำนวณจำนวนเงินและอัปเดตยอดยกมาให้อัตโนมัติครับ")
+        ed_l = st.data_editor(st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
+            column_config={
+                "Date": "วันที่ (DD/MM/YYYY)",
+                "Action": st.column_config.SelectboxColumn("ประเภท", options=["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)", "รับเงินปันผล (Dividend)"], required=True),
+                "Ticker": "ชื่อหุ้น",
+                "Price": st.column_config.NumberColumn("ราคา ($)", format="%.4f", step=0.0001),
+                "Shares": st.column_config.NumberColumn("จำนวนหุ้น", format="%.4f", step=0.0001),
+                "Amount_USD": st.column_config.NumberColumn("จำนวนเงินสุทธิ ($)", format="%.2f", step=0.01),
+                "Running_Balance": st.column_config.NumberColumn("ยอดเงินสดคงเหลือ ($)", disabled=True, format="%.2f"), 
+                "FX_Rate": st.column_config.NumberColumn("เรทเงิน", format="%.4f", step=0.0001), 
+                "WHT_USD": st.column_config.NumberColumn("ภาษีหักฯ ($)", format="%.2f", step=0.01), 
+                "Ref_Doc": st.column_config.TextColumn("หมายเหตุ (กำไร/ขาดทุน)")
+            })
+        if not ed_l.equals(st.session_state.trade_ledger):
+            ed_l = clean_df_types(ed_l)
+            sorted_ed_l, _, _, n_rb, _ = calculate_stats(ed_l)
+            st.session_state.trade_ledger = sorted_ed_l; st.rerun()
+        if st.button("💾 บันทึกข้อมูลบัญชีขึ้น Cloud", type="primary", use_container_width=True):
+            if save_df_to_sheet("Ledger", st.session_state.trade_ledger):
+                st.success("บันทึกสำเร็จ! โครงสร้างบัญชีถูกต้องตามมาตรฐาน 100%")
+                time.sleep(1)
+                st.rerun()
+
+        st.markdown("---")
+        st.subheader("📊 พอร์ตโฟลิโอปัจจุบัน (Auto Real-Time Mark to Market)")
+        live_fx = get_live_fx()
+        st.info(f"💱 **อัตราแลกเปลี่ยนตลาดโลก ณ วินาทีนี้ (USD/THB):** ฿{live_fx:.4f} ต่อ 1 ดอลลาร์")
+        port_summary, total_invested = [], 0.0
+        for t, data in holdings.items():
+            if data["shares"] > 0.001:
+                avg_c = data["total_cost"] / data["shares"]
+                port_summary.append({"Ticker": t, "Cost_Price": avg_c, "Shares": data["shares"], "Total_Cost": data["total_cost"]})
+                total_invested += data["total_cost"]
+        if len(port_summary) > 0:
+            current_port_df = pd.DataFrame(port_summary)
+            results, total_v = [], 0.0
+            active_tickers = current_port_df["Ticker"].tolist()
+            with st.spinner("⏳ กำลังวิ่งไปเก็บราคาล่าสุดของหุ้นทุกตัวในพอร์ต..."):
+                batch_prices = get_batch_live_prices(active_tickers)
+                for _, row in current_port_df.iterrows():
+                    t, avg_cost, sh, t_cost = row["Ticker"], row["Cost_Price"], row["Shares"], row["Total_Cost"]
+                    curr_p = batch_prices.get(t, avg_cost)
+                    val = curr_p * sh
+                    profit_usd, profit_pct = val - t_cost, (val - t_
