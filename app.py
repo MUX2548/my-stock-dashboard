@@ -1,5 +1,6 @@
 import json
 import time
+import os
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
@@ -8,12 +9,19 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
+from PIL import Image
 from datetime import datetime, timezone, timedelta
 
 # ==========================================
-# 1. ตั้งค่าหน้าเพจ
+# 1. ตั้งค่าหน้าเพจ & โลโก้แบรนด์
 # ==========================================
-st.set_page_config(page_title="Strategic Portfolio Ecosystem 4.10", page_icon="📈", layout="wide")
+logo_path = "strategic_hub_logo.png"
+
+if os.path.exists(logo_path):
+    browser_icon = Image.open(logo_path)
+    st.set_page_config(page_title="Strategic Hub 4.11", page_icon=browser_icon, layout="wide")
+else:
+    st.set_page_config(page_title="Strategic Hub 4.11", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -23,6 +31,8 @@ st.markdown("""
     .summary-box { padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid; }
     div[data-testid="stMetricValue"] { padding-bottom: 0px; }
     .stSpinner > div > div { border-top-color: #deff9a !important; }
+    /* ปรับ Sidebar ให้ดูพรีเมียมเข้ากับโลโก้ */
+    [data-testid="stSidebar"] { background-color: #0e1117; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -291,7 +301,11 @@ def get_live_fx():
 # 5. UI: Sidebar
 # ==========================================
 with st.sidebar:
-    st.title("🛡️ Strategic Hub")
+    if os.path.exists(logo_path):
+        st.image(logo_path, use_container_width=True)
+    else:
+        st.title("🛡️ Strategic Hub")
+        
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear(); st.rerun()
     st.info(f"👁️ **ยอดผู้เข้าชมทั้งหมด: {visitor_count} ครั้ง**")
