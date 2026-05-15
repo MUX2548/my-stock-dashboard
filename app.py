@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.18", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.19", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.18", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.19", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -33,7 +33,6 @@ st.markdown("""
     div[data-testid="stMetricValue"] { padding-bottom: 0px; }
     .stSpinner > div > div { border-top-color: #deff9a !important; }
     [data-testid="stSidebar"] { background-color: #0e1117; }
-    /* ปรับสีตารางให้ดูพรีเมียม */
     [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
     </style>
 """, unsafe_allow_html=True)
@@ -106,11 +105,11 @@ def save_df_to_sheet(worksheet_name, df):
         st.error(f"❌ เกิดข้อผิดพลาดขณะเขียนข้อมูลลง Cloud: {e}")
         return False
 
-# สร้าง Session State พื้นฐาน
 if "trade_ledger" not in st.session_state: st.session_state.trade_ledger = load_ledger_data()
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
-# Session State สำหรับ "พอร์ตจำลอง" (Paper Trading)
 if "mock_port" not in st.session_state: st.session_state["mock_port"] = pd.DataFrame(columns=["Date", "Ticker", "Buy_Price", "Shares"])
+# Session State สำหรับจดจำ "รายการโปรด" ในหน้าเรดาร์
+if "favorite_tickers" not in st.session_state: st.session_state["favorite_tickers"] = "ASTS, RKLB, NVTS, IREN, RGTI, C, TSLA, PLTR, ONDS, OKLO, EOSE"
 
 def log_visitor():
     try:
@@ -266,7 +265,6 @@ def get_live_fx():
     try: return yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
     except: return 35.00
 
-# --- อัปเกรด AI Screener (เพิ่มกราฟเส้น Mini-Chart) ---
 @st.cache_data(ttl=300)
 def run_ai_screener(ticker_list_str):
     tickers = [t.strip().upper() for t in ticker_list_str.split(',') if t.strip()]
@@ -276,9 +274,7 @@ def run_ai_screener(ticker_list_str):
             hist = yf.Ticker(t).history(period="6mo")
             if hist.empty: continue
             
-            # ดึงราคา 30 วันย้อนหลังมาทำกราฟ Sparkline
             recent_prices = hist['Close'].tail(30).tolist()
-            
             close = hist['Close'].iloc[-1]
             ema50 = hist['Close'].ewm(span=50).mean().iloc[-1]
             delta = hist['Close'].diff()
@@ -299,7 +295,7 @@ def run_ai_screener(ticker_list_str):
                 
             results.append({
                 "หุ้น": t, 
-                "กราฟ 30 วัน": recent_prices,  # คอลัมน์กราฟใหม่
+                "กราฟ 30 วัน": recent_prices,
                 "ราคาล่าสุด": f"${close:.2f}", 
                 "EMA50": f"${ema50:.2f}", 
                 "เทรนด์": trend, 
@@ -483,14 +479,26 @@ with tabs[1]:
     st.markdown("## 🎯 เรดาร์สแกนหุ้น (AI Screener & Mini-Chart)")
     st.markdown("ระบบจะสแกนสัญญาณเทรด พร้อมแสดงกราฟเส้น (30 วันย้อนหลัง) ให้เห็นทิศทางทันที")
     
-    default_tickers = "AAPL, MSFT, TSLA, NVDA, GOOGL, AMD, PLTR"
+    # ดึงรายชื่อหุ้นในพอร์ตมาแสดงให้เห็นเป็นไอเดีย
     if holdings:
         my_stocks = [t for t, d in holdings.items() if d["shares"] > 0]
-        if my_stocks: default_tickers = ", ".join(my_stocks)
-        
-    watch_list = st.text_input("📝 พิมพ์ชื่อหุ้นคั่นด้วยลูกน้ำ (Comma):", value=default_tickers)
+        if my_stocks: st.caption(f"💼 หุ้นที่มีอยู่ในพอร์ตตอนนี้: {', '.join(my_stocks)}")
     
-    if st.button("🚀 สแกนและอัปเดตกราฟ", type="primary"):
+    # เปลี่ยนเป็น text_area เพื่อให้พิมพ์/วางข้อความยาวๆ ได้สะดวกขึ้น
+    watch_list = st.text_area("📝 พิมพ์ชื่อหุ้นที่ต้องการสแกนคั่นด้วยลูกน้ำ (Comma):", value=st.session_state["favorite_tickers"])
+    
+    # สร้างปุ่มแบบ 2 คอลัมน์ (สแกน / บันทึกรายการโปรด)
+    c_btn1, c_btn2 = st.columns(2)
+    with c_btn1:
+        scan_btn = st.button("🚀 สแกนและอัปเดตกราฟ", type="primary", use_container_width=True)
+    with c_btn2:
+        if st.button("⭐ บันทึกลิสต์นี้เป็นรายการโปรด", use_container_width=True):
+            st.session_state["favorite_tickers"] = watch_list
+            st.success("✅ บันทึกรายการโปรดเรียบร้อย! ระบบจะจำชื่อหุ้นเหล่านี้ไว้ให้ตลอดการใช้งานครับ")
+            time.sleep(1)
+            st.rerun()
+
+    if scan_btn:
         with st.spinner("⏳ AI กำลังวิ่งดึงกราฟและข้อมูลทีละตัว..."):
             screener_df = run_ai_screener(watch_list)
             if not screener_df.empty:
@@ -501,7 +509,6 @@ with tabs[1]:
                     elif "WAIT" in str(val): return 'color: #FF5252;'
                     return ''
                 
-                # แสดงตารางพร้อมแทรกกราฟเส้น (Sparkline)
                 st.dataframe(
                     screener_df.style.map(color_action, subset=["คำแนะนำ AI"]),
                     column_config={
