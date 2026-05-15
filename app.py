@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.19", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.20", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.19", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.20", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -42,7 +42,7 @@ current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 
 # ==========================================
-# 2. 🔐 การเชื่อมต่อฐานข้อมูล
+# 2. 🔐 การเชื่อมต่อฐานข้อมูล & Session State
 # ==========================================
 @st.cache_resource(ttl=3600)
 def init_connection():
@@ -105,11 +105,15 @@ def save_df_to_sheet(worksheet_name, df):
         st.error(f"❌ เกิดข้อผิดพลาดขณะเขียนข้อมูลลง Cloud: {e}")
         return False
 
+# --- Setup Session States ---
 if "trade_ledger" not in st.session_state: st.session_state.trade_ledger = load_ledger_data()
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
 if "mock_port" not in st.session_state: st.session_state["mock_port"] = pd.DataFrame(columns=["Date", "Ticker", "Buy_Price", "Shares"])
-# Session State สำหรับจดจำ "รายการโปรด" ในหน้าเรดาร์
-if "favorite_tickers" not in st.session_state: st.session_state["favorite_tickers"] = "ASTS, RKLB, NVTS, IREN, RGTI, C, TSLA, PLTR, ONDS, OKLO, EOSE"
+
+# ดึงรายการโปรดเดิม (ถ้ามี) มาแปลงเป็นลิสต์เพื่อใช้กับระบบจัดการหุ้นแบบใหม่
+if "radar_tickers" not in st.session_state:
+    old_fav = st.session_state.get("favorite_tickers", "ASTS, RKLB, NVTS, IREN, RGTI, C, TSLA, PLTR, ONDS, OKLO, EOSE, IONQ")
+    st.session_state.radar_tickers = [t.strip().upper() for t in old_fav.split(',') if t.strip()]
 
 def log_visitor():
     try:
@@ -266,8 +270,8 @@ def get_live_fx():
     except: return 35.00
 
 @st.cache_data(ttl=300)
-def run_ai_screener(ticker_list_str):
-    tickers = [t.strip().upper() for t in ticker_list_str.split(',') if t.strip()]
+def run_ai_screener(tickers):
+    if not tickers: return pd.DataFrame()
     results = []
     for t in tickers:
         try:
@@ -473,34 +477,31 @@ with tabs[0]:
     else: st.warning(f"❌ ไม่พบข้อมูลหุ้น '{ticker}'")
 
 # ==========================================
-# หน้า 2: เรดาร์ & พอร์ตจำลอง (NEW UPGRADE)
+# หน้า 2: เรดาร์ & พอร์ตจำลอง (NEW UPGRADE 4.20)
 # ==========================================
 with tabs[1]:
     st.markdown("## 🎯 เรดาร์สแกนหุ้น (AI Screener & Mini-Chart)")
-    st.markdown("ระบบจะสแกนสัญญาณเทรด พร้อมแสดงกราฟเส้น (30 วันย้อนหลัง) ให้เห็นทิศทางทันที")
+    st.markdown("จัดกลุ่มรายชื่อหุ้นที่ต้องการเฝ้าจับตา ระบบจะสแกนหาจุดเข้าซื้อ/จุดขายให้ทันที")
     
-    # ดึงรายชื่อหุ้นในพอร์ตมาแสดงให้เห็นเป็นไอเดีย
-    if holdings:
-        my_stocks = [t for t, d in holdings.items() if d["shares"] > 0]
-        if my_stocks: st.caption(f"💼 หุ้นที่มีอยู่ในพอร์ตตอนนี้: {', '.join(my_stocks)}")
-    
-    # เปลี่ยนเป็น text_area เพื่อให้พิมพ์/วางข้อความยาวๆ ได้สะดวกขึ้น
-    watch_list = st.text_area("📝 พิมพ์ชื่อหุ้นที่ต้องการสแกนคั่นด้วยลูกน้ำ (Comma):", value=st.session_state["favorite_tickers"])
-    
-    # สร้างปุ่มแบบ 2 คอลัมน์ (สแกน / บันทึกรายการโปรด)
-    c_btn1, c_btn2 = st.columns(2)
-    with c_btn1:
-        scan_btn = st.button("🚀 สแกนและอัปเดตกราฟ", type="primary", use_container_width=True)
-    with c_btn2:
-        if st.button("⭐ บันทึกลิสต์นี้เป็นรายการโปรด", use_container_width=True):
-            st.session_state["favorite_tickers"] = watch_list
-            st.success("✅ บันทึกรายการโปรดเรียบร้อย! ระบบจะจำชื่อหุ้นเหล่านี้ไว้ให้ตลอดการใช้งานครับ")
-            time.sleep(1)
+    st.markdown("### 📋 จัดการรายชื่อหุ้นในเรดาร์")
+    c_rad1, c_rad2 = st.columns([7, 3])
+    with c_rad1:
+        # ระบบป้ายชื่อ (Tags) กดกากบาทลบได้เลย
+        selected_radar = st.multiselect("หุ้นที่กำลังเฝ้าจับตา (กด X เพื่อลบออก):", options=st.session_state.radar_tickers, default=st.session_state.radar_tickers)
+        if selected_radar != st.session_state.radar_tickers:
+            st.session_state.radar_tickers = selected_radar
             st.rerun()
+    with c_rad2:
+        # ช่องพิมพ์เพิ่มหุ้นใหม่
+        new_ticker = st.text_input("➕ เพิ่มหุ้นใหม่", placeholder="เช่น MSFT").upper().strip()
+        if st.button("เพิ่มเข้าเรดาร์", use_container_width=True):
+            if new_ticker and new_ticker not in st.session_state.radar_tickers:
+                st.session_state.radar_tickers.append(new_ticker)
+                st.rerun()
 
-    if scan_btn:
+    if st.button("🚀 สแกนและอัปเดตกราฟ", type="primary", use_container_width=True):
         with st.spinner("⏳ AI กำลังวิ่งดึงกราฟและข้อมูลทีละตัว..."):
-            screener_df = run_ai_screener(watch_list)
+            screener_df = run_ai_screener(st.session_state.radar_tickers)
             if not screener_df.empty:
                 def color_action(val):
                     if "STRONG BUY" in str(val): return 'background-color: rgba(0, 230, 118, 0.2); color: #00E676; font-weight: bold;'
@@ -516,7 +517,7 @@ with tabs[1]:
                     },
                     use_container_width=True
                 )
-            else: st.warning("ไม่พบข้อมูล กรุณาตรวจสอบชื่อหุ้นอีกครั้งครับ")
+            else: st.warning("ไม่พบข้อมูล กรุณาตรวจสอบรายชื่อหุ้นอีกครั้งครับ")
 
     st.markdown("---")
     
@@ -541,19 +542,44 @@ with tabs[1]:
                 else: st.error("กรุณากรอกข้อมูลให้ครบถ้วน")
 
     if not st.session_state["mock_port"].empty:
+        # --- NEW: ตารางประวัติการซื้อขาย (ลบ/แก้ไข เป็นรายตัวได้) ---
+        st.markdown("### 📝 ประวัติการซื้อขาย (Transaction History)")
+        st.info("💡 **Tips:** คุณสามารถแก้ไขตัวเลขในตารางนี้ได้โดยตรง หรือ **เลือกติ๊กถูกที่แถวเพื่อลบหุ้น (Delete)** ทิ้งทีละรายการได้เลยค่ะ")
+        
+        edited_mock = st.data_editor(
+            st.session_state["mock_port"],
+            num_rows="dynamic", # เปิดฟังก์ชันให้กด Add/Delete row ได้
+            use_container_width=True,
+            column_config={
+                "Date": "วันที่",
+                "Ticker": "ชื่อหุ้น",
+                "Buy_Price": st.column_config.NumberColumn("ราคาที่ซื้อ ($)", format="%.4f"),
+                "Shares": st.column_config.NumberColumn("จำนวนหุ้น", format="%.4f")
+            }
+        )
+        # ถ้ามีการกดลบ หรือแก้ไขตาราง ให้จำค่าใหม่ไว้ทันที
+        if not edited_mock.equals(st.session_state["mock_port"]):
+            st.session_state["mock_port"] = edited_mock
+            st.rerun()
+
+        # --- ส่วนแสดงสรุปกำไร/ขาดทุน ---
+        st.markdown("### 📊 สรุปพอร์ตจำลองปัจจุบัน")
         mock_df = st.session_state["mock_port"].copy()
         mock_tickers = mock_df["Ticker"].unique().tolist()
         
-        with st.spinner("⏳ กำลังดึงราคาปัจจุบันมาคำนวณกำไร/ขาดทุนในพอร์ตจำลอง..."):
+        with st.spinner("⏳ กำลังดึงราคาปัจจุบันมาคำนวณกำไร/ขาดทุน..."):
             mock_prices = get_batch_live_prices(mock_tickers)
             
             mock_results = []
             mock_total_cost = 0
             mock_total_val = 0
             for idx, row in mock_df.iterrows():
-                t = row["Ticker"]
-                bp = float(row["Buy_Price"])
-                sh = float(row["Shares"])
+                t = str(row["Ticker"]).upper()
+                try: bp = float(row["Buy_Price"])
+                except: bp = 0.0
+                try: sh = float(row["Shares"])
+                except: sh = 0.0
+                
                 cp = mock_prices.get(t, bp)
 
                 cost = bp * sh
@@ -565,8 +591,8 @@ with tabs[1]:
                 mock_total_val += val
 
                 mock_results.append({
-                    "วันที่": row["Date"], "หุ้น": t, "ราคาซื้อ": f"${bp:.2f}", "จำนวน": sh,
-                    "ราคาล่าสุด": f"${cp:.2f}", "กำไร/ขาดทุน ($)": pl_usd, "% เปลี่ยนแปลง": pl_pct
+                    "หุ้น": t, "ราคาที่ซื้อ": f"${bp:.2f}", "ราคาล่าสุด": f"${cp:.2f}", 
+                    "จำนวน": sh, "กำไร/ขาดทุน ($)": pl_usd, "% เปลี่ยนแปลง": pl_pct
                 })
 
             st.markdown(f"""
@@ -581,11 +607,11 @@ with tabs[1]:
             def color_mock_profit(val): return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
             st.dataframe(res_mock_df.style.map(color_mock_profit, subset=["กำไร/ขาดทุน ($)", "% เปลี่ยนแปลง"]).format({"กำไร/ขาดทุน ($)": "${:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%"}), use_container_width=True)
 
-        if st.button("🗑️ ล้างพอร์ตจำลองทิ้งทั้งหมด"):
+        if st.button("🗑️ ล้างพอร์ตจำลองทิ้งทั้งหมด (Clear All)"):
             st.session_state["mock_port"] = pd.DataFrame(columns=["Date", "Ticker", "Buy_Price", "Shares"])
             st.rerun()
     else:
-        st.info("พอร์ตจำลองยังว่างเปล่า ลองเพิ่มรายการทดสอบดูสิครับ!")
+        st.info("พอร์ตจำลองยังว่างเปล่า ลองเพิ่มรายการทดสอบดูสิคะ!")
 
 # ==========================================
 # หน้า 3: บัญชีและพอร์ตโฟลิโอ (เงินจริง)
@@ -669,78 +695,4 @@ if st.session_state["logged_in"]:
         st.info("💡 **หลักการภาษีใหม่:** การนำเงินกลับไทยจะถูกหักจาก 'เงินต้นสะสม' ก่อน หากหักเงินต้นหมดแล้ว ยอดที่นำกลับจึงจะถือเป็น 'กำไรที่ต้องเสียภาษี'")
         
         tax_idx = st.session_state.trade_ledger['Action'].isin(["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"])
-        tax_v = st.session_state.trade_ledger[tax_idx].copy()
-        tax_v["Out_USD"] = np.where(tax_v["Action"] == "นำเงินออกนอกประเทศ (Outward)", tax_v["Amount_USD"], 0.0)
-        tax_v["In_USD"] = np.where(tax_v["Action"].isin(["นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"]), tax_v["Amount_USD"], 0.0)
-        tax_v["FX_Rate"] = pd.to_numeric(tax_v["FX_Rate"], errors='coerce').fillna(0.0)
-        tax_v["WHT_USD"] = pd.to_numeric(tax_v["WHT_USD"], errors='coerce').fillna(0.0)
-        tax_v["Out_THB"], tax_v["In_THB"] = tax_v["Out_USD"] * tax_v["FX_Rate"], tax_v["In_USD"] * tax_v["FX_Rate"]
-        
-        capital_pool, taxable_gains_thb, running_bals = 0.0, [], []
-        for i, r in tax_v.iterrows():
-            if r['Action'] == "นำเงินออกนอกประเทศ (Outward)":
-                capital_pool += r['Out_THB']; taxable_gains_thb.append(0.0)
-            elif r['Action'] == "นำเงินเข้าประเทศไทย (Inward)":
-                capital_pool -= r['In_THB']
-                taxable_gains_thb.append(abs(capital_pool) if capital_pool < 0 else 0.0)
-                if capital_pool < 0: capital_pool = 0.0
-            elif r['Action'] == "รับเงินปันผล (Dividend)": taxable_gains_thb.append(r['In_THB'])
-            else: taxable_gains_thb.append(0.0)
-            running_bals.append(capital_pool)
-
-        tax_v['Taxable_Gain_THB'], tax_v['Balance_THB'] = taxable_gains_thb, running_bals
-        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True)
-        
-        ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed", column_order=["Date", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "Taxable_Gain_THB", "WHT_USD"])
-        if not ed_t[["FX_Rate", "WHT_USD"]].equals(tax_v[["FX_Rate", "WHT_USD"]]):
-            st.session_state.trade_ledger.loc[tax_idx, "FX_Rate"] = clean_df_types(ed_t)["FX_Rate"].values
-            st.session_state.trade_ledger.loc[tax_idx, "WHT_USD"] = clean_df_types(ed_t)["WHT_USD"].values
-            st.rerun()
-        if st.button("💾 บันทึกภาษีลง Cloud", type="primary", use_container_width=True): 
-            if save_df_to_sheet("Ledger", st.session_state.trade_ledger): st.success("บันทึกสำเร็จ!"); time.sleep(1); st.rerun()
-
-        st.markdown("---")
-        c1, c2, c3 = st.columns(3)
-        with c1: selected_year = st.selectbox("📅 ปีภาษี", ["2567 (2024)", "2568 (2025)", "2569 (2026)"]).split("(")[1][:4]
-        with c2: is_resident = st.radio("อาศัยในไทย?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
-        with c3: other_income = st.number_input("รายได้อื่นๆ (บาท)", min_value=0.0, value=500000.0, step=50000.0)
-
-        t_yr = tax_v[tax_v['Date'].str.endswith(selected_year)]
-        net_tax_gain_yr = t_yr["Taxable_Gain_THB"].sum()
-        sum_wht_thb_yr = (t_yr["WHT_USD"] * t_yr["FX_Rate"]).sum()
-
-        cf1, cf2, cf3 = st.columns(3)
-        cf1.metric("📤 โอนออกปีนี้", f"฿{t_yr['Out_THB'].sum():,.2f}")
-        cf2.metric("📥 นำกลับปีนี้", f"฿{t_yr['In_THB'].sum():,.2f}")
-        cf3.metric("🚨 กำไรที่เสียภาษี", f"฿{net_tax_gain_yr:,.2f}", delta_color="inverse")
-
-        st.markdown("---")
-        with st.expander("📝 ลดหย่อน", expanded=False):
-            d1, d2 = st.columns(2)
-            s_deduct = d1.checkbox("คู่สมรสไม่มีรายได้")
-            c_count = d2.number_input("บุตร", min_value=0)
-            inv1, inv2, inv3 = st.columns(3)
-            life = inv1.number_input("ประกันชีวิต", min_value=0.0)
-            health = inv2.number_input("ประกันสุขภาพ", min_value=0.0)
-            pvd = inv3.number_input("PVD", min_value=0.0)
-        
-        t_deduct = min(other_income * 0.5, 100000) + 60000 + (60000 if s_deduct else 0) + (c_count * 30000) + min(life + min(health, 25000), 100000) + min(pvd, 500000)
-        
-        if st.button(f"📊 ประเมินภาษี {selected_year}", type="primary", use_container_width=True):
-            if "ไม่ถึง" in is_resident: st.success("🎉 ยกเว้นภาษี (อยู่ในไทยไม่ถึง 180 วัน)")
-            elif net_tax_gain_yr <= 0: st.success(f"🎉 ปี {selected_year} ไม่มีส่วนกำไรที่ถูกดึงกลับเข้าประเทศ")
-            else:
-                def calc_tax(n):
-                    if n > 5000000: return (n-5000000)*0.35 + 1265000
-                    if n > 2000000: return (n-2000000)*0.30 + 365000
-                    if n > 1000000: return (n-1000000)*0.25 + 115000
-                    if n > 750000: return (n-750000)*0.20 + 65000
-                    if n > 500000: return (n-500000)*0.15 + 27500
-                    if n > 300000: return (n-300000)*0.10 + 7500
-                    if n > 150000: return (n-150000)*0.05
-                    return 0
-                tax_raw = calc_tax(max(0, (other_income + net_tax_gain_yr) - t_deduct)) - calc_tax(max(0, other_income - t_deduct))
-                st.subheader(f"ผลการประเมิน (ปี {selected_year})")
-                r1, r2 = st.columns(2)
-                r1.metric("ภาษีจากพอร์ต ตปท.", f"฿{tax_raw:,.2f}")
-                r2.metric(f"🚨 จ่ายเพิ่มจริง (หักเครดิต ตปท.)", f"฿{max(0, tax_raw - sum_wht_thb_yr):,.2f}")
+        tax_v =
