@@ -695,4 +695,78 @@ if st.session_state["logged_in"]:
         st.info("💡 **หลักการภาษีใหม่:** การนำเงินกลับไทยจะถูกหักจาก 'เงินต้นสะสม' ก่อน หากหักเงินต้นหมดแล้ว ยอดที่นำกลับจึงจะถือเป็น 'กำไรที่ต้องเสียภาษี'")
         
         tax_idx = st.session_state.trade_ledger['Action'].isin(["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"])
-        tax_v =
+        tax_v = st.session_state.trade_ledger[tax_idx].copy()
+        tax_v["Out_USD"] = np.where(tax_v["Action"] == "นำเงินออกนอกประเทศ (Outward)", tax_v["Amount_USD"], 0.0)
+        tax_v["In_USD"] = np.where(tax_v["Action"].isin(["นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"]), tax_v["Amount_USD"], 0.0)
+        tax_v["FX_Rate"] = pd.to_numeric(tax_v["FX_Rate"], errors='coerce').fillna(0.0)
+        tax_v["WHT_USD"] = pd.to_numeric(tax_v["WHT_USD"], errors='coerce').fillna(0.0)
+        tax_v["Out_THB"], tax_v["In_THB"] = tax_v["Out_USD"] * tax_v["FX_Rate"], tax_v["In_USD"] * tax_v["FX_Rate"]
+        
+        capital_pool, taxable_gains_thb, running_bals = 0.0, [], []
+        for i, r in tax_v.iterrows():
+            if r['Action'] == "นำเงินออกนอกประเทศ (Outward)":
+                capital_pool += r['Out_THB']; taxable_gains_thb.append(0.0)
+            elif r['Action'] == "นำเงินเข้าประเทศไทย (Inward)":
+                capital_pool -= r['In_THB']
+                taxable_gains_thb.append(abs(capital_pool) if capital_pool < 0 else 0.0)
+                if capital_pool < 0: capital_pool = 0.0
+            elif r['Action'] == "รับเงินปันผล (Dividend)": taxable_gains_thb.append(r['In_THB'])
+            else: taxable_gains_thb.append(0.0)
+            running_bals.append(capital_pool)
+
+        tax_v['Taxable_Gain_THB'], tax_v['Balance_THB'] = taxable_gains_thb, running_bals
+        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True)
+        
+        ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed", column_order=["Date", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "Taxable_Gain_THB", "WHT_USD"])
+        if not ed_t[["FX_Rate", "WHT_USD"]].equals(tax_v[["FX_Rate", "WHT_USD"]]):
+            st.session_state.trade_ledger.loc[tax_idx, "FX_Rate"] = clean_df_types(ed_t)["FX_Rate"].values
+            st.session_state.trade_ledger.loc[tax_idx, "WHT_USD"] = clean_df_types(ed_t)["WHT_USD"].values
+            st.rerun()
+        if st.button("💾 บันทึกภาษีลง Cloud", type="primary", use_container_width=True): 
+            if save_df_to_sheet("Ledger", st.session_state.trade_ledger): st.success("บันทึกสำเร็จ!"); time.sleep(1); st.rerun()
+
+        st.markdown("---")
+        c1, c2, c3 = st.columns(3)
+        with c1: selected_year = st.selectbox("📅 ปีภาษี", ["2567 (2024)", "2568 (2025)", "2569 (2026)"]).split("(")[1][:4]
+        with c2: is_resident = st.radio("อาศัยในไทย?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
+        with c3: other_income = st.number_input("รายได้อื่นๆ (บาท)", min_value=0.0, value=500000.0, step=50000.0)
+
+        t_yr = tax_v[tax_v['Date'].str.endswith(selected_year)]
+        net_tax_gain_yr = t_yr["Taxable_Gain_THB"].sum()
+        sum_wht_thb_yr = (t_yr["WHT_USD"] * t_yr["FX_Rate"]).sum()
+
+        cf1, cf2, cf3 = st.columns(3)
+        cf1.metric("📤 โอนออกปีนี้", f"฿{t_yr['Out_THB'].sum():,.2f}")
+        cf2.metric("📥 นำกลับปีนี้", f"฿{t_yr['In_THB'].sum():,.2f}")
+        cf3.metric("🚨 กำไรที่เสียภาษี", f"฿{net_tax_gain_yr:,.2f}", delta_color="inverse")
+
+        st.markdown("---")
+        with st.expander("📝 ลดหย่อน", expanded=False):
+            d1, d2 = st.columns(2)
+            s_deduct = d1.checkbox("คู่สมรสไม่มีรายได้")
+            c_count = d2.number_input("บุตร", min_value=0)
+            inv1, inv2, inv3 = st.columns(3)
+            life = inv1.number_input("ประกันชีวิต", min_value=0.0)
+            health = inv2.number_input("ประกันสุขภาพ", min_value=0.0)
+            pvd = inv3.number_input("PVD", min_value=0.0)
+        
+        t_deduct = min(other_income * 0.5, 100000) + 60000 + (60000 if s_deduct else 0) + (c_count * 30000) + min(life + min(health, 25000), 100000) + min(pvd, 500000)
+        
+        if st.button(f"📊 ประเมินภาษี {selected_year}", type="primary", use_container_width=True):
+            if "ไม่ถึง" in is_resident: st.success("🎉 ยกเว้นภาษี (อยู่ในไทยไม่ถึง 180 วัน)")
+            elif net_tax_gain_yr <= 0: st.success(f"🎉 ปี {selected_year} ไม่มีส่วนกำไรที่ถูกดึงกลับเข้าประเทศ")
+            else:
+                def calc_tax(n):
+                    if n > 5000000: return (n-5000000)*0.35 + 1265000
+                    if n > 2000000: return (n-2000000)*0.30 + 365000
+                    if n > 1000000: return (n-1000000)*0.25 + 115000
+                    if n > 750000: return (n-750000)*0.20 + 65000
+                    if n > 500000: return (n-500000)*0.15 + 27500
+                    if n > 300000: return (n-300000)*0.10 + 7500
+                    if n > 150000: return (n-150000)*0.05
+                    return 0
+                tax_raw = calc_tax(max(0, (other_income + net_tax_gain_yr) - t_deduct)) - calc_tax(max(0, other_income - t_deduct))
+                st.subheader(f"ผลการประเมิน (ปี {selected_year})")
+                r1, r2 = st.columns(2)
+                r1.metric("ภาษีจากพอร์ต ตปท.", f"฿{tax_raw:,.2f}")
+                r2.metric(f"🚨 จ่ายเพิ่มจริง (หักเครดิต ตปท.)", f"฿{max(0, tax_raw - sum_wht_thb_yr):,.2f}")
