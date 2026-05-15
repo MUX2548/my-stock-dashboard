@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.17", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.18", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.17", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.18", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -33,6 +33,8 @@ st.markdown("""
     div[data-testid="stMetricValue"] { padding-bottom: 0px; }
     .stSpinner > div > div { border-top-color: #deff9a !important; }
     [data-testid="stSidebar"] { background-color: #0e1117; }
+    /* ปรับสีตารางให้ดูพรีเมียม */
+    [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -104,8 +106,11 @@ def save_df_to_sheet(worksheet_name, df):
         st.error(f"❌ เกิดข้อผิดพลาดขณะเขียนข้อมูลลง Cloud: {e}")
         return False
 
+# สร้าง Session State พื้นฐาน
 if "trade_ledger" not in st.session_state: st.session_state.trade_ledger = load_ledger_data()
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
+# Session State สำหรับ "พอร์ตจำลอง" (Paper Trading)
+if "mock_port" not in st.session_state: st.session_state["mock_port"] = pd.DataFrame(columns=["Date", "Ticker", "Buy_Price", "Shares"])
 
 def log_visitor():
     try:
@@ -261,6 +266,7 @@ def get_live_fx():
     try: return yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
     except: return 35.00
 
+# --- อัปเกรด AI Screener (เพิ่มกราฟเส้น Mini-Chart) ---
 @st.cache_data(ttl=300)
 def run_ai_screener(ticker_list_str):
     tickers = [t.strip().upper() for t in ticker_list_str.split(',') if t.strip()]
@@ -269,6 +275,10 @@ def run_ai_screener(ticker_list_str):
         try:
             hist = yf.Ticker(t).history(period="6mo")
             if hist.empty: continue
+            
+            # ดึงราคา 30 วันย้อนหลังมาทำกราฟ Sparkline
+            recent_prices = hist['Close'].tail(30).tolist()
+            
             close = hist['Close'].iloc[-1]
             ema50 = hist['Close'].ewm(span=50).mean().iloc[-1]
             delta = hist['Close'].diff()
@@ -287,7 +297,16 @@ def run_ai_screener(ticker_list_str):
             elif close > ema50 and rsi_val >= 70: action = "🔥 OVERBOUGHT (แบ่งขาย)"
             else: action = "⏳ WAIT (รอดูทรง)"
                 
-            results.append({"หุ้น": t, "ราคาล่าสุด": f"${close:.2f}", "EMA50": f"${ema50:.2f}", "เทรนด์": trend, "โมเมนตัม": momentum, "RSI": f"{rsi_val:.1f}", "คำแนะนำ AI": action})
+            results.append({
+                "หุ้น": t, 
+                "กราฟ 30 วัน": recent_prices,  # คอลัมน์กราฟใหม่
+                "ราคาล่าสุด": f"${close:.2f}", 
+                "EMA50": f"${ema50:.2f}", 
+                "เทรนด์": trend, 
+                "โมเมนตัม": momentum, 
+                "RSI": f"{rsi_val:.1f}", 
+                "คำแนะนำ AI": action
+            })
         except: pass
     return pd.DataFrame(results)
 
@@ -325,12 +344,12 @@ if st.session_state["logged_in"]:
 with st.spinner(f"⏳ กำลังวิเคราะห์ข้อมูล (AI Processing)..."):
     df, fund, matrix, market_signal = load_pro_data(ticker, tf_option)
 
-tabs_list = ["📊 วิเคราะห์รายตัว", "🎯 เรดาร์สแกน"]
+tabs_list = ["📊 วิเคราะห์รายตัว", "🎯 เรดาร์ & พอร์ตจำลอง"]
 if st.session_state["logged_in"]: tabs_list.extend(["💼 บัญชีลงทุน", "🧾 ระบบภาษี"])
 tabs = st.tabs(tabs_list)
 
 # ==========================================
-# หน้า 1: วิเคราะห์กราฟรายตัว (Beginner Edition)
+# หน้า 1: วิเคราะห์กราฟรายตัว
 # ==========================================
 with tabs[0]:
     if not df.empty:
@@ -409,10 +428,7 @@ with tabs[0]:
             fig.update_xaxes(rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
             
-            # --- NEW: ข้อมูลพื้นฐานสำหรับมือใหม่ (เงินปันผล & การประเมินมูลค่า) ---
             st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
-            
-            # แปลผล P/E ให้มือใหม่เข้าใจง่ายๆ
             pe_v = fund.get('pe_val', 0)
             if pe_v <= 0: pe_status = "🔴 ขาดทุน (ไม่มี P/E)"
             elif pe_v < 15: pe_status = "🟢 ถูก (Value)"
@@ -425,7 +441,6 @@ with tabs[0]:
             f3.metric("ROE", fund.get('roe','N/A'))
             f4.metric("การเติบโตรายได้", fund.get('rev_growth','N/A'))
             f5.metric("💰 เงินปันผล", fund.get('dividend','ไม่มีปันผล'), "ผลตอบแทนรายปี", delta_color="normal" if fund.get('dividend') != "ไม่มีปันผล" else "off")
-            
             if is_speculative: st.error("⚠️ หุ้นเก็งกำไรความเสี่ยงสูง (ขาดทุน หรือ ROE ติดลบ) ระบบจะปรับลดงบเข้าซื้ออัตโนมัติ")
         
         with c_r:
@@ -433,7 +448,6 @@ with tabs[0]:
             p_pct = (p_diff / prev_p) * 100 if prev_p > 0 else 0
             st.metric("ราคาปัจจุบัน", f"${last_p:,.2f}", f"{p_diff:,.2f} ({p_pct:,.2f}%)")
             
-            # --- NEW: บอกแนวรับแนวต้านแบบชัดๆ ---
             res_val = df['High'].tail(20).max()
             sup_val = df['E50'].iloc[-1]
             st.markdown(f"""
@@ -463,11 +477,11 @@ with tabs[0]:
     else: st.warning(f"❌ ไม่พบข้อมูลหุ้น '{ticker}'")
 
 # ==========================================
-# หน้า 2: เรดาร์สแกนหุ้น (AI Screener)
+# หน้า 2: เรดาร์ & พอร์ตจำลอง (NEW UPGRADE)
 # ==========================================
 with tabs[1]:
-    st.markdown("## 🎯 เรดาร์สแกนหุ้นอัตโนมัติ (AI Screener)")
-    st.markdown("ระบุรายชื่อหุ้นที่ต้องการเฝ้าจับตา AI จะทำการสแกนหาจุดเข้าซื้อ/จุดขายทำกำไรให้ทันทีครับ")
+    st.markdown("## 🎯 เรดาร์สแกนหุ้น (AI Screener & Mini-Chart)")
+    st.markdown("ระบบจะสแกนสัญญาณเทรด พร้อมแสดงกราฟเส้น (30 วันย้อนหลัง) ให้เห็นทิศทางทันที")
     
     default_tickers = "AAPL, MSFT, TSLA, NVDA, GOOGL, AMD, PLTR"
     if holdings:
@@ -476,8 +490,8 @@ with tabs[1]:
         
     watch_list = st.text_input("📝 พิมพ์ชื่อหุ้นคั่นด้วยลูกน้ำ (Comma):", value=default_tickers)
     
-    if st.button("🚀 เริ่มสแกนสัญญาณเทรด", type="primary"):
-        with st.spinner("⏳ AI กำลังวิ่งตรวจสอบข้อมูลทีละตัว..."):
+    if st.button("🚀 สแกนและอัปเดตกราฟ", type="primary"):
+        with st.spinner("⏳ AI กำลังวิ่งดึงกราฟและข้อมูลทีละตัว..."):
             screener_df = run_ai_screener(watch_list)
             if not screener_df.empty:
                 def color_action(val):
@@ -486,11 +500,88 @@ with tabs[1]:
                     elif "OVERBOUGHT" in str(val): return 'background-color: rgba(255, 214, 0, 0.2); color: #FFD600; font-weight: bold;'
                     elif "WAIT" in str(val): return 'color: #FF5252;'
                     return ''
-                st.dataframe(screener_df.style.map(color_action, subset=["คำแนะนำ AI"]), use_container_width=True)
+                
+                # แสดงตารางพร้อมแทรกกราฟเส้น (Sparkline)
+                st.dataframe(
+                    screener_df.style.map(color_action, subset=["คำแนะนำ AI"]),
+                    column_config={
+                        "กราฟ 30 วัน": st.column_config.LineChartColumn("ทิศทาง (30 วัน)", help="กราฟแสดงราคาปิดย้อนหลัง 30 วัน")
+                    },
+                    use_container_width=True
+                )
             else: st.warning("ไม่พบข้อมูล กรุณาตรวจสอบชื่อหุ้นอีกครั้งครับ")
 
+    st.markdown("---")
+    
+    # 🎮 โซนพอร์ตจำลอง (Paper Trading Room)
+    st.markdown("## 🎮 ห้องซ้อม: พอร์ตจำลอง (Paper Trading)")
+    st.markdown("ทดสอบวิชาคัดหุ้นด้วยระบบนี้ ข้อมูลจะแยกออกจากบัญชีเงินจริง 100% (ข้อมูลจะหายไปเมื่อปิดแอป)")
+    
+    with st.expander("➕ เพิ่มรายการเทรดทิพย์", expanded=False):
+        with st.form("mock_trade_form"):
+            c1, c2, c3, c4 = st.columns(4)
+            m_date = c1.text_input("วันที่", value=current_date)
+            m_ticker = c2.text_input("ชื่อหุ้น (Ticker)").upper()
+            m_price = c3.number_input("ราคาซื้อ ($)", min_value=0.0, format="%.2f")
+            m_shares = c4.number_input("จำนวนหุ้น", min_value=0.0, format="%.4f")
+            if st.form_submit_button("💾 ซื้อเข้าพอร์ตจำลอง", use_container_width=True):
+                if m_ticker and m_price > 0 and m_shares > 0:
+                    new_mock = pd.DataFrame([{"Date": m_date, "Ticker": m_ticker, "Buy_Price": m_price, "Shares": m_shares}])
+                    st.session_state["mock_port"] = pd.concat([st.session_state["mock_port"], new_mock], ignore_index=True)
+                    st.success(f"บันทึก {m_ticker} ลงพอร์ตจำลองเรียบร้อย!")
+                    time.sleep(1)
+                    st.rerun()
+                else: st.error("กรุณากรอกข้อมูลให้ครบถ้วน")
+
+    if not st.session_state["mock_port"].empty:
+        mock_df = st.session_state["mock_port"].copy()
+        mock_tickers = mock_df["Ticker"].unique().tolist()
+        
+        with st.spinner("⏳ กำลังดึงราคาปัจจุบันมาคำนวณกำไร/ขาดทุนในพอร์ตจำลอง..."):
+            mock_prices = get_batch_live_prices(mock_tickers)
+            
+            mock_results = []
+            mock_total_cost = 0
+            mock_total_val = 0
+            for idx, row in mock_df.iterrows():
+                t = row["Ticker"]
+                bp = float(row["Buy_Price"])
+                sh = float(row["Shares"])
+                cp = mock_prices.get(t, bp)
+
+                cost = bp * sh
+                val = cp * sh
+                pl_usd = val - cost
+                pl_pct = (pl_usd / cost * 100) if cost > 0 else 0
+
+                mock_total_cost += cost
+                mock_total_val += val
+
+                mock_results.append({
+                    "วันที่": row["Date"], "หุ้น": t, "ราคาซื้อ": f"${bp:.2f}", "จำนวน": sh,
+                    "ราคาล่าสุด": f"${cp:.2f}", "กำไร/ขาดทุน ($)": pl_usd, "% เปลี่ยนแปลง": pl_pct
+                })
+
+            st.markdown(f"""
+            <div style='background-color:#1E1E1E; padding:15px; border-radius:8px; display:flex; justify-content:space-around;'>
+                <div><b>ต้นทุนรวมทิพย์:</b> <span style='color:#E0E0E0;'>${mock_total_cost:,.2f}</span></div>
+                <div><b>มูลค่าปัจจุบัน:</b> <span style='color:#E0E0E0;'>${mock_total_val:,.2f}</span></div>
+                <div><b>กำไร/ขาดทุนรวม:</b> <span style='color:{"#00E676" if mock_total_val>=mock_total_cost else "#FF5252"}; font-weight:bold;'>${(mock_total_val - mock_total_cost):,.2f}</span></div>
+            </div><br>
+            """, unsafe_allow_html=True)
+            
+            res_mock_df = pd.DataFrame(mock_results)
+            def color_mock_profit(val): return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
+            st.dataframe(res_mock_df.style.map(color_mock_profit, subset=["กำไร/ขาดทุน ($)", "% เปลี่ยนแปลง"]).format({"กำไร/ขาดทุน ($)": "${:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%"}), use_container_width=True)
+
+        if st.button("🗑️ ล้างพอร์ตจำลองทิ้งทั้งหมด"):
+            st.session_state["mock_port"] = pd.DataFrame(columns=["Date", "Ticker", "Buy_Price", "Shares"])
+            st.rerun()
+    else:
+        st.info("พอร์ตจำลองยังว่างเปล่า ลองเพิ่มรายการทดสอบดูสิครับ!")
+
 # ==========================================
-# หน้า 3: บัญชีและพอร์ตโฟลิโอ
+# หน้า 3: บัญชีและพอร์ตโฟลิโอ (เงินจริง)
 # ==========================================
 if st.session_state["logged_in"]:
     with tabs[2]:
