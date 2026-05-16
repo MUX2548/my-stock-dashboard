@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.24", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.25", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.24", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.25", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -367,6 +367,11 @@ tabs = st.tabs(tabs_list)
 with tabs[0]:
     if not df.empty:
         last_p = df['Close'].iloc[-1]
+        prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
+        rsi_val = df['RSI'].iloc[-1]
+        is_uptrend = last_p > df['E50'].iloc[-1]
+        is_bullish_macd = df['MACD'].iloc[-1] > df['Sig'].iloc[-1]
+        
         st.markdown(f"## 📈 {ticker} | <span style='color:#00E676;'>${last_p:,.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"<span style='color:#B0BEC5;'>📅 ข้อมูล ณ: {current_date} | 🕒 {current_time}</span>", unsafe_allow_html=True)
         
@@ -379,15 +384,52 @@ with tabs[0]:
             website = fund.get('website', '#')
             if website != '#': c_b3.markdown(f"**🌐 เว็บไซต์:** <a href='{website}' target='_blank'>คลิกดูเว็บไซต์</a>", unsafe_allow_html=True)
 
+        # --- 🟢 กู้คืน: แถบสัญญาณตลาดโลก 4 คอลัมน์ (เหมือนรูป 1000012802.jpg) ---
         spy_t = market_signal.get("spy_trend", "N/A")
         spy_p = market_signal.get("spy_price", 0.0)
         v_val = market_signal.get("vix", 0.0)
-        m1, m2, m3 = st.columns(3)
-        m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f}", spy_t, delta_color="normal" if "ขึ้น" in spy_t else "inverse")
-        vix_stat = "Risk ON" if 0 < v_val < 25 else "Panic"
-        m2.metric("ความกลัว (VIX)", f"{v_val:.2f}", vix_stat, delta_color="normal" if vix_stat=="Risk ON" else "inverse")
-        m3.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", market_signal.get("smart_money"), delta_color="off")
+        vix_ts = market_signal.get("vix_ts", 0.0)
+        sm_flow = market_signal.get("smart_money", "N/A")
+        
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f}" if spy_p > 0 else "N/A", spy_t if spy_p > 0 else None, delta_color="normal" if "ขึ้น" in spy_t else "inverse" if "ลง" in spy_t else "off")
+        vix_stat = "Risk ON" if 0 < v_val < 20 else "Neutral" if 0 < v_val < 30 else "Panic"
+        m2.metric("ความกลัว (VIX)", f"{v_val:.2f}" if v_val > 0 else "N/A", vix_stat if v_val > 0 else None, delta_color="normal" if 0 < v_val < 25 else "inverse" if v_val >= 25 else "off")
+        ts_label = "🟢 สงบ" if 0 < vix_ts < 1 else "🔴 ตระหนก" if vix_ts > 0 else "N/A"
+        m3.metric("โครงสร้าง (VIX/VIX3M)", f"{vix_ts:.2f}" if vix_ts > 0 else "N/A", ts_label if vix_ts > 0 else None, delta_color="normal" if 0 < vix_ts < 1 else "inverse" if vix_ts >= 1 else "off")
+        m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow if sm_flow != "N/A" else None, delta_color="normal" if "ON" in sm_flow else "inverse" if "OFF" in sm_flow else "off")
 
+        # --- 🟢 กู้คืน: กล่องทัศนะเทรดเดอร์แนวยาว (เหมือนรูป 1000012802.jpg) ---
+        is_market_good = "ขึ้น" in spy_t and (0 < v_val < 25)
+        if is_market_good and is_uptrend and is_bullish_macd and rsi_val < 70:
+            rec, color = "STRONG BUY / HOLD", "#00E676"
+            msg = f"**'จังหวะน้ำขึ้นต้องรีบตัก'** - ตลาดเอื้ออำนวย หุ้นเป็นขาขึ้นเต็มตัว โมเมนตัมบวก แนะนำให้สะสมหรือรันเทรนด์ต่อ"
+        elif is_uptrend and rsi_val >= 70:
+            rec, color = "HOLD / TAKE PROFIT", "#FFD600"
+            msg = f"**'ระวังความร้อนแรง'** - หุ้นเป็นขาขึ้นแต่เข้าเขตซื้อมากเกินไป ไม่ควรไล่ราคา แนะนำรันเทรนด์แบบยก Stop Loss ตาม"
+        elif not is_uptrend and is_bullish_macd and rsi_val < 35:
+            rec, color = "SPECULATIVE BUY", "#2962FF"
+            msg = f"**'ลุ้นรีบาวด์'** - หุ้นเสียทรงขาขึ้นแต่เริ่มมีแรงซื้อกลับ เหมาะเก็งกำไรระยะสั้น (ต้องมีจุดตัดขาดทุนชัดเจน)"
+        elif not is_uptrend:
+            rec, color = "AVOID / WAIT", "#FF5252"
+            msg = f"**'ทับมือรักษาเงินต้น'** - ภาพรวมเป็นขาลง โมเมนตัมอ่อนแอ แนะนำให้รอดูสถานการณ์ไปก่อน"
+        else:
+            rec, color = "NEUTRAL / SIDEWAY", "#B0BEC5"
+            msg = f"**'รอเลือกทาง'** - กราฟแกว่งตัว สัญญาณขัดแย้งกัน แนะนำเทรดในกรอบสั้นๆ หรือรอจนกว่าจะชัดเจน"
+
+        st.markdown(f"""
+        <div style="background-color: #1E1E1E; border-left: 8px solid {color}; padding: 20px; border-radius: 8px; margin: 15px 0;">
+            <h4 style="color: {color}; margin-top: 0;">🤵 ทัศนะเทรดเดอร์: {rec}</h4>
+            <p style="color: #E0E0E0; margin-bottom: 0;">{msg}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # --- 🟢 กู้คืน: แถบเป้าหมาย Harmonic Matrix (เหมือนรูป 1000012802.jpg) ---
+        rs_val = df['RS'].iloc[-1]
+        rs_t = f" | **Relative Strength:** {'🟢 ชนะตลาด' if rs_val > 0 else '🔴 อ่อนแอ'} ({rs_val:.2f}%)" if not np.isnan(rs_val) else ""
+        if matrix: st.info(f"🔮 **ทิศทาง 1D (รายวัน):** {matrix['tr']} | **เป้าหมาย (Harmonic Matrix):** {matrix['l']:,.2f} - {matrix['u']:,.2f} {rs_t}")
+        
+        # --- แบ่งจอซ้าย-ขวา สำหรับ กราฟ และ แผนเทรด (เหมือนรูป 1000012801.jpg) ---
         c_l, c_r = st.columns([7, 3])
         with c_l:
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
@@ -402,6 +444,7 @@ with tabs[0]:
             fig.update_layout(template="plotly_dark", height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
             
+            # ข้อมูลพื้นฐานจัด 2 แถว เพื่อป้องกันตัวเลขแหว่ง (ไม่มี ... อีกต่อไป)
             st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
             pe_v = fund.get('pe_val', 0)
             if pe_v <= 0: pe_status = "🔴 ขาดทุน"
@@ -436,29 +479,33 @@ with tabs[0]:
                 </div>
                 """, unsafe_allow_html=True)
             
-            is_uptrend = last_p > df['E50'].iloc[-1]
-            is_bullish_macd = df['MACD'].iloc[-1] > df['Sig'].iloc[-1]
+            # --- 🛠️ FIX: แก้บั๊กกล่องสีแดงไม่ให้ HTML พัง (พิมพ์โค้ดแยกบรรทัดให้ปลอดภัยที่สุด) ---
             if is_uptrend and is_bullish_macd:
                 p_main, summary = "ย่อ = ซื้อเพิ่ม / ถือรันเทรนด์", "🟢 'เกมลุย'"
-                not_to_do = "❌ ห้ามสวนเทรนด์ (Short/Put)\n❌ อย่ารีบขายหมู"
+                not_to_do = "❌ ห้ามสวนเทรนด์ (Short/Put)<br>❌ อย่ารีบขายหมู"
+                t_flow = f"หลุด {levels['s1']:.2f} (ระวัง) ➡ ยืน {levels['s1']:.2f} (ลุ้นต่อ) ➡ เบรก {levels['r2']:.2f} (ไปต่อยาว)"
             elif not is_uptrend:
                 p_main, summary = "เด้ง = หนี / ลดความเสี่ยง", "🔴 'เกมป้องกัน'"
-                not_to_do = "❌ ห้ามไล่ซื้อสวนทาง\n❌ ห้ามถัวเพิ่มเด็ดขาด"
+                not_to_do = "❌ ห้ามไล่ซื้อสวนทาง<br>❌ ห้ามถัวเพิ่มเด็ดขาด"
+                t_flow = f"หลุด {levels['s2']:.2f} (ลงต่อลึก) ➡ ยืน {levels['r1']:.2f} ได้ (ลุ้นกลับตัว)"
             else:
                 p_main, summary = "รอจังหวะ / เลือกทาง", "🟡 'เกมระวัง'"
-                not_to_do = "❌ ห้ามทุ่มสุดตัว\n❌ อย่าเชื่อสัญญาณเดียว"
+                not_to_do = "❌ ห้ามทุ่มสุดตัว<br>❌ อย่าเชื่อสัญญาณเดียว"
+                t_flow = f"หลุด {levels['s2']:.2f} (จบรอบ) ➡ แขว่งกรอบ {levels['s2']:.2f}-{levels['r1']:.2f}"
                 
             st.markdown(f"""
             <div class="pro-box" style="border-top: 3px solid #FFD600;">
                 <div class="pro-title c-yellow">แผนการเทรด (AI Update)</div>
                 <div style="margin-bottom:8px;"><b>🎯 แผนหลัก (ตอนนี้)</b><br><span class="c-gray">{p_main}</span></div>
             </div>
+            
             <div class="pro-box" style="border-top: 3px solid #FF5252; background-color: rgba(255, 82, 82, 0.05);">
                 <div class="pro-title c-red">สิ่งที่ไม่ควรทำตอนนี้ ⚠️</div>
-                <div class="c-red" style="white-space: pre-wrap;">{not_to_do}</div>
+                <div class="c-red">{not_to_do}</div>
             </div>
+            
             <div class="pro-box">
-                <div class="c-gray">💡 สรุปสั้นๆ: {summary}</div>
+                <div class="c-gray">💡 <b>สรุปสั้นๆ:</b> {summary}<br><br><b>แผนภาพแนวโน้ม:</b> {t_flow}</div>
             </div>
             """, unsafe_allow_html=True)
             
@@ -471,12 +518,6 @@ with tabs[0]:
                 st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
                 ra = t_cap * (r_pct / 100.0)
                 if last_p > sl: st.success(f"🧮 **เข้าซื้อได้สูงสุด:** {ra/(last_p-sl):.0f} หุ้น")
-            
-            st.markdown("---")
-            st.subheader("🤖 เทคนิคอล")
-            st.write(f"**เทรนด์:** {'🟢 ขาขึ้น' if is_uptrend else '🔴 ขาลง'}")
-            st.write(f"**แรงซื้อ:** {'🟢 ได้เปรียบ' if is_bullish_macd else '🔴 อ่อนแอ'}")
-            st.write(f"**RSI:** {df['RSI'].iloc[-1]:.2f} ({'🔴 Overbought' if df['RSI'].iloc[-1]>=70 else '🟢 Safe'})")
     else: st.warning(f"❌ ไม่พบข้อมูล '{ticker}'")
 
 # ==========================================
@@ -530,12 +571,11 @@ with tabs[1]:
                     st.session_state["mock_port"] = pd.concat([st.session_state["mock_port"], new_mock], ignore_index=True)
                     st.success(f"บันทึก {m_ticker} สำเร็จ!"); time.sleep(1); st.rerun()
 
-    # --- 🛠️ กู้คืนตาราง P/L Summary แบบเดิม (ตารางเดียวจบ) ---
+    # --- 🟢 กู้คืน: ตาราง P/L Summary แบบเดิม (ตารางเดียวจบ) ---
     if not st.session_state["mock_port"].empty:
         st.markdown("### 📊 สรุปพอร์ตจำลองปัจจุบัน (P/L Summary)")
         
         mock_df = st.session_state["mock_port"].copy()
-        # แปลงข้อมูลให้เป็นตัวเลขและรวมหุ้นตัวเดียวกัน
         mock_df['Buy_Price'] = pd.to_numeric(mock_df['Buy_Price'], errors='coerce').fillna(0)
         mock_df['Shares'] = pd.to_numeric(mock_df['Shares'], errors='coerce').fillna(0)
         mock_df['Total_Cost'] = mock_df['Buy_Price'] * mock_df['Shares']
