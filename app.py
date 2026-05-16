@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.20", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.21", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.20", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.21", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -34,6 +34,17 @@ st.markdown("""
     .stSpinner > div > div { border-top-color: #deff9a !important; }
     [data-testid="stSidebar"] { background-color: #0e1117; }
     [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
+    
+    /* 🛠️ แก้ไขปัญหาตัวเลขใน Metric โดนตัดเป็น ... */
+    [data-testid="stMetricValue"] { 
+        font-size: 1.5rem !important; 
+        white-space: pre-wrap !important; 
+        word-break: break-word !important; 
+    }
+    [data-testid="stMetricDelta"] > div {
+        white-space: pre-wrap !important; 
+        word-break: break-word !important; 
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -105,12 +116,10 @@ def save_df_to_sheet(worksheet_name, df):
         st.error(f"❌ เกิดข้อผิดพลาดขณะเขียนข้อมูลลง Cloud: {e}")
         return False
 
-# --- Setup Session States ---
 if "trade_ledger" not in st.session_state: st.session_state.trade_ledger = load_ledger_data()
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
 if "mock_port" not in st.session_state: st.session_state["mock_port"] = pd.DataFrame(columns=["Date", "Ticker", "Buy_Price", "Shares"])
 
-# ดึงรายการโปรดเดิม (ถ้ามี) มาแปลงเป็นลิสต์เพื่อใช้กับระบบจัดการหุ้นแบบใหม่
 if "radar_tickers" not in st.session_state:
     old_fav = st.session_state.get("favorite_tickers", "ASTS, RKLB, NVTS, IREN, RGTI, C, TSLA, PLTR, ONDS, OKLO, EOSE, IONQ")
     st.session_state.radar_tickers = [t.strip().upper() for t in old_fav.split(',') if t.strip()]
@@ -428,19 +437,26 @@ with tabs[0]:
             fig.update_xaxes(rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
             
+            # --- 🛠️ FIX: ปรับรูปแบบตารางข้อมูลพื้นฐานให้แสดงผลครบถ้วนบน Tablet ---
             st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
             pe_v = fund.get('pe_val', 0)
             if pe_v <= 0: pe_status = "🔴 ขาดทุน (ไม่มี P/E)"
             elif pe_v < 15: pe_status = "🟢 ถูก (Value)"
-            elif pe_v < 30: pe_status = "🟡 สมเหตุสมผล (Fair)"
-            else: pe_status = "🟠 แพง/เก็งกำไรโกรท (Premium)"
+            elif pe_v < 30: pe_status = "🟡 เหมาะสม (Fair)"
+            else: pe_status = "🟠 แพง (Premium)"
 
-            f1, f2, f3, f4, f5 = st.columns(5)
+            # แยกเป็น 2 แถว เพื่อให้มีพื้นที่แสดงตัวเลขกว้างขึ้น
+            f1, f2, f3 = st.columns(3)
             f1.metric("P/S Ratio", fund.get('ps','N/A'))
             f2.metric("P/E Ratio", fund.get('pe','N/A'), pe_status, delta_color="off")
             f3.metric("ROE", fund.get('roe','N/A'))
+            
+            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+            
+            f4, f5, f6 = st.columns(3)
             f4.metric("การเติบโตรายได้", fund.get('rev_growth','N/A'))
-            f5.metric("💰 เงินปันผล", fund.get('dividend','ไม่มีปันผล'), "ผลตอบแทนรายปี", delta_color="normal" if fund.get('dividend') != "ไม่มีปันผล" else "off")
+            f5.metric("💰 เงินปันผล", fund.get('dividend','ไม่มี'), "ผลตอบแทนรายปี", delta_color="normal" if fund.get('dividend') != "ไม่มีปันผล" else "off")
+            
             if is_speculative: st.error("⚠️ หุ้นเก็งกำไรความเสี่ยงสูง (ขาดทุน หรือ ROE ติดลบ) ระบบจะปรับลดงบเข้าซื้ออัตโนมัติ")
         
         with c_r:
@@ -486,13 +502,11 @@ with tabs[1]:
     st.markdown("### 📋 จัดการรายชื่อหุ้นในเรดาร์")
     c_rad1, c_rad2 = st.columns([7, 3])
     with c_rad1:
-        # ระบบป้ายชื่อ (Tags) กดกากบาทลบได้เลย
         selected_radar = st.multiselect("หุ้นที่กำลังเฝ้าจับตา (กด X เพื่อลบออก):", options=st.session_state.radar_tickers, default=st.session_state.radar_tickers)
         if selected_radar != st.session_state.radar_tickers:
             st.session_state.radar_tickers = selected_radar
             st.rerun()
     with c_rad2:
-        # ช่องพิมพ์เพิ่มหุ้นใหม่
         new_ticker = st.text_input("➕ เพิ่มหุ้นใหม่", placeholder="เช่น MSFT").upper().strip()
         if st.button("เพิ่มเข้าเรดาร์", use_container_width=True):
             if new_ticker and new_ticker not in st.session_state.radar_tickers:
@@ -521,7 +535,6 @@ with tabs[1]:
 
     st.markdown("---")
     
-    # 🎮 โซนพอร์ตจำลอง (Paper Trading Room)
     st.markdown("## 🎮 ห้องซ้อม: พอร์ตจำลอง (Paper Trading)")
     st.markdown("ทดสอบวิชาคัดหุ้นด้วยระบบนี้ ข้อมูลจะแยกออกจากบัญชีเงินจริง 100% (ข้อมูลจะหายไปเมื่อปิดแอป)")
     
@@ -542,13 +555,12 @@ with tabs[1]:
                 else: st.error("กรุณากรอกข้อมูลให้ครบถ้วน")
 
     if not st.session_state["mock_port"].empty:
-        # --- NEW: ตารางประวัติการซื้อขาย (ลบ/แก้ไข เป็นรายตัวได้) ---
         st.markdown("### 📝 ประวัติการซื้อขาย (Transaction History)")
         st.info("💡 **Tips:** คุณสามารถแก้ไขตัวเลขในตารางนี้ได้โดยตรง หรือ **เลือกติ๊กถูกที่แถวเพื่อลบหุ้น (Delete)** ทิ้งทีละรายการได้เลยค่ะ")
         
         edited_mock = st.data_editor(
             st.session_state["mock_port"],
-            num_rows="dynamic", # เปิดฟังก์ชันให้กด Add/Delete row ได้
+            num_rows="dynamic",
             use_container_width=True,
             column_config={
                 "Date": "วันที่",
@@ -557,12 +569,10 @@ with tabs[1]:
                 "Shares": st.column_config.NumberColumn("จำนวนหุ้น", format="%.4f")
             }
         )
-        # ถ้ามีการกดลบ หรือแก้ไขตาราง ให้จำค่าใหม่ไว้ทันที
         if not edited_mock.equals(st.session_state["mock_port"]):
             st.session_state["mock_port"] = edited_mock
             st.rerun()
 
-        # --- ส่วนแสดงสรุปกำไร/ขาดทุน ---
         st.markdown("### 📊 สรุปพอร์ตจำลองปัจจุบัน")
         mock_df = st.session_state["mock_port"].copy()
         mock_tickers = mock_df["Ticker"].unique().tolist()
@@ -596,10 +606,10 @@ with tabs[1]:
                 })
 
             st.markdown(f"""
-            <div style='background-color:#1E1E1E; padding:15px; border-radius:8px; display:flex; justify-content:space-around;'>
-                <div><b>ต้นทุนรวมทิพย์:</b> <span style='color:#E0E0E0;'>${mock_total_cost:,.2f}</span></div>
-                <div><b>มูลค่าปัจจุบัน:</b> <span style='color:#E0E0E0;'>${mock_total_val:,.2f}</span></div>
-                <div><b>กำไร/ขาดทุนรวม:</b> <span style='color:{"#00E676" if mock_total_val>=mock_total_cost else "#FF5252"}; font-weight:bold;'>${(mock_total_val - mock_total_cost):,.2f}</span></div>
+            <div style='background-color:#1E1E1E; padding:15px; border-radius:8px; display:flex; justify-content:space-around; flex-wrap: wrap;'>
+                <div style='margin-bottom: 5px;'><b>ต้นทุนรวมทิพย์:</b> <span style='color:#E0E0E0;'>${mock_total_cost:,.2f}</span></div>
+                <div style='margin-bottom: 5px;'><b>มูลค่าปัจจุบัน:</b> <span style='color:#E0E0E0;'>${mock_total_val:,.2f}</span></div>
+                <div style='margin-bottom: 5px;'><b>กำไร/ขาดทุนรวม:</b> <span style='color:{"#00E676" if mock_total_val>=mock_total_cost else "#FF5252"}; font-weight:bold;'>${(mock_total_val - mock_total_cost):,.2f}</span></div>
             </div><br>
             """, unsafe_allow_html=True)
             
