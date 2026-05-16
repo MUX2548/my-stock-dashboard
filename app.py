@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.22", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.24", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.22", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.24", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -195,7 +195,7 @@ def load_pro_data(ticker_symbol, tf):
     try:
         s = yf.Ticker(ticker_symbol)
         df = s.history(period=p, interval=i).dropna(subset=['Close'])
-        if df.empty: return pd.DataFrame(), {}, None, None
+        if df.empty: return pd.DataFrame(), {}, None, None, {}
         
         info = s.info
         en_summary = info.get('longBusinessSummary', 'N/A')
@@ -226,7 +226,6 @@ def load_pro_data(ticker_symbol, tf):
                 market_signal["smart_money"] = "Risk ON 🟢" if hyg_ief_ratio.iloc[-1] > hyg_ief_ratio.ewm(span=20).mean().iloc[-1] else "Risk OFF 🔴"
         except: pass
         
-        # เพิ่ม EMA แบบครบชุด 10, 25, 50, 200
         df['E10'] = df['Close'].ewm(span=10).mean()
         df['E25'] = df['Close'].ewm(span=25).mean()
         df['E50'] = df['Close'].ewm(span=50).mean()
@@ -261,13 +260,11 @@ def load_pro_data(ticker_symbol, tf):
         tr = "ขึ้น 📈" if last > df['E50'].iloc[-1] else "ลง 📉"
         mat = {"l": last * (1 - v*1.0) if tr == "ลง 📉" else last * (1 - v*0.5), "u": last * (1 - v*0.5) if tr == "ลง 📉" else last * (1 + v*1.0), "tr": tr}
         
-        # คำนวณแนวรับ-แนวต้านแบบมืออาชีพ
         atr_proxy = df['High'].tail(14).max() - df['Low'].tail(14).min()
         levels = {
             "r1": last + (atr_proxy * 0.5), "r2": last + (atr_proxy * 1.0), "r3": last + (atr_proxy * 1.5), "r4": last + (atr_proxy * 2.0),
             "s1": last - (atr_proxy * 0.5), "s2": last - (atr_proxy * 1.0), "s3": last - (atr_proxy * 1.5)
         }
-        
         return df, fund, mat, market_signal, levels
     except: return pd.DataFrame(), {}, None, None, {}
 
@@ -365,16 +362,11 @@ if st.session_state["logged_in"]: tabs_list.extend(["💼 บัญชีลง�
 tabs = st.tabs(tabs_list)
 
 # ==========================================
-# หน้า 1: วิเคราะห์กราฟรายตัว (Pro-Trader Edition 4.22)
+# หน้า 1: วิเคราะห์กราฟรายตัว (Pro-Trader)
 # ==========================================
 with tabs[0]:
     if not df.empty:
         last_p = df['Close'].iloc[-1]
-        prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
-        rsi_val = df['RSI'].iloc[-1]
-        is_uptrend = last_p > df['E50'].iloc[-1]
-        is_bullish_macd = df['MACD'].iloc[-1] > df['Sig'].iloc[-1]
-        
         st.markdown(f"## 📈 {ticker} | <span style='color:#00E676;'>${last_p:,.2f}</span>", unsafe_allow_html=True)
         st.markdown(f"<span style='color:#B0BEC5;'>📅 ข้อมูล ณ: {current_date} | 🕒 {current_time}</span>", unsafe_allow_html=True)
         
@@ -387,19 +379,25 @@ with tabs[0]:
             website = fund.get('website', '#')
             if website != '#': c_b3.markdown(f"**🌐 เว็บไซต์:** <a href='{website}' target='_blank'>คลิกดูเว็บไซต์</a>", unsafe_allow_html=True)
 
+        spy_t = market_signal.get("spy_trend", "N/A")
+        spy_p = market_signal.get("spy_price", 0.0)
+        v_val = market_signal.get("vix", 0.0)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("ตลาดโลก (S&P 500)", f"{spy_p:,.2f}", spy_t, delta_color="normal" if "ขึ้น" in spy_t else "inverse")
+        vix_stat = "Risk ON" if 0 < v_val < 25 else "Panic"
+        m2.metric("ความกลัว (VIX)", f"{v_val:.2f}", vix_stat, delta_color="normal" if vix_stat=="Risk ON" else "inverse")
+        m3.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", market_signal.get("smart_money"), delta_color="off")
+
         c_l, c_r = st.columns([7, 3])
         with c_l:
-            # --- กราฟแบบ Pro (เพิ่มเส้น EMA 10, 25, 50, 200) ---
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
             fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['E10'], line=dict(color='#00E676', width=1), name="EMA 10"), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['E25'], line=dict(color='#BA68C8', width=1.5), name="EMA 25"), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['E50'], line=dict(color='#FF6D00', width=2), name="EMA 50"), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['E200'], line=dict(color='#E0E0E0', width=1, dash='dot'), name="EMA 200"), row=1, col=1)
-            
             actual_cost = holdings[ticker]["total_cost"] / holdings[ticker]["shares"] if st.session_state["logged_in"] and holdings.get(ticker, {}).get("shares", 0) > 0.001 else b_p
             if actual_cost > 0: fig.add_hline(y=actual_cost, line_dash="dash", line_color="cyan", annotation_text="ต้นทุนเฉลี่ย", row=1, col=1)
-            
             fig.add_trace(go.Bar(x=df.index, y=df['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df['Hist']], name="MACD"), row=2, col=1)
             fig.update_layout(template="plotly_dark", height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
@@ -409,84 +407,83 @@ with tabs[0]:
             if pe_v <= 0: pe_status = "🔴 ขาดทุน"
             elif pe_v < 15: pe_status = "🟢 ถูก (Value)"
             elif pe_v < 30: pe_status = "🟡 เหมาะสม"
-            else: pe_status = "🟠 แพง/เก็งกำไร"
-
+            else: pe_status = "🟠 แพง"
             f1, f2, f3 = st.columns(3)
             f1.metric("P/S Ratio", fund.get('ps','N/A'))
             f2.metric("P/E Ratio", fund.get('pe','N/A'), pe_status, delta_color="off")
             f3.metric("ROE", fund.get('roe','N/A'))
-            
             st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
             f4, f5, f6 = st.columns(3)
             f4.metric("การเติบโตรายได้", fund.get('rev_growth','N/A'))
             f5.metric("💰 เงินปันผล", fund.get('dividend','ไม่มี'), "ต่อปี", delta_color="normal" if fund.get('dividend') != "ไม่มีปันผล" else "off")
+            if (pe_v <= 0) or (fund.get('roe_val', 0) < 0): st.error("⚠️ หุ้นเก็งกำไรความเสี่ยงสูง (ขาดทุน หรือ ROE ติดลบ) ระบบจะปรับลดงบเข้าซื้ออัตโนมัติ")
         
         with c_r:
-            # --- 🎯 โซน Pro-Trader Dashboard (เหมือนในรูปเป๊ะ) ---
-            st.markdown(f"""
-            <div class="pro-box" style="border-top: 3px solid #FF5252;">
-                <div class="pro-title c-red">แนวต้าน (RESISTANCE)</div>
-                <div class="pro-row"><span>ด่านแรก</span> <span>${levels['r1']:.2f}</span></div>
-                <div class="pro-row"><span>ด่านจริง</span> <span>${levels['r2']:.2f}</span></div>
-                <div class="pro-row"><span>ด่านถัดไป</span> <span>${levels['r3']:.2f}</span></div>
-                <div class="pro-row"><span>เป้าหมายถัดไป</span> <span>${levels['r4']:.2f}</span></div>
-            </div>
+            if levels:
+                st.markdown(f"""
+                <div class="pro-box" style="border-top: 3px solid #FF5252;">
+                    <div class="pro-title c-red">แนวต้าน (RESISTANCE)</div>
+                    <div class="pro-row"><span>ด่านแรก</span> <span>${levels['r1']:.2f}</span></div>
+                    <div class="pro-row"><span>ด่านจริง</span> <span>${levels['r2']:.2f}</span></div>
+                    <div class="pro-row"><span>ด่านถัดไป</span> <span>${levels['r3']:.2f}</span></div>
+                    <div class="pro-row"><span>เป้าหมายถัดไป</span> <span>${levels['r4']:.2f}</span></div>
+                </div>
+                <div class="pro-box" style="border-top: 3px solid #00E676;">
+                    <div class="pro-title c-green">แนวรับ (SUPPORT)</div>
+                    <div class="pro-row"><span>แนวรับแรก</span> <span>${levels['s1']:.2f}</span></div>
+                    <div class="pro-row"><span>แนวรับลึก</span> <span>${levels['s2']:.2f}</span></div>
+                    <div class="pro-row"><span>แนวรับถัดไป</span> <span>${levels['s3']:.2f}</span></div>
+                </div>
+                """, unsafe_allow_html=True)
             
-            <div class="pro-box" style="border-top: 3px solid #00E676;">
-                <div class="pro-title c-green">แนวรับ (SUPPORT)</div>
-                <div class="pro-row"><span>แนวรับแรก</span> <span>${levels['s1']:.2f}</span></div>
-                <div class="pro-row"><span>แนวรับลึก</span> <span>${levels['s2']:.2f}</span></div>
-                <div class="pro-row"><span>แนวรับถัดไป</span> <span>${levels['s3']:.2f}</span></div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # --- AI สร้างแผนการเทรดอัตโนมัติ ---
+            is_uptrend = last_p > df['E50'].iloc[-1]
+            is_bullish_macd = df['MACD'].iloc[-1] > df['Sig'].iloc[-1]
             if is_uptrend and is_bullish_macd:
-                p_main = "ย่อ = ซื้อเพิ่ม / ถือรันเทรนด์"
-                p_hold = f"ต้องยืน {levels['s1']:.2f} ให้ได้ หลุด = ทยอยออก"
-                p_buy = f"เบรก {levels['r2']:.2f} ขึ้นจริง หรือรอรับที่ {levels['s1']:.2f}"
+                p_main, summary = "ย่อ = ซื้อเพิ่ม / ถือรันเทรนด์", "🟢 'เกมลุย'"
                 not_to_do = "❌ ห้ามสวนเทรนด์ (Short/Put)\n❌ อย่ารีบขายหมู"
-                summary = "🟢 ตอนนี้ = 'เกมลุย'"
-                t_flow = f"หลุด {levels['s1']:.2f} (ระวัง) ➡ ยืน {levels['s1']:.2f} (ลุ้นต่อ) ➡ เบรก {levels['r2']:.2f} (ไปต่อยาว)"
-            elif is_uptrend and not is_bullish_macd:
-                p_main = "เด้ง = ลดพอร์ต / ทยอยล็อกกำไร"
-                p_hold = f"ห้ามหลุด {levels['s2']:.2f} เด็ดขาด"
-                p_buy = f"รอย่อลงโซน {levels['s2']:.2f} ค่อยดูสัญญาณ"
-                not_to_do = "❌ ห้ามไล่ซื้อตอนเขียว\n❌ ถือเพลินจนกำไรทิพย์"
-                summary = "🟡 ตอนนี้ = 'เกมระวังตัว'"
-                t_flow = f"หลุด {levels['s2']:.2f} (จบรอบ) ➡ แขว่งกรอบ {levels['s2']:.2f}-{levels['r1']:.2f}"
-            else:
-                p_main = "เด้ง = หนี / ลดความเสี่ยง"
-                p_hold = f"ถ้าหลุด {levels['s2']:.2f} = ต้องหนีให้หมด"
-                p_buy = f"เบรก {levels['r2']:.2f} ให้ชัวร์ก่อน ค่อยตาม"
+            elif not is_uptrend:
+                p_main, summary = "เด้ง = หนี / ลดความเสี่ยง", "🔴 'เกมป้องกัน'"
                 not_to_do = "❌ ห้ามไล่ซื้อสวนทาง\n❌ ห้ามถัวเพิ่มเด็ดขาด"
-                summary = "🔴 ตอนนี้ = 'เกมป้องกัน'"
-                t_flow = f"หลุด {levels['s2']:.2f} (ลงต่อลึก) ➡ ยืน {levels['r1']:.2f} ได้ (ลุ้นกลับตัว)"
+            else:
+                p_main, summary = "รอจังหวะ / เลือกทาง", "🟡 'เกมระวัง'"
+                not_to_do = "❌ ห้ามทุ่มสุดตัว\n❌ อย่าเชื่อสัญญาณเดียว"
                 
             st.markdown(f"""
             <div class="pro-box" style="border-top: 3px solid #FFD600;">
                 <div class="pro-title c-yellow">แผนการเทรด (AI Update)</div>
                 <div style="margin-bottom:8px;"><b>🎯 แผนหลัก (ตอนนี้)</b><br><span class="c-gray">{p_main}</span></div>
-                <div style="margin-bottom:8px;"><b>💼 แผนถือ (ถ้าจะฝืนถือ)</b><br><span class="c-gray">{p_hold}</span></div>
-                <div><b>🛒 แผนรอซื้อใหม่</b><br><span class="c-gray">{p_buy}</span></div>
             </div>
-            
             <div class="pro-box" style="border-top: 3px solid #FF5252; background-color: rgba(255, 82, 82, 0.05);">
                 <div class="pro-title c-red">สิ่งที่ไม่ควรทำตอนนี้ ⚠️</div>
                 <div class="c-red" style="white-space: pre-wrap;">{not_to_do}</div>
             </div>
+            <div class="pro-box">
+                <div class="c-gray">💡 สรุปสั้นๆ: {summary}</div>
+            </div>
             """, unsafe_allow_html=True)
             
-            # --- กล่องสรุปด้านล่าง ---
-            st.info(f"💡 **สรุปสั้นๆ:** {summary}\n\n**แผนภาพแนวโน้ม:** {t_flow}")
+            prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
+            sup_val = df['E50'].iloc[-1]
+            if actual_cost > 0:
+                pl = ((last_p - actual_cost) / actual_cost) * 100
+                st.write(f"**P/L ของคุณ:** {pl:.2f}%")
+                sl = sup_val * 0.99 if b_p == 0 else actual_cost * 0.92
+                st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
+                ra = t_cap * (r_pct / 100.0)
+                if last_p > sl: st.success(f"🧮 **เข้าซื้อได้สูงสุด:** {ra/(last_p-sl):.0f} หุ้น")
+            
+            st.markdown("---")
+            st.subheader("🤖 เทคนิคอล")
+            st.write(f"**เทรนด์:** {'🟢 ขาขึ้น' if is_uptrend else '🔴 ขาลง'}")
+            st.write(f"**แรงซื้อ:** {'🟢 ได้เปรียบ' if is_bullish_macd else '🔴 อ่อนแอ'}")
+            st.write(f"**RSI:** {df['RSI'].iloc[-1]:.2f} ({'🔴 Overbought' if df['RSI'].iloc[-1]>=70 else '🟢 Safe'})")
+    else: st.warning(f"❌ ไม่พบข้อมูล '{ticker}'")
 
 # ==========================================
-# หน้า 2: เรดาร์ & พอร์ตจำลอง
+# หน้า 2: เรดาร์ & พอร์ตจำลอง (Simplified)
 # ==========================================
 with tabs[1]:
     st.markdown("## 🎯 เรดาร์สแกนหุ้น (AI Screener & Mini-Chart)")
-    st.markdown("จัดกลุ่มรายชื่อหุ้นที่ต้องการเฝ้าจับตา ระบบจะสแกนหาจุดเข้าซื้อ/จุดขายให้ทันที")
-    
     st.markdown("### 📋 จัดการรายชื่อหุ้นในเรดาร์")
     c_rad1, c_rad2 = st.columns([7, 3])
     with c_rad1:
@@ -514,11 +511,11 @@ with tabs[1]:
                     column_config={"กราฟ 30 วัน": st.column_config.LineChartColumn("ทิศทาง (30 วัน)")},
                     use_container_width=True
                 )
-            else: st.warning("ไม่พบข้อมูล กรุณาตรวจสอบรายชื่อหุ้นอีกครั้งครับ")
+            else: st.warning("ไม่พบข้อมูล กรุณาตรวจสอบรายชื่อหุ้นอีกครั้ง")
 
     st.markdown("---")
     st.markdown("## 🎮 ห้องซ้อม: พอร์ตจำลอง (Paper Trading)")
-    st.markdown("ทดสอบวิชาคัดหุ้นด้วยระบบนี้ ข้อมูลจะแยกออกจากบัญชีเงินจริง 100% (ข้อมูลจะหายไปเมื่อปิดแอป)")
+    st.markdown("ทดสอบวิชาคัดหุ้นด้วยระบบนี้ ข้อมูลจะแยกออกจากบัญชีเงินจริง 100%")
     
     with st.expander("➕ เพิ่มรายการเทรดทิพย์", expanded=False):
         with st.form("mock_trade_form"):
@@ -533,52 +530,62 @@ with tabs[1]:
                     st.session_state["mock_port"] = pd.concat([st.session_state["mock_port"], new_mock], ignore_index=True)
                     st.success(f"บันทึก {m_ticker} สำเร็จ!"); time.sleep(1); st.rerun()
 
+    # --- 🛠️ กู้คืนตาราง P/L Summary แบบเดิม (ตารางเดียวจบ) ---
     if not st.session_state["mock_port"].empty:
-        st.markdown("### 📝 ประวัติการซื้อขาย (Transaction History)")
-        edited_mock = st.data_editor(
-            st.session_state["mock_port"], num_rows="dynamic", use_container_width=True,
-            column_config={
-                "Date": "วันที่", "Ticker": "ชื่อหุ้น",
-                "Buy_Price": st.column_config.NumberColumn("ราคาที่ซื้อ ($)", format="%.4f"),
-                "Shares": st.column_config.NumberColumn("จำนวนหุ้น", format="%.4f")
-            }
-        )
-        if not edited_mock.equals(st.session_state["mock_port"]):
-            st.session_state["mock_port"] = edited_mock; st.rerun()
-
-        st.markdown("### 📊 สรุปพอร์ตจำลองปัจจุบัน")
+        st.markdown("### 📊 สรุปพอร์ตจำลองปัจจุบัน (P/L Summary)")
+        
         mock_df = st.session_state["mock_port"].copy()
-        mock_tickers = mock_df["Ticker"].unique().tolist()
+        # แปลงข้อมูลให้เป็นตัวเลขและรวมหุ้นตัวเดียวกัน
+        mock_df['Buy_Price'] = pd.to_numeric(mock_df['Buy_Price'], errors='coerce').fillna(0)
+        mock_df['Shares'] = pd.to_numeric(mock_df['Shares'], errors='coerce').fillna(0)
+        mock_df['Total_Cost'] = mock_df['Buy_Price'] * mock_df['Shares']
+        
+        grouped = mock_df.groupby('Ticker').agg({'Shares': 'sum', 'Total_Cost': 'sum'}).reset_index()
+        grouped['Avg_Cost'] = np.where(grouped['Shares'] > 0, grouped['Total_Cost'] / grouped['Shares'], 0)
+        
+        mock_tickers = grouped["Ticker"].tolist()
         
         with st.spinner("⏳ อัปเดตกำไร/ขาดทุนพอร์ตจำลอง..."):
             mock_prices = get_batch_live_prices(mock_tickers)
-            mock_results, mock_total_cost, mock_total_val = [], 0, 0
-            for idx, row in mock_df.iterrows():
-                t = str(row["Ticker"]).upper()
-                try: bp, sh = float(row["Buy_Price"]), float(row["Shares"])
-                except: bp, sh = 0.0, 0.0
-                cp = mock_prices.get(t, bp)
-                cost, val = bp * sh, cp * sh
-                pl_usd = val - cost
-                mock_total_cost += cost; mock_total_val += val
+            mock_results, mock_total_cost, mock_total_val = [], 0.0, 0.0
+            
+            for _, row in grouped.iterrows():
+                t = row["Ticker"]
+                sh = row["Shares"]
+                avg_c = row["Avg_Cost"]
+                t_cost = row["Total_Cost"]
+                cp = mock_prices.get(t, avg_c)
+                
+                val = cp * sh
+                pl_usd = val - t_cost
+                pl_pct = (pl_usd / t_cost * 100) if t_cost > 0 else 0
+                
+                mock_total_cost += t_cost
+                mock_total_val += val
+                
                 mock_results.append({
-                    "หุ้น": t, "ราคาซื้อ": f"${bp:.2f}", "ล่าสุด": f"${cp:.2f}", 
-                    "จำนวน": sh, "P/L ($)": pl_usd, "% Chg": (pl_usd/cost*100) if cost>0 else 0
+                    "หุ้น": t, "ต้นทุนเฉลี่ย": avg_c, "ราคาล่าสุด": cp, 
+                    "จำนวน": sh, "กำไร/ขาดทุน ($)": pl_usd, "% เปลี่ยนแปลง": pl_pct
                 })
 
             st.markdown(f"""
             <div style='background-color:#1E1E1E; padding:15px; border-radius:8px; display:flex; justify-content:space-around; flex-wrap: wrap;'>
-                <div style='margin-bottom:5px;'><b>ต้นทุนรวม:</b> <span style='color:#E0E0E0;'>${mock_total_cost:,.2f}</span></div>
+                <div style='margin-bottom:5px;'><b>ต้นทุนรวมทิพย์:</b> <span style='color:#E0E0E0;'>${mock_total_cost:,.2f}</span></div>
                 <div style='margin-bottom:5px;'><b>มูลค่าปัจจุบัน:</b> <span style='color:#E0E0E0;'>${mock_total_val:,.2f}</span></div>
-                <div style='margin-bottom:5px;'><b>กำไร/ขาดทุน:</b> <span style='color:{"#00E676" if mock_total_val>=mock_total_cost else "#FF5252"}; font-weight:bold;'>${(mock_total_val - mock_total_cost):,.2f}</span></div>
+                <div style='margin-bottom:5px;'><b>กำไร/ขาดทุนรวม:</b> <span style='color:{"#00E676" if mock_total_val>=mock_total_cost else "#FF5252"}; font-weight:bold;'>${(mock_total_val - mock_total_cost):,.2f}</span></div>
             </div><br>
             """, unsafe_allow_html=True)
             
+            res_mock_df = pd.DataFrame(mock_results)
             def color_mock_profit(val): return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
-            st.dataframe(pd.DataFrame(mock_results).style.map(color_mock_profit, subset=["P/L ($)", "% Chg"]).format({"P/L ($)": "${:,.2f}", "% Chg": "{:,.2f}%"}), use_container_width=True)
+            st.dataframe(res_mock_df.style.map(color_mock_profit, subset=["กำไร/ขาดทุน ($)", "% เปลี่ยนแปลง"]).format({
+                "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาล่าสุด": "${:,.4f}", "จำนวน": "{:,.4f}", 
+                "กำไร/ขาดทุน ($)": "${:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%"
+            }), use_container_width=True)
 
-        if st.button("🗑️ ล้างพอร์ตจำลองทิ้งทั้งหมด"):
-            st.session_state["mock_port"] = pd.DataFrame(columns=["Date", "Ticker", "Buy_Price", "Shares"]); st.rerun()
+        if st.button("🗑️ ล้างพอร์ตจำลองทิ้งทั้งหมด (Clear All)"):
+            st.session_state["mock_port"] = pd.DataFrame(columns=["Date", "Ticker", "Buy_Price", "Shares"])
+            st.rerun()
 
 # ==========================================
 # หน้า 3: บัญชีและพอร์ตโฟลิโอ (เงินจริง)
