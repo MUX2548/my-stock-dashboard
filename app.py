@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.29", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.31", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.29", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.31", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -46,7 +46,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 tz_th = timezone(timedelta(hours=7))
-current_date = datetime.now(tz_th).strftime("%d/%m/%Y") # 🛠️ ตัวแปรวันที่ ที่ทำให้แถบสีแดงหายไปค่ะ!
+current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 
 # ==========================================
@@ -144,7 +144,7 @@ def calculate_stats(df_input):
     stat = {"outward": 0.0, "inward": 0.0, "bought": 0.0, "sold": 0.0, "dividend": 0.0, "realized_profit": 0.0}
     r_bals, hld = [], {}
     df = df[~df['Action'].isin(['None', '', 'nan', 'กำไรจากการขายหุ้น (Profit)'])].copy().reset_index(drop=True)
-    for idx, row in df.iterrows():
+    for idx, row initerrows():
         action = str(row.get("Action", "")).strip()
         ticker = str(row.get("Ticker", "")).strip().upper()
         p, s = float(row.get("Price", 0.0)), float(row.get("Shares", 0.0))
@@ -640,6 +640,47 @@ if st.session_state["logged_in"]:
         h1, h2 = st.columns([8, 2])
         h1.subheader("📝 สมุดบัญชี (Cloud Ledger)")
         h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True)
+        
+        # 🟢 ฟีเจอร์อัปโหลดไฟล์ (Excel Import) แบบปลอดภัย 100%
+        with st.expander("📤 นำเข้าข้อมูลจากไฟล์ Excel / CSV", expanded=False):
+            uploaded_file = st.file_uploader("ลากไฟล์มาวาง หรือ กดเพื่อเลือกไฟล์", type=['csv', 'xlsx'])
+            if uploaded_file is not None:
+                st.warning("⚠️ โปรดเลือกวิธีนำเข้าข้อมูล (เพื่อป้องกันข้อมูลเดิมหาย)")
+                c_imp1, c_imp2 = st.columns(2)
+                
+                with c_imp1:
+                    if st.button("➕ เพิ่มข้อมูลต่อท้าย (Append)", use_container_width=True):
+                        try:
+                            if uploaded_file.name.endswith('.csv'): df_imported = pd.read_csv(uploaded_file)
+                            else: df_imported = pd.read_excel(uploaded_file)
+                            
+                            req_cols = ["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"]
+                            for col in req_cols:
+                                if col not in df_imported.columns: df_imported[col] = ""
+                            
+                            # เพิ่มข้อมูลใหม่ต่อท้ายของเดิม
+                            st.session_state.trade_ledger = pd.concat([st.session_state.trade_ledger, clean_df_types(df_imported[req_cols])], ignore_index=True)
+                            st.success("✅ นำข้อมูลใหม่ไปต่อท้ายตารางเรียบร้อย! (อย่าลืมกดบันทึกขึ้น Cloud ด้านล่างนะคะ)")
+                            time.sleep(2)
+                            st.rerun()
+                        except Exception as e: st.error(f"❌ อ่านไฟล์ไม่สำเร็จ: {e}")
+                        
+                with c_imp2:
+                    if st.button("🔄 แทนที่ทั้งหมด (Overwrite)", type="primary", use_container_width=True):
+                        try:
+                            if uploaded_file.name.endswith('.csv'): df_imported = pd.read_csv(uploaded_file)
+                            else: df_imported = pd.read_excel(uploaded_file)
+                            
+                            req_cols = ["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"]
+                            for col in req_cols:
+                                if col not in df_imported.columns: df_imported[col] = ""
+                            
+                            # ลบของเก่า แทนที่ด้วยของใหม่ทั้งหมด
+                            st.session_state.trade_ledger = clean_df_types(df_imported[req_cols])
+                            st.success("✅ แทนที่ตารางด้วยข้อมูลจากไฟล์ใหม่เรียบร้อย! (อย่าลืมกดบันทึกขึ้น Cloud ด้านล่างนะคะ)")
+                            time.sleep(2)
+                            st.rerun()
+                        except Exception as e: st.error(f"❌ อ่านไฟล์ไม่สำเร็จ: {e}")
         
         ed_l = st.data_editor(st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
             column_config={
