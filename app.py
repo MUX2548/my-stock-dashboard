@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.27", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.29", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.27", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.29", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -35,11 +35,9 @@ st.markdown("""
     [data-testid="stSidebar"] { background-color: #0e1117; }
     [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
     
-    /* 🛠️ แก้ไขปัญหาตัวเลขใน Metric โดนตัดเป็น ... */
     [data-testid="stMetricValue"] { font-size: 1.5rem !important; white-space: pre-wrap !important; word-break: break-word !important; }
     [data-testid="stMetricDelta"] > div { white-space: pre-wrap !important; word-break: break-word !important; }
     
-    /* 🌟 สไตล์กล่อง Pro-Dashboard */
     .pro-box { background-color: #1E1E1E; border-radius: 8px; padding: 15px; margin-bottom: 15px; border: 1px solid #333; }
     .pro-title { font-weight: bold; font-size: 1.1em; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px; }
     .pro-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.95em; }
@@ -48,6 +46,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 tz_th = timezone(timedelta(hours=7))
+current_date = datetime.now(tz_th).strftime("%d/%m/%Y") # 🛠️ ตัวแปรวันที่ ที่ทำให้แถบสีแดงหายไปค่ะ!
 current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 
 # ==========================================
@@ -187,7 +186,7 @@ def translate_to_thai(text):
         return "".join([s[0] for s in res.json()[0]])
     except: return short_text + "..."
 
-@st.cache_data(ttl=60) # ตั้งให้ดึงข้อมูลใหม่ทุกๆ 1 นาที
+@st.cache_data(ttl=60)
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
     p, i = stgs[tf]["p"], stgs[tf]["i"]
@@ -254,7 +253,7 @@ def load_pro_data(ticker_symbol, tf):
             "roe_val": float(info.get('returnOnEquity', 0) or 0)
         }
         
-        last = df['Close'].iloc[-1] # ล็อกราคาปัจจุบันให้เป็นราคาเดียวกับกราฟเสมอ
+        last = df['Close'].iloc[-1]
         v = df['Close'].pct_change().tail(14).std()
         tr = "ขึ้น 📈" if last > df['E50'].iloc[-1] else "ลง 📉"
         mat = {"l": last * (1 - v*1.0) if tr == "ลง 📉" else last * (1 - v*0.5), "u": last * (1 - v*0.5) if tr == "ลง 📉" else last * (1 + v*1.0), "tr": tr}
@@ -332,7 +331,6 @@ with st.sidebar:
     st.info(f"👁️ ยอดผู้เข้าชม: {visitor_count} ครั้ง")
     st.markdown("---")
     
-    # 🛠️ FIX: ล้าง Cache ทันทีเมื่อพิมพ์ชื่อหุ้นตัวใหม่ เพื่อให้กราฟกับราคาอัปเดตตรงกันเสมอ
     ticker = st.text_input("🔎 ชื่อหุ้น / ดัชนี (ดูรายตัว)", value="NVTS").upper()
     if "prev_ticker" not in st.session_state: st.session_state.prev_ticker = ticker
     if st.session_state.prev_ticker != ticker:
@@ -360,7 +358,7 @@ if st.session_state["logged_in"]:
     sorted_df, cb, l_stat, r_bals, holdings = calculate_stats(st.session_state.trade_ledger)
     st.session_state.trade_ledger = sorted_df
 
-with st.spinner(f"⏳ กำลังประมวลผลดึงข้อมูลสดจากตลาด (Real-time Processing)..."):
+with st.spinner(f"⏳ กำลังประมวลผลดึงข้อมูลสดจากตลาด..."):
     df, fund, matrix, market_signal, levels = load_pro_data(ticker, tf_option)
 
 tabs_list = ["📊 วิเคราะห์รายตัว", "🎯 เรดาร์ & พอร์ตจำลอง"]
@@ -372,9 +370,8 @@ tabs = st.tabs(tabs_list)
 # ==========================================
 with tabs[0]:
     if not df.empty:
-        # 🛠️ FIX: ดึงข้อมูลวันที่จากกราฟแท่งเทียนจริงๆ ไม่ใช่นาฬิกาแท็บเล็ต
         last_candle_date = df.index[-1].strftime("%d/%m/%Y")
-        last_p = df['Close'].iloc[-1] # ล็อกราคานี้ไปใช้คำนวณทั้งหมด
+        last_p = df['Close'].iloc[-1]
         prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
         rsi_val = df['RSI'].iloc[-1]
         is_uptrend = last_p > df['E50'].iloc[-1]
@@ -522,7 +519,7 @@ with tabs[0]:
     else: st.warning(f"❌ ไม่พบข้อมูล '{ticker}'")
 
 # ==========================================
-# หน้า 2: เรดาร์ & พอร์ตจำลอง (Simplified)
+# หน้า 2: เรดาร์ & พอร์ตจำลอง
 # ==========================================
 with tabs[1]:
     st.markdown("## 🎯 เรดาร์สแกนหุ้น (AI Screener & Mini-Chart)")
@@ -572,7 +569,6 @@ with tabs[1]:
                     st.session_state["mock_port"] = pd.concat([st.session_state["mock_port"], new_mock], ignore_index=True)
                     st.success(f"บันทึก {m_ticker} สำเร็จ!"); time.sleep(1); st.rerun()
 
-    # --- 🟢 กู้คืน: ตาราง P/L Summary แบบเดิม (ตารางเดียวจบ) ---
     if not st.session_state["mock_port"].empty:
         st.markdown("### 📊 สรุปพอร์ตจำลองปัจจุบัน (P/L Summary)")
         
