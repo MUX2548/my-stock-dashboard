@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.25", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.27", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.25", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.27", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -48,7 +48,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 tz_th = timezone(timedelta(hours=7))
-current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 
 # ==========================================
@@ -188,7 +187,7 @@ def translate_to_thai(text):
         return "".join([s[0] for s in res.json()[0]])
     except: return short_text + "..."
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=60) # ตั้งให้ดึงข้อมูลใหม่ทุกๆ 1 นาที
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
     p, i = stgs[tf]["p"], stgs[tf]["i"]
@@ -255,7 +254,7 @@ def load_pro_data(ticker_symbol, tf):
             "roe_val": float(info.get('returnOnEquity', 0) or 0)
         }
         
-        last = df['Close'].iloc[-1]
+        last = df['Close'].iloc[-1] # ล็อกราคาปัจจุบันให้เป็นราคาเดียวกับกราฟเสมอ
         v = df['Close'].pct_change().tail(14).std()
         tr = "ขึ้น 📈" if last > df['E50'].iloc[-1] else "ลง 📉"
         mat = {"l": last * (1 - v*1.0) if tr == "ลง 📉" else last * (1 - v*0.5), "u": last * (1 - v*0.5) if tr == "ลง 📉" else last * (1 + v*1.0), "tr": tr}
@@ -332,7 +331,14 @@ with st.sidebar:
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): st.cache_data.clear(); st.rerun()
     st.info(f"👁️ ยอดผู้เข้าชม: {visitor_count} ครั้ง")
     st.markdown("---")
+    
+    # 🛠️ FIX: ล้าง Cache ทันทีเมื่อพิมพ์ชื่อหุ้นตัวใหม่ เพื่อให้กราฟกับราคาอัปเดตตรงกันเสมอ
     ticker = st.text_input("🔎 ชื่อหุ้น / ดัชนี (ดูรายตัว)", value="NVTS").upper()
+    if "prev_ticker" not in st.session_state: st.session_state.prev_ticker = ticker
+    if st.session_state.prev_ticker != ticker:
+        st.cache_data.clear()
+        st.session_state.prev_ticker = ticker
+        
     tf_option = st.radio("เลือกความละเอียด:", ["1D (รายวัน)", "1W (รายสัปดาห์)", "1M (รายเดือน)"], index=0)
     st.markdown("---")
     st.subheader("🧮 คำนวณ (Public)")
@@ -354,7 +360,7 @@ if st.session_state["logged_in"]:
     sorted_df, cb, l_stat, r_bals, holdings = calculate_stats(st.session_state.trade_ledger)
     st.session_state.trade_ledger = sorted_df
 
-with st.spinner(f"⏳ กำลังวิเคราะห์ข้อมูล (AI Processing)..."):
+with st.spinner(f"⏳ กำลังประมวลผลดึงข้อมูลสดจากตลาด (Real-time Processing)..."):
     df, fund, matrix, market_signal, levels = load_pro_data(ticker, tf_option)
 
 tabs_list = ["📊 วิเคราะห์รายตัว", "🎯 เรดาร์ & พอร์ตจำลอง"]
@@ -366,14 +372,16 @@ tabs = st.tabs(tabs_list)
 # ==========================================
 with tabs[0]:
     if not df.empty:
-        last_p = df['Close'].iloc[-1]
+        # 🛠️ FIX: ดึงข้อมูลวันที่จากกราฟแท่งเทียนจริงๆ ไม่ใช่นาฬิกาแท็บเล็ต
+        last_candle_date = df.index[-1].strftime("%d/%m/%Y")
+        last_p = df['Close'].iloc[-1] # ล็อกราคานี้ไปใช้คำนวณทั้งหมด
         prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
         rsi_val = df['RSI'].iloc[-1]
         is_uptrend = last_p > df['E50'].iloc[-1]
         is_bullish_macd = df['MACD'].iloc[-1] > df['Sig'].iloc[-1]
         
         st.markdown(f"## 📈 {ticker} | <span style='color:#00E676;'>${last_p:,.2f}</span>", unsafe_allow_html=True)
-        st.markdown(f"<span style='color:#B0BEC5;'>📅 ข้อมูล ณ: {current_date} | 🕒 {current_time}</span>", unsafe_allow_html=True)
+        st.markdown(f"<span style='color:#B0BEC5;'>📅 ข้อมูลกราฟล่าสุด ณ: {last_candle_date} | 🕒 เวลาอัปเดต: {current_time}</span>", unsafe_allow_html=True)
         
         with st.expander("🏢 ข้อมูลธุรกิจ (Company Profile)", expanded=False):
             st.markdown(f"**🇹🇭 สรุปธุรกิจ:**")
@@ -384,7 +392,6 @@ with tabs[0]:
             website = fund.get('website', '#')
             if website != '#': c_b3.markdown(f"**🌐 เว็บไซต์:** <a href='{website}' target='_blank'>คลิกดูเว็บไซต์</a>", unsafe_allow_html=True)
 
-        # --- 🟢 กู้คืน: แถบสัญญาณตลาดโลก 4 คอลัมน์ (เหมือนรูป 1000012802.jpg) ---
         spy_t = market_signal.get("spy_trend", "N/A")
         spy_p = market_signal.get("spy_price", 0.0)
         v_val = market_signal.get("vix", 0.0)
@@ -399,7 +406,6 @@ with tabs[0]:
         m3.metric("โครงสร้าง (VIX/VIX3M)", f"{vix_ts:.2f}" if vix_ts > 0 else "N/A", ts_label if vix_ts > 0 else None, delta_color="normal" if 0 < vix_ts < 1 else "inverse" if vix_ts >= 1 else "off")
         m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow if sm_flow != "N/A" else None, delta_color="normal" if "ON" in sm_flow else "inverse" if "OFF" in sm_flow else "off")
 
-        # --- 🟢 กู้คืน: กล่องทัศนะเทรดเดอร์แนวยาว (เหมือนรูป 1000012802.jpg) ---
         is_market_good = "ขึ้น" in spy_t and (0 < v_val < 25)
         if is_market_good and is_uptrend and is_bullish_macd and rsi_val < 70:
             rec, color = "STRONG BUY / HOLD", "#00E676"
@@ -424,12 +430,10 @@ with tabs[0]:
         </div>
         """, unsafe_allow_html=True)
 
-        # --- 🟢 กู้คืน: แถบเป้าหมาย Harmonic Matrix (เหมือนรูป 1000012802.jpg) ---
         rs_val = df['RS'].iloc[-1]
         rs_t = f" | **Relative Strength:** {'🟢 ชนะตลาด' if rs_val > 0 else '🔴 อ่อนแอ'} ({rs_val:.2f}%)" if not np.isnan(rs_val) else ""
-        if matrix: st.info(f"🔮 **ทิศทาง 1D (รายวัน):** {matrix['tr']} | **เป้าหมาย (Harmonic Matrix):** {matrix['l']:,.2f} - {matrix['u']:,.2f} {rs_t}")
+        if matrix: st.info(f"🔮 **ทิศทาง {tf_option}:** {matrix['tr']} | **เป้าหมาย (Harmonic Matrix):** {matrix['l']:,.2f} - {matrix['u']:,.2f} {rs_t}")
         
-        # --- แบ่งจอซ้าย-ขวา สำหรับ กราฟ และ แผนเทรด (เหมือนรูป 1000012801.jpg) ---
         c_l, c_r = st.columns([7, 3])
         with c_l:
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
@@ -444,7 +448,6 @@ with tabs[0]:
             fig.update_layout(template="plotly_dark", height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
             
-            # ข้อมูลพื้นฐานจัด 2 แถว เพื่อป้องกันตัวเลขแหว่ง (ไม่มี ... อีกต่อไป)
             st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
             pe_v = fund.get('pe_val', 0)
             if pe_v <= 0: pe_status = "🔴 ขาดทุน"
@@ -479,7 +482,6 @@ with tabs[0]:
                 </div>
                 """, unsafe_allow_html=True)
             
-            # --- 🛠️ FIX: แก้บั๊กกล่องสีแดงไม่ให้ HTML พัง (พิมพ์โค้ดแยกบรรทัดให้ปลอดภัยที่สุด) ---
             if is_uptrend and is_bullish_macd:
                 p_main, summary = "ย่อ = ซื้อเพิ่ม / ถือรันเทรนด์", "🟢 'เกมลุย'"
                 not_to_do = "❌ ห้ามสวนเทรนด์ (Short/Put)<br>❌ อย่ารีบขายหมู"
@@ -509,7 +511,6 @@ with tabs[0]:
             </div>
             """, unsafe_allow_html=True)
             
-            prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
             sup_val = df['E50'].iloc[-1]
             if actual_cost > 0:
                 pl = ((last_p - actual_cost) / actual_cost) * 100
