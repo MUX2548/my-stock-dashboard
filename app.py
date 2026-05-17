@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.32", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.33", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.32", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.33", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -641,8 +641,12 @@ if st.session_state["logged_in"]:
         h1.subheader("📝 สมุดบัญชี (Cloud Ledger)")
         h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True)
         
-        # 🟢 ฟีเจอร์อัปโหลดไฟล์ (Excel Import) แบบปลอดภัย 100% พร้อมดักจับวันที่
+        # 🟢 ฟีเจอร์อัปโหลดไฟล์ และ ปุ่มโหลด Template เปล่า
         with st.expander("📤 นำเข้าข้อมูลจากไฟล์ Excel / CSV", expanded=False):
+            # 🛠️ โหลด Template ว่าง
+            template_df = pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
+            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv")
+            
             uploaded_file = st.file_uploader("ลากไฟล์มาวาง หรือ กดเพื่อเลือกไฟล์", type=['csv', 'xlsx'])
             if uploaded_file is not None:
                 st.warning("⚠️ โปรดเลือกวิธีนำเข้าข้อมูล (เพื่อป้องกันข้อมูลเดิมหาย)")
@@ -654,7 +658,6 @@ if st.session_state["logged_in"]:
                             if uploaded_file.name.endswith('.csv'): df_imported = pd.read_csv(uploaded_file)
                             else: df_imported = pd.read_excel(uploaded_file)
                             
-                            # 🛠️ ตัวช่วยกรองวันที่: สั่งแปลง Format จาก Excel กลับเป็น DD/MM/YYYY
                             if 'Date' in df_imported.columns:
                                 df_imported['Date'] = pd.to_datetime(df_imported['Date'], errors='coerce').dt.strftime("%d/%m/%Y").replace("NaT", "")
                             
@@ -674,7 +677,6 @@ if st.session_state["logged_in"]:
                             if uploaded_file.name.endswith('.csv'): df_imported = pd.read_csv(uploaded_file)
                             else: df_imported = pd.read_excel(uploaded_file)
                             
-                            # 🛠️ ตัวช่วยกรองวันที่: สั่งแปลง Format จาก Excel กลับเป็น DD/MM/YYYY
                             if 'Date' in df_imported.columns:
                                 df_imported['Date'] = pd.to_datetime(df_imported['Date'], errors='coerce').dt.strftime("%d/%m/%Y").replace("NaT", "")
                                 
