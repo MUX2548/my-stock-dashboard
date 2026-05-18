@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.33", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.34", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.33", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.34", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -224,6 +224,26 @@ def load_pro_data(ticker_symbol, tf):
                 market_signal["smart_money"] = "Risk ON 🟢" if hyg_ief_ratio.iloc[-1] > hyg_ief_ratio.ewm(span=20).mean().iloc[-1] else "Risk OFF 🔴"
         except: pass
         
+        # 🟢 ดึงข้อมูลวันประกาศงบไตรมาส (Earnings Date)
+        earnings_date = "N/A"
+        try:
+            cal = s.calendar
+            if isinstance(cal, dict) and 'Earnings Date' in cal:
+                e_dates = cal['Earnings Date']
+                if isinstance(e_dates, list) and len(e_dates) > 0:
+                    earnings_date = e_dates[0].strftime("%d/%m/%Y")
+            elif hasattr(s, 'get_earnings_dates'):
+                e_df = s.get_earnings_dates(limit=1)
+                if e_df is not None and not e_df.empty:
+                    earnings_date = e_df.index[0].strftime("%d/%m/%Y")
+        except: pass
+        
+        # สำรองเผื่อข้อมูลไม่มา
+        if earnings_date == "N/A":
+            ts = info.get('earningsTimestamp')
+            if ts: earnings_date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%d/%m/%Y")
+            else: earnings_date = "รอประกาศ"
+        
         df['E10'] = df['Close'].ewm(span=10).mean()
         df['E25'] = df['Close'].ewm(span=25).mean()
         df['E50'] = df['Close'].ewm(span=50).mean()
@@ -244,6 +264,7 @@ def load_pro_data(ticker_symbol, tf):
             "roe": f"{float(info.get('returnOnEquity', 0) or 0)*100:.2f}%",
             "rev_growth": f"{float(info.get('revenueGrowth', 0) or 0)*100:.2f}%",
             "dividend": f"{(float(div_y) * 100):.2f}%" if div_y else "ไม่มีปันผล",
+            "earnings_date": earnings_date, # 🟢 ส่งข้อมูลวันประกาศงบไปที่ตัวแปร
             "business_desc_th": th_summary,
             "industry": info.get('industry', 'N/A'),
             "sector": info.get('sector', 'N/A'),
@@ -456,9 +477,13 @@ with tabs[0]:
             f2.metric("P/E Ratio", fund.get('pe','N/A'), pe_status, delta_color="off")
             f3.metric("ROE", fund.get('roe','N/A'))
             st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+            
+            # 🟢 แสดงวันประกาศงบที่คอลัมน์ขวาสุดของแถวที่ 2
             f4, f5, f6 = st.columns(3)
             f4.metric("การเติบโตรายได้", fund.get('rev_growth','N/A'))
             f5.metric("💰 เงินปันผล", fund.get('dividend','ไม่มี'), "ต่อปี", delta_color="normal" if fund.get('dividend') != "ไม่มีปันผล" else "off")
+            f6.metric("📅 ประกาศงบ (Earnings)", fund.get('earnings_date', 'รอประกาศ'))
+            
             if (pe_v <= 0) or (fund.get('roe_val', 0) < 0): st.error("⚠️ หุ้นเก็งกำไรความเสี่ยงสูง (ขาดทุน หรือ ROE ติดลบ) ระบบจะปรับลดงบเข้าซื้ออัตโนมัติ")
         
         with c_r:
@@ -641,9 +666,7 @@ if st.session_state["logged_in"]:
         h1.subheader("📝 สมุดบัญชี (Cloud Ledger)")
         h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True)
         
-        # 🟢 ฟีเจอร์อัปโหลดไฟล์ และ ปุ่มโหลด Template เปล่า
         with st.expander("📤 นำเข้าข้อมูลจากไฟล์ Excel / CSV", expanded=False):
-            # 🛠️ โหลด Template ว่าง
             template_df = pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
             st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv")
             
