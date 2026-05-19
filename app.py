@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.37", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.38", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.37", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.38", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -42,7 +42,6 @@ st.markdown("""
     .pro-title { font-weight: bold; font-size: 1.1em; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px; }
     .pro-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.95em; }
     .c-red { color: #FF5252; } .c-green { color: #00E676; } .c-yellow { color: #FFD600; } .c-gray { color: #B0BEC5; }
-    .c-blue { color: #2962FF; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -539,7 +538,7 @@ with tabs[0]:
     else: st.warning(f"❌ ไม่พบข้อมูล '{ticker}'")
 
 # ==========================================
-# 🟢 หน้า 2: หาจุดเข้าซื้อ (Technical Action)
+# 🟢 หน้า 2: หาจุดเข้าซื้อ (Ultimate Technical Chart 4.38)
 # ==========================================
 with tabs[1]:
     if not df.empty:
@@ -614,23 +613,36 @@ with tabs[1]:
         st.markdown("### 🔎 กราฟซูมระยะประชิด (3 เดือนล่าสุด)")
         df_zoom = df.tail(60)
         
-        fig_zoom = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
+        # 🛠️ FIX 4.38: เพิ่มครบ 3 ชั้น ราคา(EMA 4เส้น), MACD(เส้น+แท่ง), RSI
+        fig_zoom = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.6, 0.2, 0.2])
+        
+        # ชั้นที่ 1: ราคาและ EMA 4 เส้น
         fig_zoom.add_trace(go.Candlestick(x=df_zoom.index, open=df_zoom['Open'], high=df_zoom['High'], low=df_zoom['Low'], close=df_zoom['Close'], name="Price"), row=1, col=1)
         fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['E10'], line=dict(color='#00E676', width=1.5), name="EMA 10 (ระยะสั้น)"), row=1, col=1)
+        fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['E25'], line=dict(color='#BA68C8', width=1.5), name="EMA 25 (กลางสั้น)"), row=1, col=1)
         fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['E50'], line=dict(color='#FF6D00', width=2), name="EMA 50 (แนวรับหลัก)"), row=1, col=1)
+        fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['E200'], line=dict(color='#E0E0E0', width=1.5, dash='dot'), name="EMA 200 (เทรนด์ใหญ่)"), row=1, col=1)
         
         if last_close < ema25 and last_close >= (ema50 * 0.95):
              fig_zoom.add_hline(y=ema50, line_dash="solid", line_color="#00E676", annotation_text="โซนเฝ้าระวังเข้าซื้อ (Buy Zone)", row=1, col=1, opacity=0.5)
 
-        fig_zoom.add_trace(go.Bar(x=df_zoom.index, y=df_zoom['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df_zoom['Hist']], name="MACD"), row=2, col=1)
+        # ชั้นที่ 2: MACD แบบเต็มระบบ (แท่ง + เส้นตัด)
+        fig_zoom.add_trace(go.Bar(x=df_zoom.index, y=df_zoom['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df_zoom['Hist']], name="MACD Hist"), row=2, col=1)
+        fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['MACD'], line=dict(color='#2962FF', width=1.5), name="MACD Line"), row=2, col=1)
+        fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['Sig'], line=dict(color='#FFD600', width=1.5), name="Signal Line"), row=2, col=1)
         
-        # 🛠️ FIX 4.37: ขยับ Legend ไปไว้ซ้ายบน และเว้นขอบบนเพิ่ม เพื่อไม่ให้ทับกับปุ่ม Toolbar ขวาบน
+        # ชั้นที่ 3: RSI (ความร้อนแรง)
+        fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['RSI'], line=dict(color='#FF9800', width=1.5), name="RSI"), row=3, col=1)
+        fig_zoom.add_hline(y=70, line_dash="dot", line_color="#FF5252", row=3, col=1) # เส้น Overbought
+        fig_zoom.add_hline(y=30, line_dash="dot", line_color="#00E676", row=3, col=1) # เส้น Oversold
+        fig_zoom.update_yaxes(range=[0, 100], row=3, col=1)
+        
         fig_zoom.update_layout(
             template="plotly_dark", 
-            height=500, 
-            margin=dict(l=0,r=0,t=50,b=0), 
+            height=750,  # ขยายกราฟให้สูงขึ้นรับกับ 3 ชั้น
+            margin=dict(l=0,r=0,t=40,b=0), 
             showlegend=True, 
-            legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0)
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
         )
         fig_zoom.update_xaxes(rangeslider_visible=False)
         st.plotly_chart(fig_zoom, use_container_width=True)
