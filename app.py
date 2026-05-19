@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.35", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.36", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.35", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.36", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -42,6 +42,7 @@ st.markdown("""
     .pro-title { font-weight: bold; font-size: 1.1em; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px; }
     .pro-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.95em; }
     .c-red { color: #FF5252; } .c-green { color: #00E676; } .c-yellow { color: #FFD600; } .c-gray { color: #B0BEC5; }
+    .c-blue { color: #2962FF; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -379,12 +380,13 @@ if st.session_state["logged_in"]:
 with st.spinner(f"⏳ กำลังประมวลผลดึงข้อมูลสดจากตลาด..."):
     df, fund, matrix, market_signal, levels = load_pro_data(ticker, tf_option)
 
-tabs_list = ["📊 วิเคราะห์รายตัว", "🎯 เรดาร์สแกนหุ้น"]
+# 🟢 เพิ่มชีทใหม่ "หาจุดเข้าซื้อ (Technical)" โดยไม่กระทบหน้าเดิม
+tabs_list = ["📊 วิเคราะห์รายตัว", "🔬 หาจุดเข้าซื้อ (Technical)", "🎯 เรดาร์สแกนหุ้น"]
 if st.session_state["logged_in"]: tabs_list.extend(["💼 บัญชีลงทุน", "🧾 ระบบภาษี"])
 tabs = st.tabs(tabs_list)
 
 # ==========================================
-# หน้า 1: วิเคราะห์กราฟรายตัว (Pro-Trader)
+# หน้า 1: วิเคราะห์กราฟรายตัว (ภาพรวม Pro-Trader)
 # ==========================================
 with tabs[0]:
     if not df.empty:
@@ -497,50 +499,106 @@ with tabs[0]:
                     <div class="pro-row"><span>แนวรับถัดไป</span> <span>${levels['s3']:.2f}</span></div>
                 </div>
                 """, unsafe_allow_html=True)
+
+# ==========================================
+# 🟢 หน้า 2 (ใหม่): หาจุดเข้าซื้อ (Technical Action)
+# ==========================================
+with tabs[1]:
+    if not df.empty:
+        st.markdown(f"## 🔬 โซนเข้าซื้อ (Action Zones) : {ticker}")
+        st.markdown("หน้าต่างพิเศษสำหรับสาย Technical เพื่อหาจังหวะ **'ย่อซื้อ (Buy the Dip)'** หรือ **'ทะลุซื้อ (Breakout)'** โดยอิงจากข้อมูล Real-time")
+        
+        last_close = df['Close'].iloc[-1]
+        ema10 = df['E10'].iloc[-1]
+        ema25 = df['E25'].iloc[-1]
+        ema50 = df['E50'].iloc[-1]
+        ema200 = df['E200'].iloc[-1]
+        rsi = df['RSI'].iloc[-1]
+        macd = df['MACD'].iloc[-1]
+        sig = df['Sig'].iloc[-1]
+        
+        # ลอจิกวิเคราะห์เทรนด์หลัก
+        if last_close > ema200: 
+            trend_main = "🟢 ขาขึ้นระยะยาว (Bullish)"
+            trend_desc = "ราคาอยู่เหนือเส้น EMA 200 วัน แสดงว่าเทรนด์หลักเป็นขาขึ้น แนะนำให้หาจังหวะ **'ย่อซื้อ'** จะได้เปรียบที่สุด"
+        else: 
+            trend_main = "🔴 ขาลงระยะยาว (Bearish)"
+            trend_desc = "ราคาอยู่ใต้เส้น EMA 200 วัน เทรนด์หลักอ่อนแอ หากจะเล่นต้องเป็นสาย **'เก็งกำไรเด้งสั้น'** เท่านั้น ห้ามถือนาน"
             
-            if is_uptrend and is_bullish_macd:
-                p_main, summary = "ย่อ = ซื้อเพิ่ม / ถือรันเทรนด์", "🟢 'เกมลุย'"
-                not_to_do = "❌ ห้ามสวนเทรนด์ (Short/Put)<br>❌ อย่ารีบขายหมู"
-                t_flow = f"หลุด {levels['s1']:.2f} (ระวัง) ➡ ยืน {levels['s1']:.2f} (ลุ้นต่อ) ➡ เบรก {levels['r2']:.2f} (ไปต่อยาว)"
-            elif not is_uptrend:
-                p_main, summary = "เด้ง = หนี / ลดความเสี่ยง", "🔴 'เกมป้องกัน'"
-                not_to_do = "❌ ห้ามไล่ซื้อสวนทาง<br>❌ ห้ามถัวเพิ่มเด็ดขาด"
-                t_flow = f"หลุด {levels['s2']:.2f} (ลงต่อลึก) ➡ ยืน {levels['r1']:.2f} ได้ (ลุ้นกลับตัว)"
+        # ลอจิกหาจุดเข้าซื้อ (Buy the Dip / Breakout)
+        action_signal = ""
+        action_desc = ""
+        action_color = ""
+        
+        if last_close > ema200: # ถ้าเป็นขาขึ้น
+            if last_close < ema25 and last_close >= (ema50 * 0.98) and rsi < 50:
+                action_signal = "🟢 ย่อตัวลงมาในโซนซื้อ (Buy the Dip)"
+                action_desc = f"ราคาย่อตัวลงมาพักฐานใกล้แนวรับสำคัญ (EMA 50 = ${ema50:.2f}) และความร้อนแรง (RSI) ลดลงแล้ว เป็นจังหวะดีในการแบ่งไม้สะสม"
+                action_color = "#00E676"
+            elif macd > sig and last_close > ema10 and df['Close'].iloc[-2] <= df['E10'].iloc[-2]:
+                action_signal = "🔥 สัญญาณซื้อเพิ่งเกิด (Fresh Breakout)"
+                action_desc = "ราคาเพิ่งทะลุเส้นระยะสั้น (EMA 10) ขึ้นมาได้ พร้อมโมเมนตัม MACD สนับสนุน สามารถพิจารณา 'ซื้อตามน้ำ' ได้เลย"
+                action_color = "#FFD600"
+            elif rsi > 70:
+                action_signal = "🔴 ตึงตัวเกินไป (Overbought)"
+                action_desc = f"ราคาปรับตัวขึ้นมาแรงมากจน RSI ทะลุ 70 มีความเสี่ยงที่จะโดนเทขายทำกำไร **ห้ามไล่ซื้อเด็ดขาด** ให้รอราคาย่อตัวก่อน"
+                action_color = "#FF5252"
             else:
-                p_main, summary = "รอจังหวะ / เลือกทาง", "🟡 'เกมระวัง'"
-                not_to_do = "❌ ห้ามทุ่มสุดตัว<br>❌ อย่าเชื่อสัญญาณเดียว"
-                t_flow = f"หลุด {levels['s2']:.2f} (จบรอบ) ➡ แขว่งกรอบ {levels['s2']:.2f}-{levels['r1']:.2f}"
-                
+                action_signal = "⏳ รอจังหวะชัดเจน (Wait & See)"
+                action_desc = "กราฟกำลังสร้างฐานสะสมพลัง หรือสัญญาณยังขัดแย้งกัน แนะนำให้ทับมือรอดูไปก่อน"
+                action_color = "#B0BEC5"
+        else: # ถ้าเป็นขาลง
+            if rsi < 30 and macd > sig:
+                action_signal = "⚡ เก็งกำไรเด้งสั้น (Speculative Rebound)"
+                action_desc = "ราคาลงมาลึกมากจนเริ่มมีสัญญาณซื้อสวนทาง (Oversold) เหมาะสำหรับเล่นเด้งสั้นๆ แต่ต้องมีจุดตัดขาดทุน (Stop Loss) ที่เคร่งครัด"
+                action_color = "#2962FF"
+            else:
+                action_signal = "❌ ทับมือ ห้ามรับมีด (Downtrend Risk)"
+                action_desc = "เทรนด์เป็นขาลงชัดเจนและยังไม่มีสัญญาณกลับตัว การเข้าไปซื้อตอนนี้เสมือนการเข้าไปรับมีดที่กำลังตกลงมา แนะนำให้อยู่เฉยๆ"
+                action_color = "#FF5252"
+
+        c_t1, c_t2 = st.columns(2)
+        with c_t1:
             st.markdown(f"""
-            <div class="pro-box" style="border-top: 3px solid #FFD600;">
-                <div class="pro-title c-yellow">แผนการเทรด (AI Update)</div>
-                <div style="margin-bottom:8px;"><b>🎯 แผนหลัก (ตอนนี้)</b><br><span class="c-gray">{p_main}</span></div>
-            </div>
-            
-            <div class="pro-box" style="border-top: 3px solid #FF5252; background-color: rgba(255, 82, 82, 0.05);">
-                <div class="pro-title c-red">สิ่งที่ไม่ควรทำตอนนี้ ⚠️</div>
-                <div class="c-red">{not_to_do}</div>
-            </div>
-            
-            <div class="pro-box">
-                <div class="c-gray">💡 <b>สรุปสั้นๆ:</b> {summary}<br><br><b>แผนภาพแนวโน้ม:</b> {t_flow}</div>
+            <div class="pro-box" style="border-top: 4px solid #82B1FF;">
+                <div style="font-size: 0.9em; color: #B0BEC5;">ภาพรวมกระแสน้ำ (Primary Trend)</div>
+                <div style="font-size: 1.4em; font-weight: bold; margin: 10px 0;">{trend_main}</div>
+                <div style="color: #E0E0E0; font-size: 0.95em;">{trend_desc}</div>
             </div>
             """, unsafe_allow_html=True)
-            
-            sup_val = df['E50'].iloc[-1]
-            if actual_cost > 0:
-                pl = ((last_p - actual_cost) / actual_cost) * 100
-                st.write(f"**P/L ของคุณ:** {pl:.2f}%")
-                sl = sup_val * 0.99 if b_p == 0 else actual_cost * 0.92
-                st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
-                ra = t_cap * (r_pct / 100.0)
-                if last_p > sl: st.success(f"🧮 **เข้าซื้อได้สูงสุด:** {ra/(last_p-sl):.0f} หุ้น")
+        with c_t2:
+            st.markdown(f"""
+            <div class="pro-box" style="border-top: 4px solid {action_color}; background-color: {action_color}11;">
+                <div style="font-size: 0.9em; color: #B0BEC5;">สถานะจุดเข้า (Entry Action)</div>
+                <div style="font-size: 1.4em; font-weight: bold; color: {action_color}; margin: 10px 0;">{action_signal}</div>
+                <div style="color: #E0E0E0; font-size: 0.95em;">{action_desc}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("### 🔎 กราฟซูมระยะประชิด (3 เดือนล่าสุด)")
+        # ตัดข้อมูลมาแค่ 60 วันทำการหลังสุด (ประมาณ 3 เดือน) เพื่อให้เห็นกราฟแท่งเทียนชัดๆ
+        df_zoom = df.tail(60)
+        
+        fig_zoom = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
+        fig_zoom.add_trace(go.Candlestick(x=df_zoom.index, open=df_zoom['Open'], high=df_zoom['High'], low=df_zoom['Low'], close=df_zoom['Close'], name="Price"), row=1, col=1)
+        fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['E10'], line=dict(color='#00E676', width=1.5), name="EMA 10 (ระยะสั้น)"), row=1, col=1)
+        fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['E50'], line=dict(color='#FF6D00', width=2), name="EMA 50 (แนวรับหลัก)"), row=1, col=1)
+        
+        # ไฮไลต์โซนย่อซื้อ (ถ้ามี)
+        if last_close < ema25 and last_close >= (ema50 * 0.95):
+             fig_zoom.add_hline(y=ema50, line_dash="solid", line_color="#00E676", annotation_text="โซนเฝ้าระวังเข้าซื้อ (Buy Zone)", row=1, col=1, opacity=0.5)
+
+        fig_zoom.add_trace(go.Bar(x=df_zoom.index, y=df_zoom['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df_zoom['Hist']], name="MACD"), row=2, col=1)
+        fig_zoom.update_layout(template="plotly_dark", height=500, margin=dict(l=0,r=0,t=30,b=0), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+        fig_zoom.update_xaxes(rangeslider_visible=False)
+        st.plotly_chart(fig_zoom, use_container_width=True)
+
     else: st.warning(f"❌ ไม่พบข้อมูล '{ticker}'")
 
 # ==========================================
-# หน้า 2: เรดาร์สแกนหุ้น (เต็มหน้าจอ)
+# หน้า 3: เรดาร์สแกนหุ้น (เต็มหน้าจอ)
 # ==========================================
-with tabs[1]:
+with tabs[2]:
     st.markdown("## 🎯 เรดาร์สแกนหุ้น (AI Screener & Mini-Chart)")
     st.markdown("### 📋 จัดการรายชื่อหุ้นในเรดาร์")
     
@@ -569,15 +627,15 @@ with tabs[1]:
                     screener_df.style.map(color_action, subset=["คำแนะนำ AI"]),
                     column_config={"กราฟ 30 วัน": st.column_config.LineChartColumn("ทิศทาง (30 วัน)")},
                     use_container_width=True,
-                    height=600  # 🛠️ ขยายความสูงให้ดูหุ้นได้ทีละเยอะๆ เต็มตา
+                    height=600  # ขยายความสูงให้ดูหุ้นได้ทีละเยอะๆ เต็มตา
                 )
             else: st.warning("ไม่พบข้อมูล กรุณาตรวจสอบรายชื่อหุ้นอีกครั้ง")
 
 # ==========================================
-# หน้า 3: บัญชีและพอร์ตโฟลิโอ (เงินจริง)
+# หน้า 4: บัญชีและพอร์ตโฟลิโอ (เงินจริง)
 # ==========================================
 if st.session_state["logged_in"]:
-    with tabs[2]:
+    with tabs[3]:
         st.subheader("💼 แดชบอร์ดกระแสเงินสด")
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("📤 โอนออก (ลงทุน)", f"${l_stat['outward']:,.2f}")
@@ -694,9 +752,9 @@ if st.session_state["logged_in"]:
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
 # ==========================================
-# หน้า 4: ภาษีสรรพากร
+# หน้า 5: ภาษีสรรพากร
 # ==========================================
-    with tabs[3]:
+    with tabs[4]:
         t1, t2 = st.columns([8, 2])
         t1.subheader("🧾 ประเมินภาษี ภ.ง.ด. 90")
         st.info("💡 **หลักการภาษีใหม่:** การนำเงินกลับไทยจะถูกหักจาก 'เงินต้นสะสม' ก่อน หากหักเงินต้นหมดแล้ว ยอดที่นำกลับจึงจะถือเป็น 'กำไรที่ต้องเสียภาษี'")
