@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.34", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.35", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.34", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.35", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -115,7 +115,6 @@ def save_df_to_sheet(worksheet_name, df):
 
 if "trade_ledger" not in st.session_state: st.session_state.trade_ledger = load_ledger_data()
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
-if "mock_port" not in st.session_state: st.session_state["mock_port"] = pd.DataFrame(columns=["Date", "Ticker", "Buy_Price", "Shares"])
 
 if "radar_tickers" not in st.session_state:
     old_fav = st.session_state.get("favorite_tickers", "ASTS, RKLB, NVTS, IREN, RGTI, C, TSLA, PLTR, ONDS, OKLO, EOSE, IONQ")
@@ -224,7 +223,6 @@ def load_pro_data(ticker_symbol, tf):
                 market_signal["smart_money"] = "Risk ON 🟢" if hyg_ief_ratio.iloc[-1] > hyg_ief_ratio.ewm(span=20).mean().iloc[-1] else "Risk OFF 🔴"
         except: pass
         
-        # 🟢 ดึงข้อมูลวันประกาศงบไตรมาส (Earnings Date)
         earnings_date = "N/A"
         try:
             cal = s.calendar
@@ -238,7 +236,6 @@ def load_pro_data(ticker_symbol, tf):
                     earnings_date = e_df.index[0].strftime("%d/%m/%Y")
         except: pass
         
-        # สำรองเผื่อข้อมูลไม่มา
         if earnings_date == "N/A":
             ts = info.get('earningsTimestamp')
             if ts: earnings_date = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%d/%m/%Y")
@@ -264,7 +261,7 @@ def load_pro_data(ticker_symbol, tf):
             "roe": f"{float(info.get('returnOnEquity', 0) or 0)*100:.2f}%",
             "rev_growth": f"{float(info.get('revenueGrowth', 0) or 0)*100:.2f}%",
             "dividend": f"{(float(div_y) * 100):.2f}%" if div_y else "ไม่มีปันผล",
-            "earnings_date": earnings_date, # 🟢 ส่งข้อมูลวันประกาศงบไปที่ตัวแปร
+            "earnings_date": earnings_date,
             "business_desc_th": th_summary,
             "industry": info.get('industry', 'N/A'),
             "sector": info.get('sector', 'N/A'),
@@ -382,7 +379,7 @@ if st.session_state["logged_in"]:
 with st.spinner(f"⏳ กำลังประมวลผลดึงข้อมูลสดจากตลาด..."):
     df, fund, matrix, market_signal, levels = load_pro_data(ticker, tf_option)
 
-tabs_list = ["📊 วิเคราะห์รายตัว", "🎯 เรดาร์ & พอร์ตจำลอง"]
+tabs_list = ["📊 วิเคราะห์รายตัว", "🎯 เรดาร์สแกนหุ้น"]
 if st.session_state["logged_in"]: tabs_list.extend(["💼 บัญชีลงทุน", "🧾 ระบบภาษี"])
 tabs = st.tabs(tabs_list)
 
@@ -477,13 +474,10 @@ with tabs[0]:
             f2.metric("P/E Ratio", fund.get('pe','N/A'), pe_status, delta_color="off")
             f3.metric("ROE", fund.get('roe','N/A'))
             st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-            
-            # 🟢 แสดงวันประกาศงบที่คอลัมน์ขวาสุดของแถวที่ 2
             f4, f5, f6 = st.columns(3)
             f4.metric("การเติบโตรายได้", fund.get('rev_growth','N/A'))
             f5.metric("💰 เงินปันผล", fund.get('dividend','ไม่มี'), "ต่อปี", delta_color="normal" if fund.get('dividend') != "ไม่มีปันผล" else "off")
             f6.metric("📅 ประกาศงบ (Earnings)", fund.get('earnings_date', 'รอประกาศ'))
-            
             if (pe_v <= 0) or (fund.get('roe_val', 0) < 0): st.error("⚠️ หุ้นเก็งกำไรความเสี่ยงสูง (ขาดทุน หรือ ROE ติดลบ) ระบบจะปรับลดงบเข้าซื้ออัตโนมัติ")
         
         with c_r:
@@ -544,11 +538,12 @@ with tabs[0]:
     else: st.warning(f"❌ ไม่พบข้อมูล '{ticker}'")
 
 # ==========================================
-# หน้า 2: เรดาร์ & พอร์ตจำลอง
+# หน้า 2: เรดาร์สแกนหุ้น (เต็มหน้าจอ)
 # ==========================================
 with tabs[1]:
     st.markdown("## 🎯 เรดาร์สแกนหุ้น (AI Screener & Mini-Chart)")
     st.markdown("### 📋 จัดการรายชื่อหุ้นในเรดาร์")
+    
     c_rad1, c_rad2 = st.columns([7, 3])
     with c_rad1:
         selected_radar = st.multiselect("หุ้นที่กำลังเฝ้าจับตา (กด X เพื่อลบออก):", options=st.session_state.radar_tickers, default=st.session_state.radar_tickers)
@@ -573,81 +568,10 @@ with tabs[1]:
                 st.dataframe(
                     screener_df.style.map(color_action, subset=["คำแนะนำ AI"]),
                     column_config={"กราฟ 30 วัน": st.column_config.LineChartColumn("ทิศทาง (30 วัน)")},
-                    use_container_width=True
+                    use_container_width=True,
+                    height=600  # 🛠️ ขยายความสูงให้ดูหุ้นได้ทีละเยอะๆ เต็มตา
                 )
             else: st.warning("ไม่พบข้อมูล กรุณาตรวจสอบรายชื่อหุ้นอีกครั้ง")
-
-    st.markdown("---")
-    st.markdown("## 🎮 ห้องซ้อม: พอร์ตจำลอง (Paper Trading)")
-    st.markdown("ทดสอบวิชาคัดหุ้นด้วยระบบนี้ ข้อมูลจะแยกออกจากบัญชีเงินจริง 100%")
-    
-    with st.expander("➕ เพิ่มรายการเทรดทิพย์", expanded=False):
-        with st.form("mock_trade_form"):
-            c1, c2, c3, c4 = st.columns(4)
-            m_date = c1.text_input("วันที่", value=current_date)
-            m_ticker = c2.text_input("ชื่อหุ้น").upper()
-            m_price = c3.number_input("ราคาซื้อ ($)", min_value=0.0, format="%.2f")
-            m_shares = c4.number_input("จำนวนหุ้น", min_value=0.0, format="%.4f")
-            if st.form_submit_button("💾 ซื้อเข้าพอร์ตจำลอง", use_container_width=True):
-                if m_ticker and m_price > 0 and m_shares > 0:
-                    new_mock = pd.DataFrame([{"Date": m_date, "Ticker": m_ticker, "Buy_Price": m_price, "Shares": m_shares}])
-                    st.session_state["mock_port"] = pd.concat([st.session_state["mock_port"], new_mock], ignore_index=True)
-                    st.success(f"บันทึก {m_ticker} สำเร็จ!"); time.sleep(1); st.rerun()
-
-    if not st.session_state["mock_port"].empty:
-        st.markdown("### 📊 สรุปพอร์ตจำลองปัจจุบัน (P/L Summary)")
-        
-        mock_df = st.session_state["mock_port"].copy()
-        mock_df['Buy_Price'] = pd.to_numeric(mock_df['Buy_Price'], errors='coerce').fillna(0)
-        mock_df['Shares'] = pd.to_numeric(mock_df['Shares'], errors='coerce').fillna(0)
-        mock_df['Total_Cost'] = mock_df['Buy_Price'] * mock_df['Shares']
-        
-        grouped = mock_df.groupby('Ticker').agg({'Shares': 'sum', 'Total_Cost': 'sum'}).reset_index()
-        grouped['Avg_Cost'] = np.where(grouped['Shares'] > 0, grouped['Total_Cost'] / grouped['Shares'], 0)
-        
-        mock_tickers = grouped["Ticker"].tolist()
-        
-        with st.spinner("⏳ อัปเดตกำไร/ขาดทุนพอร์ตจำลอง..."):
-            mock_prices = get_batch_live_prices(mock_tickers)
-            mock_results, mock_total_cost, mock_total_val = [], 0.0, 0.0
-            
-            for _, row in grouped.iterrows():
-                t = row["Ticker"]
-                sh = row["Shares"]
-                avg_c = row["Avg_Cost"]
-                t_cost = row["Total_Cost"]
-                cp = mock_prices.get(t, avg_c)
-                
-                val = cp * sh
-                pl_usd = val - t_cost
-                pl_pct = (pl_usd / t_cost * 100) if t_cost > 0 else 0
-                
-                mock_total_cost += t_cost
-                mock_total_val += val
-                
-                mock_results.append({
-                    "หุ้น": t, "ต้นทุนเฉลี่ย": avg_c, "ราคาล่าสุด": cp, 
-                    "จำนวน": sh, "กำไร/ขาดทุน ($)": pl_usd, "% เปลี่ยนแปลง": pl_pct
-                })
-
-            st.markdown(f"""
-            <div style='background-color:#1E1E1E; padding:15px; border-radius:8px; display:flex; justify-content:space-around; flex-wrap: wrap;'>
-                <div style='margin-bottom:5px;'><b>ต้นทุนรวมทิพย์:</b> <span style='color:#E0E0E0;'>${mock_total_cost:,.2f}</span></div>
-                <div style='margin-bottom:5px;'><b>มูลค่าปัจจุบัน:</b> <span style='color:#E0E0E0;'>${mock_total_val:,.2f}</span></div>
-                <div style='margin-bottom:5px;'><b>กำไร/ขาดทุนรวม:</b> <span style='color:{"#00E676" if mock_total_val>=mock_total_cost else "#FF5252"}; font-weight:bold;'>${(mock_total_val - mock_total_cost):,.2f}</span></div>
-            </div><br>
-            """, unsafe_allow_html=True)
-            
-            res_mock_df = pd.DataFrame(mock_results)
-            def color_mock_profit(val): return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
-            st.dataframe(res_mock_df.style.map(color_mock_profit, subset=["กำไร/ขาดทุน ($)", "% เปลี่ยนแปลง"]).format({
-                "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาล่าสุด": "${:,.4f}", "จำนวน": "{:,.4f}", 
-                "กำไร/ขาดทุน ($)": "${:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%"
-            }), use_container_width=True)
-
-        if st.button("🗑️ ล้างพอร์ตจำลองทิ้งทั้งหมด (Clear All)"):
-            st.session_state["mock_port"] = pd.DataFrame(columns=["Date", "Ticker", "Buy_Price", "Shares"])
-            st.rerun()
 
 # ==========================================
 # หน้า 3: บัญชีและพอร์ตโฟลิโอ (เงินจริง)
