@@ -15,15 +15,15 @@ from PIL import Image
 from datetime import datetime, timezone, timedelta
 
 # ==========================================
-# 🎨 1. การตั้งค่าแบรนด์และหน้าเพจ
+# 🎨 1. การตั้งค่าแบรนด์และสไตล์หน้าเพจ
 # ==========================================
 logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.38", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.42", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.38", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.42", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -50,8 +50,23 @@ current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 
 # ==========================================
-# 2. 🔐 การเชื่อมต่อฐานข้อมูล & Session State
+# 🛡️ ระบบป้องกันการถูกบล็อกจาก Yahoo Finance
 # ==========================================
+yf_session = requests.Session()
+yf_session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+})
+
+# ==========================================
+# 🔐 2. การบริหารสถานะข้อมูลระบบ (Persistent Memory)
+# ==========================================
+if "current_ticker" not in st.session_state:
+    st.session_state.current_ticker = "RKLB"
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+if "radar_tickers" not in st.session_state:
+    st.session_state.radar_tickers = ["ASTS", "RKLB", "NVTS", "IREN", "RGTI", "C", "TSLA", "PLTR", "ONDS", "OKLO", "EOSE", "IONQ"]
+
 @st.cache_resource(ttl=3600)
 def init_connection():
     creds_dict = json.loads(st.secrets["google_creds_json"])
@@ -114,11 +129,6 @@ def save_df_to_sheet(worksheet_name, df):
         return False
 
 if "trade_ledger" not in st.session_state: st.session_state.trade_ledger = load_ledger_data()
-if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
-
-if "radar_tickers" not in st.session_state:
-    old_fav = st.session_state.get("favorite_tickers", "ASTS, RKLB, NVTS, IREN, RGTI, C, TSLA, PLTR, ONDS, OKLO, EOSE, IONQ")
-    st.session_state.radar_tickers = [t.strip().upper() for t in old_fav.split(',') if t.strip()]
 
 def log_visitor():
     try:
@@ -132,7 +142,7 @@ def log_visitor():
 visitor_count = log_visitor()
 
 # ==========================================
-# 3. 📊 ลอจิกบัญชี & ข้อมูลตลาด
+# 📊 3. ลอจิกบัญชี & ฟังก์ชันคำนวณระบบตลาด
 # ==========================================
 def calculate_stats(df_input):
     df = clean_df_types(df_input)
@@ -145,7 +155,7 @@ def calculate_stats(df_input):
     df = df[~df['Action'].isin(['None', '', 'nan', 'กำไรจากการขายหุ้น (Profit)'])].copy().reset_index(drop=True)
     for idx, row in df.iterrows():
         action = str(row.get("Action", "")).strip()
-        ticker = str(row.get("Ticker", "")).strip().upper()
+        ticker_item = str(row.get("Ticker", "")).strip().upper()
         p, s = float(row.get("Price", 0.0)), float(row.get("Shares", 0.0))
         manual_amount = float(row.get("Amount_USD", 0.0))
         trade_value = p * s
@@ -153,18 +163,18 @@ def calculate_stats(df_input):
         if action == "นำเงินออกนอกประเทศ (Outward)": cb += a; stat["outward"] += a
         elif action == "นำเงินเข้าประเทศไทย (Inward)": cb -= a; stat["inward"] += a
         elif action == "รับเงินปันผล (Dividend)": cb += a; stat["dividend"] += a
-        elif action == "ซื้อหุ้น (Buy)" and ticker:
+        elif action == "ซื้อหุ้น (Buy)" and ticker_item:
             cb -= trade_value; stat["bought"] += trade_value
-            if ticker not in hld: hld[ticker] = {"shares": 0.0, "total_cost": 0.0}
-            hld[ticker]["shares"] += s; hld[ticker]["total_cost"] += trade_value
-        elif action == "ขายหุ้น (Sell)" and ticker:
+            if ticker_item not in hld: hld[ticker_item] = {"shares": 0.0, "total_cost": 0.0}
+            hld[ticker_item]["shares"] += s; hld[ticker_item]["total_cost"] += trade_value
+        elif action == "ขายหุ้น (Sell)" and ticker_item:
             cb += trade_value; stat["sold"] += trade_value
-            if ticker in hld and hld[ticker]["shares"] > 0:
-                avg_cost = hld[ticker]["total_cost"] / hld[ticker]["shares"]
+            if ticker_item in hld and hld[ticker_item]["shares"] > 0:
+                avg_cost = hld[ticker_item]["total_cost"] / hld[ticker_item]["shares"]
                 cogs = avg_cost * s
                 realized_pl = trade_value - cogs
                 stat["realized_profit"] += realized_pl
-                hld[ticker]["shares"] -= s; hld[ticker]["total_cost"] -= cogs
+                hld[ticker_item]["shares"] -= s; hld[ticker_item]["total_cost"] -= cogs
                 old_ref = str(row.get("Ref_Doc", "")).replace("nan", "")
                 if "P/L:" not in old_ref: df.at[idx, "Ref_Doc"] = f"P/L: ${realized_pl:.2f} | {old_ref}"
         r_bals.append(cb)
@@ -190,8 +200,15 @@ def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
     p, i = stgs[tf]["p"], stgs[tf]["i"]
     try:
-        s = yf.Ticker(ticker_symbol)
-        df = s.history(period=p, interval=i).dropna(subset=['Close'])
+        # ใช้ yf_session เพื่อป้องกันการโดนบล็อก
+        s = yf.Ticker(ticker_symbol, session=yf_session)
+        df = s.history(period=p, interval=i)
+        
+        # ถ้าโหลดปกติไม่มา ให้ลองใช้โหมดดาวน์โหลดแทน
+        if df.empty:
+            df = yf.download(ticker_symbol, period=p, interval=i, progress=False, session=yf_session)
+            
+        df = df.dropna(subset=['Close'])
         if df.empty: return pd.DataFrame(), {}, None, None, {}
         
         info = s.info
@@ -200,7 +217,7 @@ def load_pro_data(ticker_symbol, tf):
         
         market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 0.0, "vix_ts": 0.0, "smart_money": "N/A"}
         try:
-            spy = yf.Ticker("^GSPC").history(period=p, interval=i)
+            spy = yf.Ticker("^GSPC", session=yf_session).history(period=p, interval=i)
             if not spy.empty:
                 df['RS'] = (df['Close'].pct_change(10) - spy['Close'].pct_change(10)) * 100
                 spy_p = spy['Close'].iloc[-1]
@@ -208,14 +225,14 @@ def load_pro_data(ticker_symbol, tf):
                 market_signal["spy_trend"] = "ขึ้น 📈" if spy_p > spy['Close'].ewm(span=50).mean().iloc[-1] else "ลง 📉"
         except: df['RS'] = 0
         try:
-            vix = yf.Ticker("^VIX").history(period="1mo")
+            vix = yf.Ticker("^VIX", session=yf_session).history(period="1mo")
             if not vix.empty: market_signal["vix"] = float(vix['Close'].iloc[-1])
-            vix3m = yf.Ticker("^VIX3M").history(period="1mo")
+            vix3m = yf.Ticker("^VIX3M", session=yf_session).history(period="1mo")
             if not vix3m.empty and market_signal["vix"] > 0: market_signal["vix_ts"] = float(market_signal["vix"] / vix3m['Close'].iloc[-1])
         except: pass
         try:
-            hyg = yf.Ticker("HYG").history(period="6mo")['Close']
-            ief = yf.Ticker("IEF").history(period="6mo")['Close']
+            hyg = yf.Ticker("HYG", session=yf_session).history(period="6mo")['Close']
+            ief = yf.Ticker("IEF", session=yf_session).history(period="6mo")['Close']
             if not hyg.empty and not ief.empty:
                 df_sm = pd.concat([hyg, ief], axis=1).dropna()
                 df_sm.columns = ['HYG', 'IEF']
@@ -282,13 +299,14 @@ def load_pro_data(ticker_symbol, tf):
             "s1": last - (atr_proxy * 0.5), "s2": last - (atr_proxy * 1.0), "s3": last - (atr_proxy * 1.5)
         }
         return df, fund, mat, market_signal, levels
-    except: return pd.DataFrame(), {}, None, None, {}
+    except Exception as e: 
+        return pd.DataFrame(), {}, None, None, {}
 
 @st.cache_data(ttl=60)
 def get_batch_live_prices(tickers):
     if not tickers: return {}
     try:
-        df = yf.download(tickers, period="1d", progress=False)
+        df = yf.download(tickers, period="1d", progress=False, session=yf_session)
         prices = {}
         if len(tickers) == 1:
             if not df.empty and 'Close' in df.columns: prices[tickers[0]] = float(df['Close'].iloc[-1])
@@ -300,7 +318,7 @@ def get_batch_live_prices(tickers):
 
 @st.cache_data(ttl=60)
 def get_live_fx():
-    try: return yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
+    try: return yf.Ticker("USDTHB=X", session=yf_session).history(period="1d")['Close'].iloc[-1]
     except: return 35.00
 
 @st.cache_data(ttl=300)
@@ -309,7 +327,7 @@ def run_ai_screener(tickers):
     results = []
     for t in tickers:
         try:
-            hist = yf.Ticker(t).history(period="6mo")
+            hist = yf.Ticker(t, session=yf_session).history(period="6mo")
             if hist.empty: continue
             
             recent_prices = hist['Close'].tail(30).tolist()
@@ -340,21 +358,26 @@ def run_ai_screener(tickers):
     return pd.DataFrame(results)
 
 # ==========================================
-# 5. UI: Sidebar
+# 🎛️ 4. UI Layout: แถบเมนูด้านซ้าย (Sidebar)
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub")
-    if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): st.cache_data.clear(); st.rerun()
+    else: st.title("🛡️ Strategic Hub 4.42")
+    
+    if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
+        st.cache_data.clear()
+        st.rerun()
+        
     st.info(f"👁️ ยอดผู้เข้าชม: {visitor_count} ครั้ง")
     st.markdown("---")
     
-    ticker = st.text_input("🔎 ชื่อหุ้น / ดัชนี (ดูรายตัว)", value="NVTS").upper()
-    if "prev_ticker" not in st.session_state: st.session_state.prev_ticker = ticker
-    if st.session_state.prev_ticker != ticker:
-        st.cache_data.clear()
-        st.session_state.prev_ticker = ticker
+    ticker_input = st.text_input("🔎 ชื่อหุ้น / ดัชนี (ดูรายตัว)", value=st.session_state.current_ticker).upper().strip()
+    if ticker_input != st.session_state.current_ticker and ticker_input != "":
+        st.session_state.current_ticker = ticker_input
+        st.rerun() 
         
+    ticker = st.session_state.current_ticker
+    
     tf_option = st.radio("เลือกความละเอียด:", ["1D (รายวัน)", "1W (รายสัปดาห์)", "1M (รายเดือน)"], index=0)
     st.markdown("---")
     st.subheader("🧮 คำนวณ (Public)")
@@ -365,11 +388,15 @@ with st.sidebar:
     if not st.session_state["logged_in"]:
         pwd = st.text_input("🔑 รหัสผ่าน", type="password")
         if st.button("🔓 เข้าสู่ระบบ", use_container_width=True, type="primary"):
-            if pwd == st.secrets.get("app_password", "123456"): st.session_state["logged_in"] = True; st.rerun()
+            if pwd == st.secrets.get("app_password", "123456"): 
+                st.session_state["logged_in"] = True
+                st.rerun()
             else: st.error("❌ รหัสผิด")
     else:
         st.success("✅ โหมดเจ้าของพอร์ต")
-        if st.button("🚪 ออกจากระบบ", use_container_width=True): st.session_state["logged_in"] = False; st.rerun()
+        if st.button("🚪 ออกจากระบบ", use_container_width=True): 
+            st.session_state["logged_in"] = False
+            st.rerun()
 
 holdings = {}
 if st.session_state["logged_in"]:
@@ -384,7 +411,7 @@ if st.session_state["logged_in"]: tabs_list.extend(["💼 บัญชีลง�
 tabs = st.tabs(tabs_list)
 
 # ==========================================
-# หน้า 1: วิเคราะห์กราฟรายตัว (ภาพรวม Pro-Trader)
+# หน้า 1: วิเคราะห์กราฟรายตัว (ภาพรวมหลัก)
 # ==========================================
 with tabs[0]:
     if not df.empty:
@@ -395,8 +422,17 @@ with tabs[0]:
         is_uptrend = last_p > df['E50'].iloc[-1]
         is_bullish_macd = df['MACD'].iloc[-1] > df['Sig'].iloc[-1]
         
+        daily_diff = last_p - prev_p
+        daily_pct = (daily_diff / prev_p) * 100 if prev_p > 0 else 0.0
+        
         st.markdown(f"## 📈 {ticker} | <span style='color:#00E676;'>${last_p:,.2f}</span>", unsafe_allow_html=True)
-        st.markdown(f"<span style='color:#B0BEC5;'>📅 ข้อมูลกราฟล่าสุด ณ: {last_candle_date} | 🕒 เวลาอัปเดต: {current_time}</span>", unsafe_allow_html=True)
+        st.markdown(f"<span style='color:#B0BEC5;'>📅 ข้อมูลกราฟล่าสุด ณ: {last_candle_date} | 🕒 เวลาอัปเดตระบบ: {current_time}</span>", unsafe_allow_html=True)
+        
+        m_c1, m_c2 = st.columns(2)
+        m_c1.metric("💵 ราคาตลาดล่าสุด (Real-Time)", f"${last_p:,.2f}")
+        m_c2.metric("📊 การเปลี่ยนแปลงจากราคาปิดวันก่อนหน้า (Daily Change)", 
+                    f"{'+' if daily_diff >= 0 else ''}{daily_diff:,.2f} USD", 
+                    delta=f"{daily_pct:+.2f}%")
         
         with st.expander("🏢 ข้อมูลธุรกิจ (Company Profile)", expanded=False):
             st.markdown(f"**🇹🇭 สรุปธุรกิจ:**")
@@ -457,8 +493,10 @@ with tabs[0]:
             fig.add_trace(go.Scatter(x=df.index, y=df['E25'], line=dict(color='#BA68C8', width=1.5), name="EMA 25"), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['E50'], line=dict(color='#FF6D00', width=2), name="EMA 50"), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['E200'], line=dict(color='#E0E0E0', width=1, dash='dot'), name="EMA 200"), row=1, col=1)
+            
             actual_cost = holdings[ticker]["total_cost"] / holdings[ticker]["shares"] if st.session_state["logged_in"] and holdings.get(ticker, {}).get("shares", 0) > 0.001 else b_p
             if actual_cost > 0: fig.add_hline(y=actual_cost, line_dash="dash", line_color="cyan", annotation_text="ต้นทุนเฉลี่ย", row=1, col=1)
+            
             fig.add_trace(go.Bar(x=df.index, y=df['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df['Hist']], name="MACD"), row=2, col=1)
             fig.update_layout(template="plotly_dark", height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
@@ -535,10 +573,11 @@ with tabs[0]:
                 st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
                 ra = t_cap * (r_pct / 100.0)
                 if last_p > sl: st.success(f"🧮 **เข้าซื้อได้สูงสุด:** {ra/(last_p-sl):.0f} หุ้น")
-    else: st.warning(f"❌ ไม่พบข้อมูล '{ticker}'")
+    else: 
+        st.warning(f"❌ ระบบถูกบล็อกสัญญาณจาก Yahoo ชั่วคราวค่ะ โปรดรอประมาณ 1 นาทีแล้วกดปุ่ม 'ดึงข้อมูลเรียลไทม์' ด้านซ้ายบนอีกครั้งค่ะ")
 
 # ==========================================
-# 🟢 หน้า 2: หาจุดเข้าซื้อ (Ultimate Technical Chart 4.38)
+# หน้า 2: โซนเข้าซื้อเทคนิคอล (Action Zones เจาะลึก)
 # ==========================================
 with tabs[1]:
     if not df.empty:
@@ -553,6 +592,8 @@ with tabs[1]:
         rsi = df['RSI'].iloc[-1]
         macd = df['MACD'].iloc[-1]
         sig = df['Sig'].iloc[-1]
+        
+        st.markdown(f"💡 **ราคาตลาดปัจจุบัน:** `${last_close:,.2f} USD` | **ส่วนต่างราคารายวันนับจากปิดวานนี้:** `{daily_diff:+,.2f} USD ({daily_pct:+.2f}%)`")
         
         if last_close > ema200: 
             trend_main = "🟢 ขาขึ้นระยะยาว (Bullish)"
@@ -613,10 +654,8 @@ with tabs[1]:
         st.markdown("### 🔎 กราฟซูมระยะประชิด (3 เดือนล่าสุด)")
         df_zoom = df.tail(60)
         
-        # 🛠️ FIX 4.38: เพิ่มครบ 3 ชั้น ราคา(EMA 4เส้น), MACD(เส้น+แท่ง), RSI
         fig_zoom = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.6, 0.2, 0.2])
         
-        # ชั้นที่ 1: ราคาและ EMA 4 เส้น
         fig_zoom.add_trace(go.Candlestick(x=df_zoom.index, open=df_zoom['Open'], high=df_zoom['High'], low=df_zoom['Low'], close=df_zoom['Close'], name="Price"), row=1, col=1)
         fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['E10'], line=dict(color='#00E676', width=1.5), name="EMA 10 (ระยะสั้น)"), row=1, col=1)
         fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['E25'], line=dict(color='#BA68C8', width=1.5), name="EMA 25 (กลางสั้น)"), row=1, col=1)
@@ -626,20 +665,18 @@ with tabs[1]:
         if last_close < ema25 and last_close >= (ema50 * 0.95):
              fig_zoom.add_hline(y=ema50, line_dash="solid", line_color="#00E676", annotation_text="โซนเฝ้าระวังเข้าซื้อ (Buy Zone)", row=1, col=1, opacity=0.5)
 
-        # ชั้นที่ 2: MACD แบบเต็มระบบ (แท่ง + เส้นตัด)
         fig_zoom.add_trace(go.Bar(x=df_zoom.index, y=df_zoom['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df_zoom['Hist']], name="MACD Hist"), row=2, col=1)
         fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['MACD'], line=dict(color='#2962FF', width=1.5), name="MACD Line"), row=2, col=1)
         fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['Sig'], line=dict(color='#FFD600', width=1.5), name="Signal Line"), row=2, col=1)
         
-        # ชั้นที่ 3: RSI (ความร้อนแรง)
         fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['RSI'], line=dict(color='#FF9800', width=1.5), name="RSI"), row=3, col=1)
-        fig_zoom.add_hline(y=70, line_dash="dot", line_color="#FF5252", row=3, col=1) # เส้น Overbought
-        fig_zoom.add_hline(y=30, line_dash="dot", line_color="#00E676", row=3, col=1) # เส้น Oversold
+        fig_zoom.add_hline(y=70, line_dash="dot", line_color="#FF5252", row=3, col=1) 
+        fig_zoom.add_hline(y=30, line_dash="dot", line_color="#00E676", row=3, col=1) 
         fig_zoom.update_yaxes(range=[0, 100], row=3, col=1)
         
         fig_zoom.update_layout(
             template="plotly_dark", 
-            height=750,  # ขยายกราฟให้สูงขึ้นรับกับ 3 ชั้น
+            height=750,  
             margin=dict(l=0,r=0,t=40,b=0), 
             showlegend=True, 
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
@@ -647,10 +684,8 @@ with tabs[1]:
         fig_zoom.update_xaxes(rangeslider_visible=False)
         st.plotly_chart(fig_zoom, use_container_width=True)
 
-    else: st.warning(f"❌ ไม่พบข้อมูล '{ticker}'")
-
 # ==========================================
-# หน้า 3: เรดาร์สแกนหุ้น (เต็มหน้าจอ)
+# หน้า 3: เรดาร์สแกนหุ้น (AI Screener)
 # ==========================================
 with tabs[2]:
     st.markdown("## 🎯 เรดาร์สแกนหุ้น (AI Screener & Mini-Chart)")
@@ -660,12 +695,14 @@ with tabs[2]:
     with c_rad1:
         selected_radar = st.multiselect("หุ้นที่กำลังเฝ้าจับตา (กด X เพื่อลบออก):", options=st.session_state.radar_tickers, default=st.session_state.radar_tickers)
         if selected_radar != st.session_state.radar_tickers:
-            st.session_state.radar_tickers = selected_radar; st.rerun()
+            st.session_state.radar_tickers = selected_radar
+            st.rerun()
     with c_rad2:
         new_ticker = st.text_input("➕ เพิ่มหุ้นใหม่", placeholder="เช่น MSFT").upper().strip()
         if st.button("เพิ่มเข้าเรดาร์", use_container_width=True):
             if new_ticker and new_ticker not in st.session_state.radar_tickers:
-                st.session_state.radar_tickers.append(new_ticker); st.rerun()
+                st.session_state.radar_tickers.append(new_ticker)
+                st.rerun()
 
     if st.button("🚀 สแกนและอัปเดตกราฟ", type="primary", use_container_width=True):
         with st.spinner("⏳ AI กำลังวิ่งดึงกราฟและข้อมูลทีละตัว..."):
@@ -681,7 +718,7 @@ with tabs[2]:
                     screener_df.style.map(color_action, subset=["คำแนะนำ AI"]),
                     column_config={"กราฟ 30 วัน": st.column_config.LineChartColumn("ทิศทาง (30 วัน)")},
                     use_container_width=True,
-                    height=600  # ขยายความสูงให้ดูหุ้นได้ทีละเยอะๆ เต็มตา
+                    height=600  
                 )
             else: st.warning("ไม่พบข้อมูล กรุณาตรวจสอบรายชื่อหุ้นอีกครั้ง")
 
@@ -757,9 +794,14 @@ if st.session_state["logged_in"]:
                 "FX_Rate": st.column_config.NumberColumn("เรทเงิน", format="%.4f"), "WHT_USD": st.column_config.NumberColumn("ภาษี ($)", format="%.2f"), "Ref_Doc": "หมายเหตุ"
             })
         if not ed_l.equals(st.session_state.trade_ledger):
-            st.session_state.trade_ledger = calculate_stats(clean_df_types(ed_l))[0]; st.rerun()
+            st.session_state.trade_ledger = calculate_stats(clean_df_types(ed_l))[0]
+            st.rerun()
+            
         if st.button("💾 บันทึกข้อมูลบัญชีขึ้น Cloud", type="primary", use_container_width=True):
-            if save_df_to_sheet("Ledger", st.session_state.trade_ledger): st.success("บันทึกสำเร็จ!"); time.sleep(1); st.rerun()
+            if save_df_to_sheet("Ledger", st.session_state.trade_ledger): 
+                st.success("บันทึกสำเร็จ!")
+                time.sleep(1)
+                st.rerun()
 
         st.markdown("---")
         st.subheader("📊 พอร์ตโฟลิโอ (Auto Mark-to-Market)")
@@ -806,8 +848,9 @@ if st.session_state["logged_in"]:
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
 # ==========================================
-# หน้า 5: ภาษีสรรพากร
+# หน้า 5: ระบบคำนวณและประเมินภาษีสรรพากร
 # ==========================================
+if st.session_state["logged_in"]:
     with tabs[4]:
         t1, t2 = st.columns([8, 2])
         t1.subheader("🧾 ประเมินภาษี ภ.ง.ด. 90")
@@ -842,11 +885,17 @@ if st.session_state["logged_in"]:
             st.session_state.trade_ledger.loc[tax_idx, "WHT_USD"] = clean_df_types(ed_t)["WHT_USD"].values
             st.rerun()
         if st.button("💾 บันทึกภาษีลง Cloud", type="primary", use_container_width=True): 
-            if save_df_to_sheet("Ledger", st.session_state.trade_ledger): st.success("บันทึกสำเร็จ!"); time.sleep(1); st.rerun()
+            if save_df_to_sheet("Ledger", st.session_state.trade_ledger): 
+                st.success("บันทึกสำเร็จ!")
+                time.sleep(1)
+                st.rerun()
 
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
-        with c1: selected_year = st.selectbox("📅 ปีภาษี", ["2567 (2024)", "2568 (2025)", "2569 (2026)"]).split("(")[1][:4]
+        with c1: selected_year = st.selectbox("📅 ปีภาษี", [
+            "2567 (2024)", "2568 (2025)", "2569 (2026)", 
+            "2570 (2027)", "2571 (2028)", "2572 (2029)", "2573 (2030)"
+        ]).split("(")[1][:4]
         with c2: is_resident = st.radio("อาศัยในไทย?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
         with c3: other_income = st.number_input("รายได้อื่นๆ (บาท)", min_value=0.0, value=500000.0, step=50000.0)
 
