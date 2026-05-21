@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.41", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.42", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.41", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.42", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -53,7 +53,7 @@ current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 # 🔐 2. การบริหารสถานะข้อมูลระบบ (Persistent Memory Setup)
 # ==========================================
 if "current_ticker" not in st.session_state:
-    st.session_state.current_ticker = "RKLB"
+    st.session_state.current_ticker = "NVTS"
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 if "radar_tickers" not in st.session_state:
@@ -355,11 +355,11 @@ with st.sidebar:
     st.info(f"👁️ ยอดผู้เข้าชม: {visitor_count} ครั้ง")
     st.markdown("---")
     
+    # 🛠️ จุดที่แก้ไข: ไม่ไปเคลียร์ Cache ข้อมูลเก่าแล้ว ป้องกันโดนบล็อกการเชื่อมต่อ (Error 404)
     ticker_input = st.text_input("🔎 ชื่อหุ้น / ดัชนี (ดูรายตัว)", value=st.session_state.current_ticker).upper().strip()
     if ticker_input != st.session_state.current_ticker and ticker_input != "":
         st.session_state.current_ticker = ticker_input
-        st.cache_data.clear()
-        st.rerun()
+        st.rerun() # สั่งรีเฟรชหน้าจอเบาๆ เพื่อให้เปลี่ยนหุ้น
         
     ticker = st.session_state.current_ticker
     
@@ -558,7 +558,8 @@ with tabs[0]:
                 st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
                 ra = t_cap * (r_pct / 100.0)
                 if last_p > sl: st.success(f"🧮 **เข้าซื้อได้สูงสุด:** {ra/(last_p-sl):.0f} หุ้น")
-    else: st.warning(f"❌ ไม่พบข้อมูล '{ticker}'")
+    else: 
+        st.warning(f"❌ ไม่พบข้อมูล '{ticker}' (หรือสัญญาณขัดข้องชั่วคราว ลองกดปุ่ม 'ดึงข้อมูลเรียลไทม์' ด้านซ้ายบนอีกครั้งค่ะ)")
 
 # ==========================================
 # หน้า 2: โซนเข้าซื้อเทคนิคอล (Action Zones เจาะลึก)
@@ -668,7 +669,8 @@ with tabs[1]:
         fig_zoom.update_xaxes(rangeslider_visible=False)
         st.plotly_chart(fig_zoom, use_container_width=True)
 
-    else: st.warning(f"❌ ไม่พบข้อมูล '{ticker}'")
+    else: 
+        st.warning(f"❌ ไม่พบข้อมูล '{ticker}' (หรือสัญญาณขัดข้องชั่วคราว ลองกดปุ่ม 'ดึงข้อมูลเรียลไทม์' ด้านซ้ายบนอีกครั้งค่ะ)")
 
 # ==========================================
 # หน้า 3: เรดาร์สแกนหุ้น (AI Screener)
@@ -789,7 +791,6 @@ if st.session_state["logged_in"]:
                 time.sleep(1)
                 st.rerun()
 
-        # นำกลับมาอยู่ในระดับเดียวกับปุ่มบันทึก เพื่อให้แสดงผลตลอดเวลา
         st.markdown("---")
         st.subheader("📊 พอร์ตโฟลิโอ (Auto Mark-to-Market)")
         live_fx = get_live_fx()
@@ -879,7 +880,6 @@ if st.session_state["logged_in"]:
 
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
-        # เพิ่มตัวเลือกปีภาษียาวถึง 2573 (2030) ให้ใช้งานได้อีกหลายปีเลยค่ะ
         with c1: selected_year = st.selectbox("📅 ปีภาษี", [
             "2567 (2024)", "2568 (2025)", "2569 (2026)", 
             "2570 (2027)", "2571 (2028)", "2572 (2029)", "2573 (2030)"
