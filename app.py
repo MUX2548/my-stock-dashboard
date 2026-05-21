@@ -3,6 +3,7 @@ import time
 import os
 import urllib.parse
 import requests
+import random
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
@@ -21,9 +22,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.42", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.45", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.42", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.45", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -50,15 +51,28 @@ current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 
 # ==========================================
-# 🛡️ ระบบป้องกันการถูกบล็อกจาก Yahoo Finance
+# 🛡️ ระบบป้องกันการถูกบล็อกจาก Yahoo Finance (Stealth Mode)
 # ==========================================
-yf_session = requests.Session()
-yf_session.headers.update({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-})
+def get_stealth_session():
+    session = requests.Session()
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    ]
+    session.headers.update({
+        'User-Agent': random.choice(user_agents),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Connection': 'keep-alive',
+    })
+    return session
+
+yf_session = get_stealth_session()
 
 # ==========================================
-# 🔐 2. การบริหารสถานะข้อมูลระบบ (Persistent Memory)
+# 🔐 2. การบริหารสถานะข้อมูลระบบ (Persistent Memory Setup)
 # ==========================================
 if "current_ticker" not in st.session_state:
     st.session_state.current_ticker = "RKLB"
@@ -200,11 +214,9 @@ def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
     p, i = stgs[tf]["p"], stgs[tf]["i"]
     try:
-        # ใช้ yf_session เพื่อป้องกันการโดนบล็อก
         s = yf.Ticker(ticker_symbol, session=yf_session)
         df = s.history(period=p, interval=i)
         
-        # ถ้าโหลดปกติไม่มา ให้ลองใช้โหมดดาวน์โหลดแทน
         if df.empty:
             df = yf.download(ticker_symbol, period=p, interval=i, progress=False, session=yf_session)
             
@@ -362,7 +374,7 @@ def run_ai_screener(tickers):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.42")
+    else: st.title("🛡️ Strategic Hub 4.45")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -371,7 +383,9 @@ with st.sidebar:
     st.info(f"👁️ ยอดผู้เข้าชม: {visitor_count} ครั้ง")
     st.markdown("---")
     
+    # ดักจับกล่องว่าง! ป้องกันไม่ให้แอปแฮงค์เวลากดลบชื่อหุ้น
     ticker_input = st.text_input("🔎 ชื่อหุ้น / ดัชนี (ดูรายตัว)", value=st.session_state.current_ticker).upper().strip()
+    
     if ticker_input != st.session_state.current_ticker and ticker_input != "":
         st.session_state.current_ticker = ticker_input
         st.rerun() 
@@ -397,6 +411,11 @@ with st.sidebar:
         if st.button("🚪 ออกจากระบบ", use_container_width=True): 
             st.session_state["logged_in"] = False
             st.rerun()
+
+# หยุดการทำงานของหน้านี้ถ้ายกเลิกการพิมพ์ชื่อหุ้น
+if not ticker:
+    st.info("👈 กรุณาพิมพ์ชื่อหุ้นในช่องค้นหาด้านซ้ายมือ (เช่น RKLB หรือ TSLA) แล้วกด Enter บนแป้นพิมพ์ค่ะ")
+    st.stop()
 
 holdings = {}
 if st.session_state["logged_in"]:
@@ -574,7 +593,7 @@ with tabs[0]:
                 ra = t_cap * (r_pct / 100.0)
                 if last_p > sl: st.success(f"🧮 **เข้าซื้อได้สูงสุด:** {ra/(last_p-sl):.0f} หุ้น")
     else: 
-        st.warning(f"❌ ระบบถูกบล็อกสัญญาณจาก Yahoo ชั่วคราวค่ะ โปรดรอประมาณ 1 นาทีแล้วกดปุ่ม 'ดึงข้อมูลเรียลไทม์' ด้านซ้ายบนอีกครั้งค่ะ")
+        st.warning(f"❌ ระบบถูกบล็อกสัญญาณชั่วคราวค่ะ โปรดรอประมาณ 1 นาทีแล้วกดปุ่ม 'ดึงข้อมูลเรียลไทม์' ด้านซ้ายบนอีกครั้งค่ะ")
 
 # ==========================================
 # หน้า 2: โซนเข้าซื้อเทคนิคอล (Action Zones เจาะลึก)
