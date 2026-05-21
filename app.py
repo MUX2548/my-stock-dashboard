@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.42", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.41", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.42", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.41", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -50,15 +50,7 @@ current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 
 # ==========================================
-# 🛡️ ระบบป้องกันการถูกบล็อกจาก Yahoo Finance
-# ==========================================
-yf_session = requests.Session()
-yf_session.headers.update({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-})
-
-# ==========================================
-# 🔐 2. การบริหารสถานะข้อมูลระบบ (Persistent Memory)
+# 🔐 2. การบริหารสถานะข้อมูลระบบ (Persistent Memory Setup)
 # ==========================================
 if "current_ticker" not in st.session_state:
     st.session_state.current_ticker = "RKLB"
@@ -200,15 +192,8 @@ def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
     p, i = stgs[tf]["p"], stgs[tf]["i"]
     try:
-        # ใช้ yf_session เพื่อป้องกันการโดนบล็อก
-        s = yf.Ticker(ticker_symbol, session=yf_session)
-        df = s.history(period=p, interval=i)
-        
-        # ถ้าโหลดปกติไม่มา ให้ลองใช้โหมดดาวน์โหลดแทน
-        if df.empty:
-            df = yf.download(ticker_symbol, period=p, interval=i, progress=False, session=yf_session)
-            
-        df = df.dropna(subset=['Close'])
+        s = yf.Ticker(ticker_symbol)
+        df = s.history(period=p, interval=i).dropna(subset=['Close'])
         if df.empty: return pd.DataFrame(), {}, None, None, {}
         
         info = s.info
@@ -217,7 +202,7 @@ def load_pro_data(ticker_symbol, tf):
         
         market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 0.0, "vix_ts": 0.0, "smart_money": "N/A"}
         try:
-            spy = yf.Ticker("^GSPC", session=yf_session).history(period=p, interval=i)
+            spy = yf.Ticker("^GSPC").history(period=p, interval=i)
             if not spy.empty:
                 df['RS'] = (df['Close'].pct_change(10) - spy['Close'].pct_change(10)) * 100
                 spy_p = spy['Close'].iloc[-1]
@@ -225,14 +210,14 @@ def load_pro_data(ticker_symbol, tf):
                 market_signal["spy_trend"] = "ขึ้น 📈" if spy_p > spy['Close'].ewm(span=50).mean().iloc[-1] else "ลง 📉"
         except: df['RS'] = 0
         try:
-            vix = yf.Ticker("^VIX", session=yf_session).history(period="1mo")
+            vix = yf.Ticker("^VIX").history(period="1mo")
             if not vix.empty: market_signal["vix"] = float(vix['Close'].iloc[-1])
-            vix3m = yf.Ticker("^VIX3M", session=yf_session).history(period="1mo")
+            vix3m = yf.Ticker("^VIX3M").history(period="1mo")
             if not vix3m.empty and market_signal["vix"] > 0: market_signal["vix_ts"] = float(market_signal["vix"] / vix3m['Close'].iloc[-1])
         except: pass
         try:
-            hyg = yf.Ticker("HYG", session=yf_session).history(period="6mo")['Close']
-            ief = yf.Ticker("IEF", session=yf_session).history(period="6mo")['Close']
+            hyg = yf.Ticker("HYG").history(period="6mo")['Close']
+            ief = yf.Ticker("IEF").history(period="6mo")['Close']
             if not hyg.empty and not ief.empty:
                 df_sm = pd.concat([hyg, ief], axis=1).dropna()
                 df_sm.columns = ['HYG', 'IEF']
@@ -299,14 +284,13 @@ def load_pro_data(ticker_symbol, tf):
             "s1": last - (atr_proxy * 0.5), "s2": last - (atr_proxy * 1.0), "s3": last - (atr_proxy * 1.5)
         }
         return df, fund, mat, market_signal, levels
-    except Exception as e: 
-        return pd.DataFrame(), {}, None, None, {}
+    except: return pd.DataFrame(), {}, None, None, {}
 
 @st.cache_data(ttl=60)
 def get_batch_live_prices(tickers):
     if not tickers: return {}
     try:
-        df = yf.download(tickers, period="1d", progress=False, session=yf_session)
+        df = yf.download(tickers, period="1d", progress=False)
         prices = {}
         if len(tickers) == 1:
             if not df.empty and 'Close' in df.columns: prices[tickers[0]] = float(df['Close'].iloc[-1])
@@ -318,7 +302,7 @@ def get_batch_live_prices(tickers):
 
 @st.cache_data(ttl=60)
 def get_live_fx():
-    try: return yf.Ticker("USDTHB=X", session=yf_session).history(period="1d")['Close'].iloc[-1]
+    try: return yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
     except: return 35.00
 
 @st.cache_data(ttl=300)
@@ -327,7 +311,7 @@ def run_ai_screener(tickers):
     results = []
     for t in tickers:
         try:
-            hist = yf.Ticker(t, session=yf_session).history(period="6mo")
+            hist = yf.Ticker(t).history(period="6mo")
             if hist.empty: continue
             
             recent_prices = hist['Close'].tail(30).tolist()
@@ -362,7 +346,7 @@ def run_ai_screener(tickers):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.42")
+    else: st.title("🛡️ Strategic Hub")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -374,7 +358,8 @@ with st.sidebar:
     ticker_input = st.text_input("🔎 ชื่อหุ้น / ดัชนี (ดูรายตัว)", value=st.session_state.current_ticker).upper().strip()
     if ticker_input != st.session_state.current_ticker and ticker_input != "":
         st.session_state.current_ticker = ticker_input
-        st.rerun() 
+        st.cache_data.clear()
+        st.rerun()
         
     ticker = st.session_state.current_ticker
     
@@ -573,8 +558,7 @@ with tabs[0]:
                 st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
                 ra = t_cap * (r_pct / 100.0)
                 if last_p > sl: st.success(f"🧮 **เข้าซื้อได้สูงสุด:** {ra/(last_p-sl):.0f} หุ้น")
-    else: 
-        st.warning(f"❌ ระบบถูกบล็อกสัญญาณจาก Yahoo ชั่วคราวค่ะ โปรดรอประมาณ 1 นาทีแล้วกดปุ่ม 'ดึงข้อมูลเรียลไทม์' ด้านซ้ายบนอีกครั้งค่ะ")
+    else: st.warning(f"❌ ไม่พบข้อมูล '{ticker}'")
 
 # ==========================================
 # หน้า 2: โซนเข้าซื้อเทคนิคอล (Action Zones เจาะลึก)
@@ -683,6 +667,8 @@ with tabs[1]:
         )
         fig_zoom.update_xaxes(rangeslider_visible=False)
         st.plotly_chart(fig_zoom, use_container_width=True)
+
+    else: st.warning(f"❌ ไม่พบข้อมูล '{ticker}'")
 
 # ==========================================
 # หน้า 3: เรดาร์สแกนหุ้น (AI Screener)
@@ -803,6 +789,7 @@ if st.session_state["logged_in"]:
                 time.sleep(1)
                 st.rerun()
 
+        # นำกลับมาอยู่ในระดับเดียวกับปุ่มบันทึก เพื่อให้แสดงผลตลอดเวลา
         st.markdown("---")
         st.subheader("📊 พอร์ตโฟลิโอ (Auto Mark-to-Market)")
         live_fx = get_live_fx()
@@ -892,6 +879,7 @@ if st.session_state["logged_in"]:
 
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
+        # เพิ่มตัวเลือกปีภาษียาวถึง 2573 (2030) ให้ใช้งานได้อีกหลายปีเลยค่ะ
         with c1: selected_year = st.selectbox("📅 ปีภาษี", [
             "2567 (2024)", "2568 (2025)", "2569 (2026)", 
             "2570 (2027)", "2571 (2028)", "2572 (2029)", "2573 (2030)"
