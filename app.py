@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.46", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.47", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.46", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.47", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -50,14 +50,14 @@ current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 
 # ==========================================
-# 🔐 2. การบริหารสถานะข้อมูลระบบ (Persistent Memory)
+# 🔐 2. การบริหารสถานะข้อมูลระบบ (Persistent Memory Setup)
 # ==========================================
 if "current_ticker" not in st.session_state:
     st.session_state.current_ticker = "RKLB"
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 if "radar_tickers" not in st.session_state:
-    st.session_state.radar_tickers = ["ASTS", "RKLB", "NVTS", "IREN", "RGTI", "C", "TSLA", "PLTR", "ONDS", "OKLO", "EOSE", "IONQ"]
+    st.session_state.radar_tickers = ["ASTS", "RKLB", "NVTS", "IREN", "RGTI", "C", "TSLA", "PLTR", "ONDS", "OKLO", "EOSE", "IONQ", "NOW", "MNDY", "ADBE", "CRWD"]
 
 @st.cache_resource(ttl=3600)
 def init_connection():
@@ -193,7 +193,6 @@ def load_pro_data(ticker_symbol, tf):
     p, i = stgs[tf]["p"], stgs[tf]["i"]
     
     df = pd.DataFrame()
-    # 🛡️ ระบบ Auto-Retry เจาะเกราะ Yahoo
     for attempt in range(3):
         try:
             s = yf.Ticker(ticker_symbol)
@@ -206,7 +205,7 @@ def load_pro_data(ticker_symbol, tf):
                     break
         except Exception:
             pass
-        time.sleep(1.5) # ถ้ายากนัก ให้รอ 1.5 วิแล้วเคาะประตูใหม่
+        time.sleep(1.5)
         
     if df.empty: return pd.DataFrame(), {}, None, None, {}
     
@@ -367,7 +366,7 @@ def run_ai_screener(tickers):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.46")
+    else: st.title("🛡️ Strategic Hub 4.47")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -467,7 +466,7 @@ with tabs[0]:
         m3.metric("โครงสร้าง (VIX/VIX3M)", f"{vix_ts:.2f}" if vix_ts > 0 else "N/A", ts_label if vix_ts > 0 else None, delta_color="normal" if 0 < vix_ts < 1 else "inverse" if vix_ts >= 1 else "off")
         m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow if sm_flow != "N/A" else None, delta_color="normal" if "ON" in sm_flow else "inverse" if "OFF" in sm_flow else "off")
 
-        is_market_good = "ขึ้น" in spy_t and (0 < v_val < 25)
+        is_market_good = "ขึ้น" in spy_t && (0 < v_val < 25)
         if is_market_good and is_uptrend and is_bullish_macd and rsi_val < 70:
             rec, color = "STRONG BUY / HOLD", "#00E676"
             msg = f"**'จังหวะน้ำขึ้นต้องรีบตัก'** - ตลาดเอื้ออำนวย หุ้นเป็นขาขึ้นเต็มตัว โมเมนตัมบวก แนะนำให้สะสมหรือรันเทรนด์ต่อ"
@@ -695,22 +694,32 @@ with tabs[1]:
         st.plotly_chart(fig_zoom, use_container_width=True)
 
 # ==========================================
-# หน้า 3: เรดาร์สแกนหุ้น (AI Screener)
+# หน้า 3: เรดาร์สแกนหุ้น (AI Screener) - จุดล็อกจำกัดและจำข้อมูลล่าสุด
 # ==========================================
 with tabs[2]:
     st.markdown("## 🎯 เรดาร์สแกนหุ้น (AI Screener & Mini-Chart)")
-    st.markdown("### 📋 จัดการรายชื่อหุ้นในเรดาร์")
+    st.markdown("### 📋 จัดการรายชื่อหุ้นในเรดาร์ (สูงสุดไม่เกิน 20 ตัว)")
     
     c_rad1, c_rad2 = st.columns([7, 3])
     with c_rad1:
-        selected_radar = st.multiselect("หุ้นที่กำลังเฝ้าจับตา (กด X เพื่อลบออก):", options=st.session_state.radar_tickers, default=st.session_state.radar_tickers)
+        default_pool = ["ASTS", "RKLB", "NVTS", "IREN", "RGTI", "C", "TSLA", "PLTR", "ONDS", "OKLO", "EOSE", "IONQ", "NOW", "MNDY", "ADBE", "CRWD"]
+        all_options = sorted(list(set(st.session_state.radar_tickers + default_pool)))
+        
+        # แสดงเมนูมัลติซีเลกต์ดึงข้อมูลจากหน่วยความจำล่าสุด
+        selected_radar = st.multiselect("หุ้นที่กำลังเฝ้าจับตา (กด X เพื่อลบออก):", options=all_options, default=st.session_state.radar_tickers)
         if selected_radar != st.session_state.radar_tickers:
-            st.session_state.radar_tickers = selected_radar
-            st.rerun()
+            if len(selected_radar) > 20:
+                st.error("⚠️ ไม่สามารถเลือกเกิน 20 ตัวได้ค่ะ! ระบบจำกัดรายชื่อเพื่อเสถียรภาพสูงสุด")
+            else:
+                st.session_state.radar_tickers = selected_radar
+                st.rerun()
+                
     with c_rad2:
         new_ticker = st.text_input("➕ เพิ่มหุ้นใหม่", placeholder="เช่น MSFT").upper().strip()
         if st.button("เพิ่มเข้าเรดาร์", use_container_width=True):
-            if new_ticker and new_ticker not in st.session_state.radar_tickers:
+            if len(st.session_state.radar_tickers) >= 20:
+                st.error("⚠️ ไม่สามารถเพิ่มได้! เรดาร์รองรับหุ้นสูงสุดได้ไม่เกิน 20 ตัวค่ะ")
+            elif new_ticker and new_ticker not in st.session_state.radar_tickers:
                 st.session_state.radar_tickers.append(new_ticker)
                 st.rerun()
 
@@ -772,7 +781,7 @@ if st.session_state["logged_in"]:
                                 if col not in df_imported.columns: df_imported[col] = ""
                             
                             st.session_state.trade_ledger = pd.concat([st.session_state.trade_ledger, clean_df_types(df_imported[req_cols])], ignore_index=True)
-                            st.success("✅ นำข้อมูลใหม่ไปต่อท้ายตารางเรียบร้อย! (อย่าลืมกดบันทึกขึ้น Cloud ด้านล่างนะคะ)")
+                            st.success("✅ นำข้อมูลใหม่ไปต่อท้ายตารางเรียบร้อย!")
                             time.sleep(2)
                             st.rerun()
                         except Exception as e: st.error(f"❌ อ่านไฟล์ไม่สำเร็จ: {e}")
@@ -791,7 +800,7 @@ if st.session_state["logged_in"]:
                                 if col not in df_imported.columns: df_imported[col] = ""
                             
                             st.session_state.trade_ledger = clean_df_types(df_imported[req_cols])
-                            st.success("✅ แทนที่ตารางด้วยข้อมูลจากไฟล์ใหม่เรียบร้อย! (อย่าลืมกดบันทึกขึ้น Cloud ด้านล่างนะคะ)")
+                            st.success("✅ แทนที่ตารางด้วยข้อมูลจากไฟล์ใหม่เรียบร้อย!")
                             time.sleep(2)
                             st.rerun()
                         except Exception as e: st.error(f"❌ อ่านไฟล์ไม่สำเร็จ: {e}")
@@ -901,7 +910,7 @@ if st.session_state["logged_in"]:
                 st.rerun()
 
         st.markdown("---")
-        c1, c2, c3 = st.columns(3)
+        st.columns(3)
         with c1: selected_year = st.selectbox("📅 ปีภาษี", [
             "2567 (2024)", "2568 (2025)", "2569 (2026)", 
             "2570 (2027)", "2571 (2028)", "2572 (2029)", "2573 (2030)"
