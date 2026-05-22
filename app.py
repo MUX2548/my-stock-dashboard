@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.47", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.48", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.47", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.48", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -191,25 +191,11 @@ def translate_to_thai(text):
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
     p, i = stgs[tf]["p"], stgs[tf]["i"]
-    
-    df = pd.DataFrame()
-    for attempt in range(3):
-        try:
-            s = yf.Ticker(ticker_symbol)
-            df = s.history(period=p, interval=i)
-            if df.empty:
-                df = yf.download(ticker_symbol, period=p, interval=i, progress=False)
-            if not df.empty:
-                df = df.dropna(subset=['Close'])
-                if not df.empty:
-                    break
-        except Exception:
-            pass
-        time.sleep(1.5)
-        
-    if df.empty: return pd.DataFrame(), {}, None, None, {}
-    
     try:
+        s = yf.Ticker(ticker_symbol)
+        df = s.history(period=p, interval=i).dropna(subset=['Close'])
+        if df.empty: return pd.DataFrame(), {}, None, None, {}
+        
         info = s.info
         en_summary = info.get('longBusinessSummary', 'N/A')
         th_summary = translate_to_thai(en_summary)
@@ -298,19 +284,13 @@ def load_pro_data(ticker_symbol, tf):
             "s1": last - (atr_proxy * 0.5), "s2": last - (atr_proxy * 1.0), "s3": last - (atr_proxy * 1.5)
         }
         return df, fund, mat, market_signal, levels
-    except Exception: 
-        return pd.DataFrame(), {}, None, None, {}
+    except: return pd.DataFrame(), {}, None, None, {}
 
 @st.cache_data(ttl=60)
 def get_batch_live_prices(tickers):
     if not tickers: return {}
     try:
-        df = pd.DataFrame()
-        for attempt in range(3):
-            df = yf.download(tickers, period="1d", progress=False)
-            if not df.empty: break
-            time.sleep(1)
-            
+        df = yf.download(tickers, period="1d", progress=False)
         prices = {}
         if len(tickers) == 1:
             if not df.empty and 'Close' in df.columns: prices[tickers[0]] = float(df['Close'].iloc[-1])
@@ -366,7 +346,7 @@ def run_ai_screener(tickers):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.47")
+    else: st.title("🛡️ Strategic Hub 4.48")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -466,7 +446,9 @@ with tabs[0]:
         m3.metric("โครงสร้าง (VIX/VIX3M)", f"{vix_ts:.2f}" if vix_ts > 0 else "N/A", ts_label if vix_ts > 0 else None, delta_color="normal" if 0 < vix_ts < 1 else "inverse" if vix_ts >= 1 else "off")
         m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow if sm_flow != "N/A" else None, delta_color="normal" if "ON" in sm_flow else "inverse" if "OFF" in sm_flow else "off")
 
-        is_market_good = "ขึ้น" in spy_t && (0 < v_val < 25)
+        # ✅ ตรงนี้คือบรรทัดที่แก้ไขแล้วนะคะ (ใช้ and แทน &&)
+        is_market_good = "ขึ้น" in spy_t and (0 < v_val < 25)
+        
         if is_market_good and is_uptrend and is_bullish_macd and rsi_val < 70:
             rec, color = "STRONG BUY / HOLD", "#00E676"
             msg = f"**'จังหวะน้ำขึ้นต้องรีบตัก'** - ตลาดเอื้ออำนวย หุ้นเป็นขาขึ้นเต็มตัว โมเมนตัมบวก แนะนำให้สะสมหรือรันเทรนด์ต่อ"
@@ -910,7 +892,7 @@ if st.session_state["logged_in"]:
                 st.rerun()
 
         st.markdown("---")
-        st.columns(3)
+        c1, c2, c3 = st.columns(3)
         with c1: selected_year = st.selectbox("📅 ปีภาษี", [
             "2567 (2024)", "2568 (2025)", "2569 (2026)", 
             "2570 (2027)", "2571 (2028)", "2572 (2029)", "2573 (2030)"
