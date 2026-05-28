@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.52", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.53", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.52", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.53", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -406,7 +406,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.52")
+    else: st.title("🛡️ Strategic Hub 4.53")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -461,7 +461,7 @@ if st.session_state["logged_in"]:
 tabs = st.tabs(tabs_list)
 
 # ==========================================
-# หน้า 1: วิเคราะห์กราฟรายตัว (ภาพรวมหลัก)
+# หน้า 1: วิเคราะห์กรารายตัว (ภาพรวมหลัก)
 # ==========================================
 with tabs[0]:
     if not df.empty:
@@ -716,7 +716,7 @@ with tabs[1]:
         if last_close < ema25 and last_close >= (ema50 * 0.95):
              fig_zoom.add_hline(y=ema50, line_dash="solid", line_color="#00E676", annotation_text="โซนเฝ้าระวังเข้าซื้อ (Buy Zone)", row=1, col=1, opacity=0.5)
 
-        # 📐 ระบบวาดเส้น Fibonacci อัตโนมัติ (ย้ายมาไว้ที่แท็บ 2)
+        # 📐 ระบบวาดเส้น Fibonacci อัตโนมัติ (แท็บ 2)
         st.markdown("---")
         show_fibo = st.checkbox("📐 ตีเส้น Fibonacci Retracement (อ้างอิงรอบสวิง 3 เดือนล่าสุด)", value=False)
         if show_fibo:
@@ -735,6 +735,22 @@ with tabs[1]:
             for ratio, label, color in f_levels:
                 fibo_y = max_p - (diff * ratio)
                 fig_zoom.add_hline(y=fibo_y, line_dash="dot", line_color=color, annotation_text=f"{label} : ${fibo_y:.2f}", row=1, col=1, opacity=0.8)
+                
+            # 1. เพิ่มบทสรุป Fibonacci
+            st.markdown("#### 🧠 บทสรุปวิเคราะห์ Fibonacci")
+            fibo_382 = max_p - (diff * 0.382)
+            fibo_618 = max_p - (diff * 0.618)
+            fibo_786 = max_p - (diff * 0.786)
+            
+            if last_close > fibo_382:
+                f_sum = "🟢 **Strong Uptrend:** ราคายืนอยู่เหนือระดับ 38.2% แสดงถึงเทรนด์ขาขึ้นที่แข็งแกร่งมาก มีแรงขายออกเพียงเล็กน้อย มีโอกาสทำนิวไฮ (New High) ต่อได้"
+            elif last_close > fibo_618:
+                f_sum = f"🟡 **Golden Zone:** ราคาพักตัวลงมาที่โซนสมดุล (50% - 61.8%) ซึ่งเป็นสัดส่วนทองคำ นี่คือ **'จุดย่อซื้อ (Buy the Dip)'** ที่ได้เปรียบที่สุดทางคณิตศาสตร์"
+            elif last_close > fibo_786:
+                f_sum = "🟠 **Deep Pullback:** ราคาลงมาลึกมากถึงระดับ 78.6% ควรระมัดระวัง อาจเป็นการเตือนว่าเทรนด์ขาขึ้นเริ่มหมดแรง และเตรียมเปลี่ยนเป็นแนวโน้มขาลง"
+            else:
+                f_sum = "🔴 **Downtrend:** ราคาหลุดสัดส่วนฟิโบนาชชีทั้งหมดไปแล้ว แสดงถึงการพักตัวล้มเหลว และได้เปลี่ยนเทรนด์เป็นขาลงเต็มตัวเรียบร้อยแล้ว แนะนำให้หลีกเลี่ยง"
+            st.info(f_sum)
 
         fig_zoom.add_trace(go.Bar(x=df_zoom.index, y=df_zoom['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df_zoom['Hist']], name="MACD Hist"), row=2, col=1)
         fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['MACD'], line=dict(color='#2962FF', width=1.5), name="MACD Line"), row=2, col=1)
@@ -806,6 +822,7 @@ with tabs[2]:
 # หน้า 4 & 5: บัญชี, พอร์ตโฟลิโอ และระบบภาษี
 # ==========================================
 if st.session_state["logged_in"]:
+    # 3. กู้คืนพอร์ตโฟลิโอ (บัญชีลงทุน) กลับมาครบถ้วน
     with tabs[3]:
         st.subheader("💼 แดชบอร์ดกระแสเงินสด")
         col1, col2, col3, col4 = st.columns(4)
@@ -818,6 +835,53 @@ if st.session_state["logged_in"]:
         h1, h2 = st.columns([8, 2])
         h1.subheader("📝 สมุดบัญชี (Cloud Ledger)")
         h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True)
+        
+        with st.expander("📤 นำเข้าข้อมูลจากไฟล์ Excel / CSV", expanded=False):
+            template_df = pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
+            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv")
+            
+            uploaded_file = st.file_uploader("ลากไฟล์มาวาง หรือ กดเพื่อเลือกไฟล์", type=['csv', 'xlsx'])
+            if uploaded_file is not None:
+                st.warning("⚠️ โปรดเลือกวิธีนำเข้าข้อมูล (เพื่อป้องกันข้อมูลเดิมหาย)")
+                c_imp1, c_imp2 = st.columns(2)
+                
+                with c_imp1:
+                    if st.button("➕ เพิ่มข้อมูลต่อท้าย (Append)", use_container_width=True):
+                        try:
+                            if uploaded_file.name.endswith('.csv'): df_imported = pd.read_csv(uploaded_file)
+                            else: df_imported = pd.read_excel(uploaded_file)
+                            
+                            if 'Date' in df_imported.columns:
+                                df_imported['Date'] = pd.to_datetime(df_imported['Date'], errors='coerce').dt.strftime("%d/%m/%Y").replace("NaT", "")
+                            
+                            req_cols = ["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"]
+                            for col in req_cols:
+                                if col not in df_imported.columns: df_imported[col] = ""
+                            
+                            st.session_state.trade_ledger = pd.concat([st.session_state.trade_ledger, clean_df_types(df_imported[req_cols])], ignore_index=True)
+                            st.success("✅ นำข้อมูลใหม่ไปต่อท้ายตารางเรียบร้อย!")
+                            time.sleep(2)
+                            st.rerun()
+                        except Exception as e: st.error(f"❌ อ่านไฟล์ไม่สำเร็จ: {e}")
+                        
+                with c_imp2:
+                    if st.button("🔄 แทนที่ทั้งหมด (Overwrite)", type="primary", use_container_width=True):
+                        try:
+                            if uploaded_file.name.endswith('.csv'): df_imported = pd.read_csv(uploaded_file)
+                            else: df_imported = pd.read_excel(uploaded_file)
+                            
+                            if 'Date' in df_imported.columns:
+                                df_imported['Date'] = pd.to_datetime(df_imported['Date'], errors='coerce').dt.strftime("%d/%m/%Y").replace("NaT", "")
+                                
+                            req_cols = ["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"]
+                            for col in req_cols:
+                                if col not in df_imported.columns: df_imported[col] = ""
+                            
+                            st.session_state.trade_ledger = clean_df_types(df_imported[req_cols])
+                            st.success("✅ แทนที่ตารางด้วยข้อมูลจากไฟล์ใหม่เรียบร้อย!")
+                            time.sleep(2)
+                            st.rerun()
+                        except Exception as e: st.error(f"❌ อ่านไฟล์ไม่สำเร็จ: {e}")
         
         ed_l = st.data_editor(st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
             column_config={
@@ -836,17 +900,138 @@ if st.session_state["logged_in"]:
                 time.sleep(1)
                 st.rerun()
 
+        st.markdown("---")
+        st.subheader("📊 พอร์ตโฟลิโอ (Auto Mark-to-Market)")
+        live_fx = get_live_fx()
+        st.info(f"💱 **เรท USD/THB ล่าสุด:** ฿{live_fx:.4f}")
+        port_summary, total_invested = [], 0.0
+        for t, data in holdings.items():
+            if data["shares"] > 0.001:
+                port_summary.append({"Ticker": t, "Cost_Price": data["total_cost"] / data["shares"], "Shares": data["shares"], "Total_Cost": data["total_cost"]})
+                total_invested += data["total_cost"]
+        if len(port_summary) > 0:
+            current_port_df = pd.DataFrame(port_summary)
+            results, total_v = [], 0.0
+            with st.spinner("⏳ อัปเดตราคาล่าสุด..."):
+                batch_prices = get_batch_live_prices(current_port_df["Ticker"].tolist())
+                for _, row in current_port_df.iterrows():
+                    t, avg_cost, sh, t_cost = row["Ticker"], row["Cost_Price"], row["Shares"], row["Total_Cost"]
+                    curr_p = batch_prices.get(t, avg_cost)
+                    val = curr_p * sh
+                    profit_usd = val - t_cost
+                    results.append({"หุ้น": t, "จำนวนหุ้น": sh, "ต้นทุนเฉลี่ย": avg_cost, "ราคาปัจจุบัน": curr_p, "กำไร/ขาดทุน ($)": profit_usd, "กำไร/ขาดทุน (฿)": profit_usd * live_fx, "% เปลี่ยนแปลง": (profit_usd / t_cost) * 100 if t_cost > 0 else 0, "มูลค่ารวม": val})
+                    total_v += val
+            
+            p1, p2, p3, p4 = st.columns(4)
+            p1.metric("มูลค่าหุ้นรวม ($)", f"${total_v:,.2f}")
+            p2.metric("ต้นทุนทั้งหมด ($)", f"${total_invested:,.2f}")
+            p3.metric("กำไร/ขาดทุนรวม ($)", f"${total_v - total_invested:,.2f}", f"{((total_v - total_invested) / total_invested * 100 if total_invested > 0 else 0):.2f}%")
+            p4.metric("กำไร/ขาดทุนรวม (฿)", f"฿{(total_v - total_invested) * live_fx:,.2f}")
+            
+            res_df = pd.DataFrame(results)
+            chart_col1, chart_col2 = st.columns(2)
+            with chart_col1:
+                fig_pie = go.Figure(data=[go.Pie(labels=res_df['หุ้น'], values=res_df['มูลค่ารวม'], hole=.4)])
+                fig_pie.update_layout(title="สัดส่วนพอร์ต", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
+                st.plotly_chart(fig_pie, use_container_width=True)
+            with chart_col2:
+                fig_bar = go.Figure(data=[go.Bar(x=res_df['หุ้น'], y=res_df['กำไร/ขาดทุน ($)'], marker_color=['#00E676' if val >= 0 else '#FF5252' for val in res_df['กำไร/ขาดทุน ($)']])])
+                fig_bar.update_layout(title="กำไร/ขาดทุนรายตัว", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
+                st.plotly_chart(fig_bar, use_container_width=True)
+                
+            def color_profit(val): return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
+            st.dataframe(res_df.style.map(color_profit, subset=["กำไร/ขาดทุน ($)", "กำไร/ขาดทุน (฿)", "% เปลี่ยนแปลง"]).format({"จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}", "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", "มูลค่ารวม": "${:,.2f}"}), use_container_width=True)
+            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv')
+        else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
+
+    # 2. กู้คืนระบบภาษี 100% กลับมาครบถ้วน
     with tabs[4]:
-        st.subheader("🧾 ประเมินภาษี ภ.ง.ด. 90")
+        t1, t2 = st.columns([8, 2])
+        t1.subheader("🧾 ประเมินภาษี ภ.ง.ด. 90")
+        st.info("💡 **หลักการภาษีใหม่:** การนำเงินกลับไทยจะถูกหักจาก 'เงินต้นสะสม' ก่อน หากหักเงินต้นหมดแล้ว ยอดที่นำกลับจึงจะถือเป็น 'กำไรที่ต้องเสียภาษี'")
+        
         tax_idx = st.session_state.trade_ledger['Action'].isin(["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"])
         tax_v = st.session_state.trade_ledger[tax_idx].copy()
         tax_v["Out_USD"] = np.where(tax_v["Action"] == "นำเงินออกนอกประเทศ (Outward)", tax_v["Amount_USD"], 0.0)
         tax_v["In_USD"] = np.where(tax_v["Action"].isin(["นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"]), tax_v["Amount_USD"], 0.0)
         tax_v["FX_Rate"] = pd.to_numeric(tax_v["FX_Rate"], errors='coerce').fillna(0.0)
         tax_v["WHT_USD"] = pd.to_numeric(tax_v["WHT_USD"], errors='coerce').fillna(0.0)
-        tax_v["Out_THB"] = tax_v["Out_USD"] * tax_v["FX_Rate"]
-        tax_v["In_THB"] = tax_v["In_USD"] * tax_v["FX_Rate"]
-        st.dataframe(tax_v[["Date", "Action", "Out_THB", "In_THB", "WHT_USD"]], use_container_width=True)
+        tax_v["Out_THB"], tax_v["In_THB"] = tax_v["Out_USD"] * tax_v["FX_Rate"], tax_v["In_USD"] * tax_v["FX_Rate"]
+        
+        capital_pool, taxable_gains_thb, running_bals = 0.0, [], []
+        for i, r in tax_v.iterrows():
+            if r['Action'] == "นำเงินออกนอกประเทศ (Outward)":
+                capital_pool += r['Out_THB']; taxable_gains_thb.append(0.0)
+            elif r['Action'] == "นำเงินเข้าประเทศไทย (Inward)":
+                capital_pool -= r['In_THB']
+                taxable_gains_thb.append(abs(capital_pool) if capital_pool < 0 else 0.0)
+                if capital_pool < 0: capital_pool = 0.0
+            elif r['Action'] == "รับเงินปันผล (Dividend)": taxable_gains_thb.append(r['In_THB'])
+            else: taxable_gains_thb.append(0.0)
+            running_bals.append(capital_pool)
+
+        tax_v['Taxable_Gain_THB'], tax_v['Balance_THB'] = taxable_gains_thb, running_bals
+        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True)
+        
+        ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed", column_order=["Date", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "Taxable_Gain_THB", "WHT_USD"])
+        if not ed_t[["FX_Rate", "WHT_USD"]].equals(tax_v[["FX_Rate", "WHT_USD"]]):
+            st.session_state.trade_ledger.loc[tax_idx, "FX_Rate"] = clean_df_types(ed_t)["FX_Rate"].values
+            st.session_state.trade_ledger.loc[tax_idx, "WHT_USD"] = clean_df_types(ed_t)["WHT_USD"].values
+            st.rerun()
+        if st.button("💾 บันทึกภาษีลง Cloud", type="primary", use_container_width=True): 
+            if save_df_to_sheet("Ledger", st.session_state.trade_ledger): 
+                st.success("บันทึกสำเร็จ!")
+                time.sleep(1)
+                st.rerun()
+
+        st.markdown("---")
+        c1, c2, c3 = st.columns(3)
+        with c1: selected_year = st.selectbox("📅 ปีภาษี", [
+            "2567 (2024)", "2568 (2025)", "2569 (2026)", 
+            "2570 (2027)", "2571 (2028)", "2572 (2029)", "2573 (2030)"
+        ]).split("(")[1][:4]
+        with c2: is_resident = st.radio("อาศัยในไทย?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
+        with c3: other_income = st.number_input("รายได้อื่นๆ (บาท)", min_value=0.0, value=500000.0, step=50000.0)
+
+        t_yr = tax_v[tax_v['Date'].str.endswith(selected_year)]
+        net_tax_gain_yr = t_yr["Taxable_Gain_THB"].sum()
+        sum_wht_thb_yr = (t_yr["WHT_USD"] * t_yr["FX_Rate"]).sum()
+
+        cf1, cf2, cf3 = st.columns(3)
+        cf1.metric("📤 โอนออกปีนี้", f"฿{t_yr['Out_THB'].sum():,.2f}")
+        cf2.metric("📥 นำกลับปีนี้", f"฿{t_yr['In_THB'].sum():,.2f}")
+        cf3.metric("🚨 กำไรที่เสียภาษี", f"฿{net_tax_gain_yr:,.2f}", delta_color="inverse")
+
+        st.markdown("---")
+        with st.expander("📝 ลดหย่อน", expanded=False):
+            d1, d2 = st.columns(2)
+            s_deduct = d1.checkbox("คู่สมรสไม่มีรายได้")
+            c_count = d2.number_input("บุตร", min_value=0)
+            inv1, inv2, inv3 = st.columns(3)
+            life = inv1.number_input("ประกันชีวิต", min_value=0.0)
+            health = inv2.number_input("ประกันสุขภาพ", min_value=0.0)
+            pvd = inv3.number_input("PVD", min_value=0.0)
+        
+        t_deduct = min(other_income * 0.5, 100000) + 60000 + (60000 if s_deduct else 0) + (c_count * 30000) + min(life + min(health, 25000), 100000) + min(pvd, 500000)
+        
+        if st.button(f"📊 ประเมินภาษี {selected_year}", type="primary", use_container_width=True):
+            if "ไม่ถึง" in is_resident: st.success("🎉 ยกเว้นภาษี (อยู่ในไทยไม่ถึง 180 วัน)")
+            elif net_tax_gain_yr <= 0: st.success(f"🎉 ปี {selected_year} ไม่มีส่วนกำไรที่ถูกดึงกลับเข้าประเทศ")
+            else:
+                def calc_tax(n):
+                    if n > 5000000: return (n-5000000)*0.35 + 1265000
+                    if n > 2000000: return (n-2000000)*0.30 + 365000
+                    if n > 1000000: return (n-1000000)*0.25 + 115000
+                    if n > 750000: return (n-750000)*0.20 + 65000
+                    if n > 500000: return (n-500000)*0.15 + 27500
+                    if n > 300000: return (n-300000)*0.10 + 7500
+                    if n > 150000: return (n-150000)*0.05
+                    return 0
+                tax_raw = calc_tax(max(0, (other_income + net_tax_gain_yr) - t_deduct)) - calc_tax(max(0, other_income - t_deduct))
+                st.subheader(f"ผลการประเมิน (ปี {selected_year})")
+                r1, r2 = st.columns(2)
+                r1.metric("ภาษีจากพอร์ต ตปท.", f"฿{tax_raw:,.2f}")
+                r2.metric(f"🚨 จ่ายเพิ่มจริง (หักเครดิต ตปท.)", f"฿{max(0, tax_raw - sum_wht_thb_yr):,.2f}")
 
 # ==========================================
 # หน้า 6: พิทบูลพยากรณ์ (Monte Carlo Forecast)
@@ -854,7 +1039,7 @@ if st.session_state["logged_in"]:
 if st.session_state["logged_in"]:
     with tabs[5]:
         st.markdown(f"## 🔮 พิทบูลพยากรณ์ (AI Monte Carlo Simulation) : {ticker}")
-        st.info("💡 **หลักการทำงาน:** ระบบจำลองมอนติคาร์โล (Monte Carlo) จะนำความผันผวนของราคาหุ้นในอดีต 1 ปี มาสุ่มสร้างเส้นทางจำลอง 100 รูปแบบ เพื่อคำนวณหาความน่าจะเป็นของราคาในอีก 30 วันข้างหน้า")
+        st.info("💡 **หลักการทำงาน:** ระบบจำลองมอนติคาร์โล (Monte Carlo) จะนำความผันผวนของราคาหุ้นในอดีต 1 ปี มาสุ่มสร้างเส้นทางจำลอง 100 รูปแบบ เพื่อคำนวณหาความน่าจะเป็นของราคาในอนาคต")
         
         sim_days = st.slider("จำนวนวันพยากรณ์ไปข้างหน้า:", 5, 90, 30)
         
@@ -878,5 +1063,16 @@ if st.session_state["logged_in"]:
                     
                     fig_sim.update_layout(title=f"การจำลอง 100 รูปแบบในอีก {sim_days} วันของ {ticker}", template="plotly_dark", height=500, xaxis_title="วันทำการในอนาคต", yaxis_title="ราคา (USD)")
                     st.plotly_chart(fig_sim, use_container_width=True)
+                    
+                    # 4. เพิ่มบทสรุป ระบบพิทบูลพยากรณ์ โดยละเอียด สั้นกระชับ
+                    st.markdown("---")
+                    st.markdown("#### 🐶 สรุปคำทำนายพิทบูล (Pitbull Analysis)")
+                    upside = ((exp_p - last_price) / last_price) * 100
+                    if exp_p > last_price:
+                        p_msg = f"🟢 **Bullish (แนวโน้มเชิงบวก):** ในอีก {sim_days} วันข้างหน้า พิทบูลมองว่าราคามีโอกาสปรับตัวขึ้นไปที่ **${exp_p:.2f}** (Upside {upside:+.2f}%) หากตลาดเป็นใจอาจทะลุไปถึงกรอบบนที่ **${up_b:.2f}** แนะนำให้ **ถือรันเทรนด์ (Hold)** หรือ **หาจังหวะย่อซื้อ** โดยใช้เส้นกรอบล่าง (${low_b:.2f}) เป็นจุดตัดขาดทุน (Stop Loss)"
+                    else:
+                        p_msg = f"🔴 **Bearish/Sideway (แนวโน้มอ่อนแอ):** ในอีก {sim_days} วันข้างหน้า ราคามีเกณฑ์แกว่งตัวออกข้างหรือปรับฐานลงไปที่ **${exp_p:.2f}** (Downside {upside:+.2f}%) ระวังความเสี่ยงหากราคาหลุดลึกไปถึง **${low_b:.2f}** แนะนำให้ **ชะลอการลงทุน (Wait & See)** หรือลดสัดส่วนพอร์ต"
+                    
+                    st.success(p_msg) if exp_p > last_price else st.warning(p_msg)
                 else:
                     st.error("ไม่สามารถดึงข้อมูลเพื่อจำลองได้ กรุณาลองใหม่อีกครั้งค่ะ")
