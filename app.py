@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.54", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.55", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.54", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.55", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -370,7 +370,7 @@ def run_ai_screener(tickers):
 def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
     try:
         hist = yf.Ticker(ticker_symbol).history(period="1y")
-        if hist.empty: return None, 0, 0, 0
+        if hist.empty: return None, 0, 0, 0, 0
         
         closes = hist['Close']
         daily_returns = closes.pct_change().dropna()
@@ -406,7 +406,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.54")
+    else: st.title("🛡️ Strategic Hub 4.55")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -701,6 +701,36 @@ with tabs[1]:
                 <div style="color: #E0E0E0; font-size: 0.95em;">{action_desc}</div>
             </div>
             """, unsafe_allow_html=True)
+            
+        # =========================================================
+        # 👑 THE ULTIMATE CONSENSUS (บทสรุปเอกฉันท์ 3 มิติ) เพิ่มใหม่ V4.55
+        # =========================================================
+        st.markdown("---")
+        st.markdown("### 👑 บทสรุปเอกฉันท์ (The Ultimate Analyst Consensus)")
+        with st.spinner("⏳ ประมวลผลข้อมูล มหภาค + เทคนิค + พิทบูลพยากรณ์..."):
+            sim_df_quick, exp_p_quick, up_b_quick, low_b_quick, _ = run_monte_carlo(ticker, days_to_predict=30)
+            if sim_df_quick is not None:
+                upside_quick = ((exp_p_quick - last_close) / last_close) * 100
+                
+                if last_close > ema200 and exp_p_quick > last_close and is_market_good:
+                    m_col, m_sig = "#00E676", "🌟 FULLY ALIGNED (ทิศทางขาขึ้นชัดเจน ซื้อเต็มกำลัง)"
+                    m_desc = f"สอดคล้อง 3 มิติ! **ตลาดโลกเป็นใจ** + **กราฟเทคนิค**เป็นขาขึ้นชัดเจน หนุนด้วย**พิทบูลพยากรณ์**ที่ให้เป้าหมาย 30 วันไปที่ **${exp_p_quick:.2f}** (+{upside_quick:.2f}%) แนะนำหาจังหวะย่อซื้อที่แนวรับ Fibonacci หรือ EMA 50"
+                elif last_close < ema200 and exp_p_quick < last_close:
+                    m_col, m_sig = "#FF5252", "🚨 HIGH RISK (ทิศทางขาลง ชะลอการลงทุน)"
+                    m_desc = f"อันตราย! **กราฟเทคนิค**เป็นขาลง สอดคล้องกับ**พิทบูลพยากรณ์**ที่ประเมินว่าราคาจะไหลลงไปที่ **${exp_p_quick:.2f}** ({upside_quick:.2f}%) แนะนำให้ 'ทับมือ' หรือหนีตายหากหลุด ${low_b_quick:.2f}"
+                else:
+                    m_col, m_sig = "#FFD600", "⚖️ NEUTRAL (สัญญาณขัดแย้ง รอจังหวะ)"
+                    m_desc = f"สัญญาณยังขัดแย้งกัน กราฟและพิทบูลมองไม่ตรงกัน (พิทบูลให้เป้า **${exp_p_quick:.2f}**) แนะนำเทรดเก็งกำไรสั้นๆ ในกรอบแนวรับแนวต้าน หรือรอดูความชัดเจน"
+
+                st.markdown(f"""
+                <div style="background-color: #1E1E1E; border-left: 8px solid {m_col}; padding: 20px; border-radius: 8px; margin: 15px 0;">
+                    <h4 style="color: {m_col}; margin-top: 0;">{m_sig}</h4>
+                    <p style="color: #E0E0E0; margin-bottom: 0; font-size: 1.05em;">{m_desc}</p>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.warning("⚠️ ไม่สามารถดึงข้อมูลพิทบูลมาสรุปผลได้ในขณะนี้")
+        st.markdown("---")
 
         st.markdown("### 🔎 กราฟซูมระยะประชิด (3 เดือนล่าสุด)")
         df_zoom = df.tail(60)
@@ -716,7 +746,7 @@ with tabs[1]:
         if last_close < ema25 and last_close >= (ema50 * 0.95):
              fig_zoom.add_hline(y=ema50, line_dash="solid", line_color="#00E676", annotation_text="โซนเฝ้าระวังเข้าซื้อ (Buy Zone)", row=1, col=1, opacity=0.5)
 
-        # 📐 ระบบวาดเส้น Fibonacci อัตโนมัติ (แท็บ 2)
+        # 📐 ระบบวาดเส้น Fibonacci อัตโนมัติ 
         st.markdown("---")
         show_fibo = st.checkbox("📐 ตีเส้น Fibonacci Retracement (อ้างอิงรอบสวิง 3 เดือนล่าสุด)", value=False)
         if show_fibo:
@@ -736,7 +766,6 @@ with tabs[1]:
                 fibo_y = max_p - (diff * ratio)
                 fig_zoom.add_hline(y=fibo_y, line_dash="dot", line_color=color, annotation_text=f"{label} : ${fibo_y:.2f}", row=1, col=1, opacity=0.8)
                 
-            # 1. เพิ่มบทสรุป Fibonacci
             st.markdown("#### 🧠 บทสรุปวิเคราะห์ Fibonacci")
             fibo_382 = max_p - (diff * 0.382)
             fibo_618 = max_p - (diff * 0.618)
@@ -819,10 +848,9 @@ with tabs[2]:
             else: st.warning("ไม่พบข้อมูล กรุณาตรวจสอบรายชื่อหุ้นอีกครั้ง")
 
 # ==========================================
-# หน้า 4: บัญชีและพอร์ตโฟลิโอ (เงินจริง)
+# หน้า 4 & 5: บัญชี, พอร์ตโฟลิโอ และระบบภาษี
 # ==========================================
 if st.session_state["logged_in"]:
-    # 3. กู้คืนพอร์ตโฟลิโอ (บัญชีลงทุน) กลับมาครบถ้วน
     with tabs[3]:
         st.subheader("💼 แดชบอร์ดกระแสเงินสด")
         col1, col2, col3, col4 = st.columns(4)
@@ -944,10 +972,6 @@ if st.session_state["logged_in"]:
             st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv')
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
-# ==========================================
-# หน้า 5: ระบบภาษี
-# ==========================================
-    # 2. กู้คืนระบบภาษี 100% กลับมาครบถ้วน
     with tabs[4]:
         t1, t2 = st.columns([8, 2])
         t1.subheader("🧾 ประเมินภาษี ภ.ง.ด. 90")
@@ -1067,7 +1091,6 @@ if st.session_state["logged_in"]:
                     fig_sim.update_layout(title=f"การจำลอง 100 รูปแบบในอีก {sim_days} วันของ {ticker}", template="plotly_dark", height=500, xaxis_title="วันทำการในอนาคต", yaxis_title="ราคา (USD)")
                     st.plotly_chart(fig_sim, use_container_width=True)
                     
-                    # 4. เพิ่มบทสรุป ระบบพิทบูลพยากรณ์ และแก้ไขปัญหากล่องข้อความรั่ว (V4.54)
                     st.markdown("---")
                     st.markdown("#### 🐶 สรุปคำทำนายพิทบูล (Pitbull Analysis)")
                     upside = ((exp_p - last_price) / last_price) * 100
