@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.53", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.54", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.53", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.54", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -406,7 +406,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.53")
+    else: st.title("🛡️ Strategic Hub 4.54")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -461,7 +461,7 @@ if st.session_state["logged_in"]:
 tabs = st.tabs(tabs_list)
 
 # ==========================================
-# หน้า 1: วิเคราะห์กรารายตัว (ภาพรวมหลัก)
+# หน้า 1: วิเคราะห์กราฟรายตัว (ภาพรวมหลัก)
 # ==========================================
 with tabs[0]:
     if not df.empty:
@@ -743,13 +743,13 @@ with tabs[1]:
             fibo_786 = max_p - (diff * 0.786)
             
             if last_close > fibo_382:
-                f_sum = "🟢 **Strong Uptrend:** ราคายืนอยู่เหนือระดับ 38.2% แสดงถึงเทรนด์ขาขึ้นที่แข็งแกร่งมาก มีแรงขายออกเพียงเล็กน้อย มีโอกาสทำนิวไฮ (New High) ต่อได้"
+                f_sum = "🟢 **แนวโน้มแข็งแกร่ง (Strong Uptrend):** ราคายืนอยู่เหนือระดับ 38.2% แสดงถึงเทรนด์ขาขึ้นที่มีแรงขายออกเพียงเล็กน้อย หุ้นมีโอกาสทำจุดสูงสุดใหม่ (New High) ต่อได้"
             elif last_close > fibo_618:
-                f_sum = f"🟡 **Golden Zone:** ราคาพักตัวลงมาที่โซนสมดุล (50% - 61.8%) ซึ่งเป็นสัดส่วนทองคำ นี่คือ **'จุดย่อซื้อ (Buy the Dip)'** ที่ได้เปรียบที่สุดทางคณิตศาสตร์"
+                f_sum = f"🟡 **โซนสัดส่วนทองคำ (Golden Zone):** ราคาพักตัวลงมาที่โซนสมดุล (50% - 61.8%) นี่คือ **'จุดย่อซื้อ (Buy the Dip)'** ที่ได้เปรียบที่สุดทางคณิตศาสตร์ แนะนำให้เฝ้าระวังการกลับตัว"
             elif last_close > fibo_786:
-                f_sum = "🟠 **Deep Pullback:** ราคาลงมาลึกมากถึงระดับ 78.6% ควรระมัดระวัง อาจเป็นการเตือนว่าเทรนด์ขาขึ้นเริ่มหมดแรง และเตรียมเปลี่ยนเป็นแนวโน้มขาลง"
+                f_sum = "🟠 **พักตัวลึก (Deep Pullback):** ราคาลงมาลึกมากถึงระดับ 78.6% ควรระมัดระวัง อาจเป็นการเตือนว่าเทรนด์ขาขึ้นเริ่มหมดแรง และเตรียมเปลี่ยนเป็นแนวโน้มขาลง"
             else:
-                f_sum = "🔴 **Downtrend:** ราคาหลุดสัดส่วนฟิโบนาชชีทั้งหมดไปแล้ว แสดงถึงการพักตัวล้มเหลว และได้เปลี่ยนเทรนด์เป็นขาลงเต็มตัวเรียบร้อยแล้ว แนะนำให้หลีกเลี่ยง"
+                f_sum = "🔴 **เปลี่ยนเป็นขาลง (Downtrend):** ราคาหลุดสัดส่วนฟิโบนาชชีทั้งหมดไปแล้ว แสดงถึงการพักตัวล้มเหลว และได้เปลี่ยนเทรนด์เป็นขาลงเต็มตัวเรียบร้อยแล้ว แนะนำให้หลีกเลี่ยง"
             st.info(f_sum)
 
         fig_zoom.add_trace(go.Bar(x=df_zoom.index, y=df_zoom['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df_zoom['Hist']], name="MACD Hist"), row=2, col=1)
@@ -819,7 +819,7 @@ with tabs[2]:
             else: st.warning("ไม่พบข้อมูล กรุณาตรวจสอบรายชื่อหุ้นอีกครั้ง")
 
 # ==========================================
-# หน้า 4 & 5: บัญชี, พอร์ตโฟลิโอ และระบบภาษี
+# หน้า 4: บัญชีและพอร์ตโฟลิโอ (เงินจริง)
 # ==========================================
 if st.session_state["logged_in"]:
     # 3. กู้คืนพอร์ตโฟลิโอ (บัญชีลงทุน) กลับมาครบถ้วน
@@ -944,6 +944,9 @@ if st.session_state["logged_in"]:
             st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv')
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
+# ==========================================
+# หน้า 5: ระบบภาษี
+# ==========================================
     # 2. กู้คืนระบบภาษี 100% กลับมาครบถ้วน
     with tabs[4]:
         t1, t2 = st.columns([8, 2])
@@ -1064,15 +1067,16 @@ if st.session_state["logged_in"]:
                     fig_sim.update_layout(title=f"การจำลอง 100 รูปแบบในอีก {sim_days} วันของ {ticker}", template="plotly_dark", height=500, xaxis_title="วันทำการในอนาคต", yaxis_title="ราคา (USD)")
                     st.plotly_chart(fig_sim, use_container_width=True)
                     
-                    # 4. เพิ่มบทสรุป ระบบพิทบูลพยากรณ์ โดยละเอียด สั้นกระชับ
+                    # 4. เพิ่มบทสรุป ระบบพิทบูลพยากรณ์ และแก้ไขปัญหากล่องข้อความรั่ว (V4.54)
                     st.markdown("---")
                     st.markdown("#### 🐶 สรุปคำทำนายพิทบูล (Pitbull Analysis)")
                     upside = ((exp_p - last_price) / last_price) * 100
-                    if exp_p > last_price:
-                        p_msg = f"🟢 **Bullish (แนวโน้มเชิงบวก):** ในอีก {sim_days} วันข้างหน้า พิทบูลมองว่าราคามีโอกาสปรับตัวขึ้นไปที่ **${exp_p:.2f}** (Upside {upside:+.2f}%) หากตลาดเป็นใจอาจทะลุไปถึงกรอบบนที่ **${up_b:.2f}** แนะนำให้ **ถือรันเทรนด์ (Hold)** หรือ **หาจังหวะย่อซื้อ** โดยใช้เส้นกรอบล่าง (${low_b:.2f}) เป็นจุดตัดขาดทุน (Stop Loss)"
-                    else:
-                        p_msg = f"🔴 **Bearish/Sideway (แนวโน้มอ่อนแอ):** ในอีก {sim_days} วันข้างหน้า ราคามีเกณฑ์แกว่งตัวออกข้างหรือปรับฐานลงไปที่ **${exp_p:.2f}** (Downside {upside:+.2f}%) ระวังความเสี่ยงหากราคาหลุดลึกไปถึง **${low_b:.2f}** แนะนำให้ **ชะลอการลงทุน (Wait & See)** หรือลดสัดส่วนพอร์ต"
                     
-                    st.success(p_msg) if exp_p > last_price else st.warning(p_msg)
+                    if exp_p > last_price:
+                        p_msg = f"🟢 **แนวโน้มเชิงบวก (Bullish):** ในอีก {sim_days} วันข้างหน้า พิทบูลมองว่าราคามีโอกาสปรับตัวขึ้นไปที่ **${exp_p:.2f}** (บวก {upside:+.2f}%) หากตลาดเป็นใจอาจทะลุไปถึงกรอบบนที่ **${up_b:.2f}** แนะนำให้ **ถือรันเทรนด์ (Hold)** หรือ **หาจังหวะย่อซื้อ** โดยใช้เส้นกรอบล่าง (${low_b:.2f}) เป็นจุดตัดขาดทุน (Stop Loss)"
+                        st.success(p_msg)
+                    else:
+                        p_msg = f"🔴 **แนวโน้มอ่อนแอ (Bearish/Sideway):** ในอีก {sim_days} วันข้างหน้า ราคามีเกณฑ์แกว่งตัวออกข้างหรือปรับฐานลงไปที่ **${exp_p:.2f}** (ติดลบ {upside:+.2f}%) ระวังความเสี่ยงหากราคาหลุดลึกไปถึง **${low_b:.2f}** แนะนำให้ **ชะลอการลงทุน (Wait & See)** หรือลดสัดส่วนพอร์ต"
+                        st.warning(p_msg)
                 else:
                     st.error("ไม่สามารถดึงข้อมูลเพื่อจำลองได้ กรุณาลองใหม่อีกครั้งค่ะ")
