@@ -21,9 +21,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.55", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.56", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.55", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.56", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -406,7 +406,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.55")
+    else: st.title("🛡️ Strategic Hub 4.56")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -703,7 +703,7 @@ with tabs[1]:
             """, unsafe_allow_html=True)
             
         # =========================================================
-        # 👑 THE ULTIMATE CONSENSUS (บทสรุปเอกฉันท์ 3 มิติ) เพิ่มใหม่ V4.55
+        # 👑 THE ULTIMATE CONSENSUS (บทสรุปเอกฉันท์ 3 มิติ) 
         # =========================================================
         st.markdown("---")
         st.markdown("### 👑 บทสรุปเอกฉันท์ (The Ultimate Analyst Consensus)")
@@ -732,7 +732,15 @@ with tabs[1]:
                 st.warning("⚠️ ไม่สามารถดึงข้อมูลพิทบูลมาสรุปผลได้ในขณะนี้")
         st.markdown("---")
 
-        st.markdown("### 🔎 กราฟซูมระยะประชิด (3 เดือนล่าสุด)")
+        # ปรับปรุงข้อความกราฟซูมให้สัมพันธ์กับ Timeframe ที่เลือก
+        if tf_option == "1D (รายวัน)":
+            zoom_text = "60 วันทำการล่าสุด (~3 เดือน)"
+        elif tf_option == "1W (รายสัปดาห์)":
+            zoom_text = "60 สัปดาห์ล่าสุด (~1 ปี 2 เดือน)"
+        else:
+            zoom_text = "60 เดือนล่าสุด (5 ปี)"
+            
+        st.markdown(f"### 🔎 กราฟเจาะลึก ({zoom_text})")
         df_zoom = df.tail(60)
         
         fig_zoom = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.6, 0.2, 0.2])
@@ -748,7 +756,7 @@ with tabs[1]:
 
         # 📐 ระบบวาดเส้น Fibonacci อัตโนมัติ 
         st.markdown("---")
-        show_fibo = st.checkbox("📐 ตีเส้น Fibonacci Retracement (อ้างอิงรอบสวิง 3 เดือนล่าสุด)", value=False)
+        show_fibo = st.checkbox(f"📐 ตีเส้น Fibonacci Retracement (อ้างอิงรอบสวิง {zoom_text})", value=False)
         if show_fibo:
             max_p = df_zoom['High'].max()
             min_p = df_zoom['Low'].min()
