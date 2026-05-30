@@ -1,6 +1,7 @@
 import json
 import time
 import os
+import math
 import urllib.parse
 import requests
 import streamlit as st
@@ -21,9 +22,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.56", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.57", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.56", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.57", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -406,7 +407,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.56")
+    else: st.title("🛡️ Strategic Hub 4.57")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -457,7 +458,7 @@ with st.spinner(f"⏳ กำลังประมวลผลดึงข้อ�
 
 tabs_list = ["📊 วิเคราะห์รายตัว", "🔬 หาจุดเข้าซื้อ (Technical)", "🎯 เรดาร์สแกนหุ้น"]
 if st.session_state["logged_in"]: 
-    tabs_list.extend(["💼 บัญชีลงทุน", "🧾 ระบบภาษี", "🔮 พิทบูลพยากรณ์"])
+    tabs_list.extend(["💼 บัญชีลงทุน", "🧾 ระบบภาษี", "🔮 พิทบูลพยากรณ์", "📝 แผนการเทรด"])
 tabs = st.tabs(tabs_list)
 
 # ==========================================
@@ -1111,3 +1112,73 @@ if st.session_state["logged_in"]:
                         st.warning(p_msg)
                 else:
                     st.error("ไม่สามารถดึงข้อมูลเพื่อจำลองได้ กรุณาลองใหม่อีกครั้งค่ะ")
+
+# ==========================================
+# หน้า 7: แผนการเทรด (Trading Plan)
+# ==========================================
+if st.session_state["logged_in"]:
+    with tabs[6]:
+        st.markdown(f"## 📝 แผนการเทรด (Trading Plan) : {ticker}")
+        st.info("💡 **Position Sizing Calculator:** วางแผนจุดเข้าซื้อ จุดตัดขาดทุน และเป้าหมายทำกำไร เพื่อคำนวณจำนวนหุ้นที่เหมาะสมตามหลักบริหารความเสี่ยง (Risk Management)")
+        
+        if not df.empty:
+            curr_price = df['Close'].iloc[-1]
+            ema_50_val = df['E50'].iloc[-1]
+            
+            c_plan1, c_plan2 = st.columns(2)
+            with c_plan1:
+                st.markdown("#### 1️⃣ ตั้งค่าความเสี่ยง (Risk Setup)")
+                plan_cap = st.number_input("เงินทุนรวมทั้งหมด ($)", value=float(t_cap), step=100.0)
+                plan_risk_pct = st.number_input("ยอมรับความเสี่ยงที่จะขาดทุนต่อไม้ (%)", value=float(r_pct), step=0.5)
+                risk_budget = plan_cap * (plan_risk_pct / 100.0)
+                st.write(f"💸 **งบประมาณที่ยอมเสียได้สูงสุด (Risk Budget):** :red[${risk_budget:,.2f}]")
+
+            with c_plan2:
+                st.markdown("#### 2️⃣ จุดทำการ (Action Points)")
+                plan_entry = st.number_input("🎯 ราคาตั้งใจจะเข้าซื้อ (Entry Price)", value=float(curr_price), step=0.5)
+                
+                # แนะนำจุดหนีที่ EMA50 หรือ 90% ของราคาปัจจุบัน
+                default_sl = float(ema_50_val) if ema_50_val < curr_price else float(curr_price * 0.9)
+                plan_sl = st.number_input("🛑 จุดตัดขาดทุน (Stop Loss)", value=default_sl, step=0.5)
+                
+                # แนะนำจุดทำกำไรที่ 2 เท่าของความเสี่ยง
+                default_tp = plan_entry + ((plan_entry - plan_sl) * 2) if plan_entry > plan_sl else float(curr_price * 1.1)
+                plan_tp = st.number_input("🏆 เป้าหมายทำกำไร (Take Profit)", value=default_tp, step=0.5)
+
+            st.markdown("---")
+            st.markdown("#### 📊 สรุปแผนการเทรด (Trade Summary)")
+
+            if plan_entry > plan_sl:
+                risk_per_share = plan_entry - plan_sl
+                reward_per_share = plan_tp - plan_entry
+                
+                # คำนวณจำนวนหุ้นสูงสุดที่ซื้อได้ และปัดเศษลงเสมอ
+                max_shares_raw = risk_budget / risk_per_share if risk_per_share > 0 else 0
+                max_shares = math.floor(max_shares_raw)
+                
+                position_value = max_shares * plan_entry
+                rr_ratio = reward_per_share / risk_per_share if risk_per_share > 0 else 0
+                expected_profit = max_shares * reward_per_share
+
+                if rr_ratio >= 2.0:
+                    rr_status = "🟢 ดีเยี่ยม (Very Good)"
+                    rr_color = "normal"
+                elif rr_ratio >= 1.5:
+                    rr_status = "🟡 พอใช้ได้ (Acceptable)"
+                    rr_color = "off"
+                else:
+                    rr_status = "🔴 ไม่คุ้มเสี่ยง (Poor)"
+                    rr_color = "inverse"
+
+                c_sum1, c_sum2, c_sum3, c_sum4 = st.columns(4)
+                c_sum1.metric("🛒 ซื้อได้สูงสุด", f"{max_shares:,} หุ้น")
+                c_sum2.metric("💳 ใช้เงินลงทุนรวม", f"${position_value:,.2f}")
+                c_sum3.metric("⚖️ Risk/Reward Ratio", f"1 : {rr_ratio:.2f}", rr_status, delta_color=rr_color)
+                c_sum4.metric("💰 คาดหวังกำไรสุทธิ", f"${expected_profit:,.2f}")
+
+                if position_value > plan_cap:
+                    st.warning(f"⚠️ **คำเตือน:** เงินลงทุนที่ต้องใช้ (${position_value:,.2f}) มากกว่าเงินทุนรวมทั้งหมดที่คุณมี (${plan_cap:,.2f}) แนะนำให้ **ปรับลด % ความเสี่ยงลง** หรือเติมเงินทุนเข้าพอร์ตค่ะ")
+            else:
+                st.error("⚠️ การคำนวณผิดพลาด: **จุดตัดขาดทุน (Stop Loss)** ต้องตั้งให้น้อยกว่า **ราคาเข้าซื้อ (Entry Price)** เสมอนะคะ")
+        else:
+            st.warning("⏳ กรุณารอข้อมูลกราฟโหลดเสร็จสิ้นเพื่อคำนวณแผนการเทรดค่ะ...")
