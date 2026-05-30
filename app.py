@@ -22,9 +22,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.57", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.58", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.57", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.58", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -109,15 +109,39 @@ def load_ledger_data():
         df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.strftime("%d/%m/%Y").replace("NaT", "")
     return df[req_cols]
 
+# โหลดฐานข้อมูลแผนการเทรด
+def load_plans_data():
+    req_cols = ["Date", "Ticker", "Entry", "Stop_Loss", "Take_Profit", "Risk_Budget", "Max_Shares", "Note"]
+    try:
+        global sh
+        ws = sh.worksheet("Trading_Plans")
+        records = ws.get_all_records()
+        if records:
+            df = pd.DataFrame(records)
+            for col in req_cols:
+                if col not in df.columns: df[col] = ""
+            return df[req_cols]
+    except gspread.exceptions.WorksheetNotFound:
+        try:
+            ws = sh.add_worksheet(title="Trading_Plans", rows="1000", cols="10")
+            ws.append_row(req_cols)
+            return pd.DataFrame(columns=req_cols)
+        except: pass
+    except: pass
+    return pd.DataFrame(columns=req_cols)
+
 def save_df_to_sheet(worksheet_name, df):
     global sh
     try: ws = sh.worksheet(worksheet_name)
     except:
         sh = init_connection()
-        ws = sh.worksheet(worksheet_name)
+        try: ws = sh.worksheet(worksheet_name)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh.add_worksheet(title=worksheet_name, rows="1000", cols="15")
     try:
         ws.clear()
-        clean_df = clean_df_types(df)
+        clean_df = df.copy()
+        clean_df = clean_df.astype(str).replace(["nan", "None", "<NA>", "NaN"], "")
         data_list = [clean_df.columns.values.tolist()] + clean_df.values.tolist()
         ws.update(values=data_list, range_name='A1')
         return True
@@ -126,6 +150,7 @@ def save_df_to_sheet(worksheet_name, df):
         return False
 
 if "trade_ledger" not in st.session_state: st.session_state.trade_ledger = load_ledger_data()
+if "trading_plans" not in st.session_state: st.session_state.trading_plans = load_plans_data()
 
 def log_visitor():
     try:
@@ -407,7 +432,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.57")
+    else: st.title("🛡️ Strategic Hub 4.58")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -1137,11 +1162,9 @@ if st.session_state["logged_in"]:
                 st.markdown("#### 2️⃣ จุดทำการ (Action Points)")
                 plan_entry = st.number_input("🎯 ราคาตั้งใจจะเข้าซื้อ (Entry Price)", value=float(curr_price), step=0.5)
                 
-                # แนะนำจุดหนีที่ EMA50 หรือ 90% ของราคาปัจจุบัน
                 default_sl = float(ema_50_val) if ema_50_val < curr_price else float(curr_price * 0.9)
                 plan_sl = st.number_input("🛑 จุดตัดขาดทุน (Stop Loss)", value=default_sl, step=0.5)
                 
-                # แนะนำจุดทำกำไรที่ 2 เท่าของความเสี่ยง
                 default_tp = plan_entry + ((plan_entry - plan_sl) * 2) if plan_entry > plan_sl else float(curr_price * 1.1)
                 plan_tp = st.number_input("🏆 เป้าหมายทำกำไร (Take Profit)", value=default_tp, step=0.5)
 
@@ -1152,7 +1175,6 @@ if st.session_state["logged_in"]:
                 risk_per_share = plan_entry - plan_sl
                 reward_per_share = plan_tp - plan_entry
                 
-                # คำนวณจำนวนหุ้นสูงสุดที่ซื้อได้ และปัดเศษลงเสมอ
                 max_shares_raw = risk_budget / risk_per_share if risk_per_share > 0 else 0
                 max_shares = math.floor(max_shares_raw)
                 
@@ -1178,6 +1200,54 @@ if st.session_state["logged_in"]:
 
                 if position_value > plan_cap:
                     st.warning(f"⚠️ **คำเตือน:** เงินลงทุนที่ต้องใช้ (${position_value:,.2f}) มากกว่าเงินทุนรวมทั้งหมดที่คุณมี (${plan_cap:,.2f}) แนะนำให้ **ปรับลด % ความเสี่ยงลง** หรือเติมเงินทุนเข้าพอร์ตค่ะ")
+                
+                # --- ส่วนที่อัปเกรดเพื่อบันทึกข้อมูล ---
+                st.markdown("#### 💾 บันทึกแผน (Save Plan)")
+                c_save1, c_save2 = st.columns([7, 3])
+                with c_save1:
+                    plan_note = st.text_input("📝 หมายเหตุ (ตัวอย่าง: รอราคาย่อมาแตะ EMA50 ค่อยกดซื้อ)")
+                with c_save2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("💾 บันทึกแผนนี้เก็บไว้ดูภายหลัง", type="primary", use_container_width=True):
+                        new_plan = pd.DataFrame([{
+                            "Date": current_date,
+                            "Ticker": ticker,
+                            "Entry": plan_entry,
+                            "Stop_Loss": plan_sl,
+                            "Take_Profit": plan_tp,
+                            "Risk_Budget": risk_budget,
+                            "Max_Shares": max_shares,
+                            "Note": plan_note
+                        }])
+                        st.session_state.trading_plans = pd.concat([st.session_state.trading_plans, new_plan], ignore_index=True)
+                        if save_df_to_sheet("Trading_Plans", st.session_state.trading_plans):
+                            st.success("✅ บันทึกแผนสำเร็จ! เลื่อนลงไปดูที่ตารางด้านล่างได้เลยค่ะ")
+                        else:
+                            st.error("❌ บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง")
+
+                st.markdown("---")
+                st.markdown("### 📚 ประวัติแผนการเทรดของฉัน (Saved Plans)")
+                st.info("💡 แผนทั้งหมดในตารางนี้จะถูกบันทึกขึ้นไปเก็บบน Google Sheets อัตโนมัติ (อยู่ในชีทใหม่ชื่อ 'Trading_Plans' ค่ะ)")
+                
+                # ตัวแก้ไขตารางให้ดูสวยงาม
+                ed_plans = st.data_editor(st.session_state.trading_plans, num_rows="dynamic", use_container_width=True,
+                    column_config={
+                        "Date": "วันที่บันทึก",
+                        "Ticker": "ชื่อหุ้น",
+                        "Entry": st.column_config.NumberColumn("ราคาเข้าซื้อ ($)", format="%.2f"),
+                        "Stop_Loss": st.column_config.NumberColumn("จุดตัดขาดทุน ($)", format="%.2f"),
+                        "Take_Profit": st.column_config.NumberColumn("เป้าทำกำไร ($)", format="%.2f"),
+                        "Risk_Budget": st.column_config.NumberColumn("งบความเสี่ยง ($)", format="%.2f"),
+                        "Max_Shares": st.column_config.NumberColumn("โควตาที่ซื้อได้ (หุ้น)", format="%d"),
+                        "Note": "หมายเหตุ"
+                    })
+                
+                # หากมีการแก้ไขหรือลบตาราง ให้บันทึกซ้ำ
+                if not ed_plans.equals(st.session_state.trading_plans):
+                    st.session_state.trading_plans = ed_plans.copy()
+                    save_df_to_sheet("Trading_Plans", st.session_state.trading_plans)
+                    st.rerun()
+
             else:
                 st.error("⚠️ การคำนวณผิดพลาด: **จุดตัดขาดทุน (Stop Loss)** ต้องตั้งให้น้อยกว่า **ราคาเข้าซื้อ (Entry Price)** เสมอนะคะ")
         else:
