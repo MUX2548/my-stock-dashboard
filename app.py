@@ -22,9 +22,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.58", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.59", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.58", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.59", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -109,7 +109,6 @@ def load_ledger_data():
         df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.strftime("%d/%m/%Y").replace("NaT", "")
     return df[req_cols]
 
-# โหลดฐานข้อมูลแผนการเทรด
 def load_plans_data():
     req_cols = ["Date", "Ticker", "Entry", "Stop_Loss", "Take_Profit", "Risk_Budget", "Max_Shares", "Note"]
     try:
@@ -432,7 +431,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.58")
+    else: st.title("🛡️ Strategic Hub 4.59")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -1229,24 +1228,45 @@ if st.session_state["logged_in"]:
                 st.markdown("### 📚 ประวัติแผนการเทรดของฉัน (Saved Plans)")
                 st.info("💡 แผนทั้งหมดในตารางนี้จะถูกบันทึกขึ้นไปเก็บบน Google Sheets อัตโนมัติ (อยู่ในชีทใหม่ชื่อ 'Trading_Plans' ค่ะ)")
                 
-                # ตัวแก้ไขตารางให้ดูสวยงาม
-                ed_plans = st.data_editor(st.session_state.trading_plans, num_rows="dynamic", use_container_width=True,
-                    column_config={
-                        "Date": "วันที่บันทึก",
-                        "Ticker": "ชื่อหุ้น",
-                        "Entry": st.column_config.NumberColumn("ราคาเข้าซื้อ ($)", format="%.2f"),
-                        "Stop_Loss": st.column_config.NumberColumn("จุดตัดขาดทุน ($)", format="%.2f"),
-                        "Take_Profit": st.column_config.NumberColumn("เป้าทำกำไร ($)", format="%.2f"),
-                        "Risk_Budget": st.column_config.NumberColumn("งบความเสี่ยง ($)", format="%.2f"),
-                        "Max_Shares": st.column_config.NumberColumn("โควตาที่ซื้อได้ (หุ้น)", format="%d"),
-                        "Note": "หมายเหตุ"
-                    })
+                # --- [อัปเกรด V4.59] ระบบตารางที่มีปุ่มลบสำหรับแท็บเล็ต ---
+                display_df = st.session_state.trading_plans.copy()
                 
-                # หากมีการแก้ไขหรือลบตาราง ให้บันทึกซ้ำ
-                if not ed_plans.equals(st.session_state.trading_plans):
-                    st.session_state.trading_plans = ed_plans.copy()
-                    save_df_to_sheet("Trading_Plans", st.session_state.trading_plans)
-                    st.rerun()
+                if not display_df.empty:
+                    # แทรกคอลัมน์ใหม่ด้านหน้าสุด เอาไว้ให้ลูกค้าติ๊กถูก
+                    display_df.insert(0, "Select_Delete", False)
+                    
+                    ed_plans = st.data_editor(display_df, num_rows="dynamic", use_container_width=True,
+                        column_config={
+                            "Select_Delete": st.column_config.CheckboxColumn("🗑️ เลือกเพื่อลบ", default=False),
+                            "Date": "วันที่บันทึก",
+                            "Ticker": "ชื่อหุ้น",
+                            "Entry": st.column_config.NumberColumn("ราคาเข้าซื้อ ($)", format="%.2f"),
+                            "Stop_Loss": st.column_config.NumberColumn("จุดตัดขาดทุน ($)", format="%.2f"),
+                            "Take_Profit": st.column_config.NumberColumn("เป้าทำกำไร ($)", format="%.2f"),
+                            "Risk_Budget": st.column_config.NumberColumn("งบความเสี่ยง ($)", format="%.2f"),
+                            "Max_Shares": st.column_config.NumberColumn("โควตาที่ซื้อได้ (หุ้น)", format="%d"),
+                            "Note": "หมายเหตุ"
+                        })
+                    
+                    # เช็คว่ามีการติ๊กถูกในช่องลบหรือไม่
+                    if ed_plans["Select_Delete"].any():
+                        st.warning("⚠️ คุณได้ติ๊กเลือกแผนที่ต้องการลบแล้ว กดปุ่มสีแดงด้านล่างเพื่อยืนยันการลบถาวรค่ะ")
+                        if st.button("🗑️ ยืนยันการลบแผนที่เลือก", type="primary", use_container_width=True):
+                            # กรองเอาเฉพาะบรรทัดที่ไม่ได้ติ๊กถูก แล้วเซฟทับ
+                            st.session_state.trading_plans = ed_plans[~ed_plans["Select_Delete"]].drop(columns=["Select_Delete"])
+                            save_df_to_sheet("Trading_Plans", st.session_state.trading_plans)
+                            st.success("✅ ลบข้อมูลสำเร็จ!")
+                            time.sleep(1)
+                            st.rerun()
+                    else:
+                        # กรณีมีการแก้ไขข้อมูลอื่นๆ ในตาราง
+                        updated_df = ed_plans.drop(columns=["Select_Delete"])
+                        if not updated_df.equals(st.session_state.trading_plans):
+                            st.session_state.trading_plans = updated_df.copy()
+                            save_df_to_sheet("Trading_Plans", st.session_state.trading_plans)
+                            st.rerun()
+                else:
+                    st.info("ยังไม่มีประวัติแผนการเทรดค่ะ ลองคำนวณและกดบันทึกแผนด้านบนดูนะคะ!")
 
             else:
                 st.error("⚠️ การคำนวณผิดพลาด: **จุดตัดขาดทุน (Stop Loss)** ต้องตั้งให้น้อยกว่า **ราคาเข้าซื้อ (Entry Price)** เสมอนะคะ")
