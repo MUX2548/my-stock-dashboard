@@ -22,9 +22,9 @@ from datetime import datetime, timezone, timedelta
 logo_path = "strategic_hub_logo.png"
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.75", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.76", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.75", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.76", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -296,7 +296,7 @@ def load_pro_data(ticker_symbol, tf):
         
         div_y = info.get('dividendYield', 0)
         
-        # --- กู้คืนข้อมูลพื้นฐาน Fundamental อย่างครบถ้วน ---
+        # กู้คืนข้อมูลพื้นฐาน Fundamental
         earnings_date = "N/A"
         try:
             cal = s.calendar
@@ -409,7 +409,7 @@ def get_live_fx():
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.75")
+    else: st.title("🛡️ Strategic Hub 4.76")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -458,7 +458,7 @@ if st.session_state["logged_in"]:
 tabs = st.tabs(tabs_list)
 
 # ==========================================
-# หน้า 1: วิเคราะห์รายตัว (ภาพรวมหลัก & คืนชีพข้อมูลพื้นฐาน)
+# หน้า 1: วิเคราะห์รายตัว (ภาพรวมหลัก)
 # ==========================================
 with tabs[0]:
     if not df.empty:
@@ -512,7 +512,7 @@ with tabs[0]:
             fig.update_layout(template="plotly_dark", height=450, showlegend=False, xaxis_rangeslider_visible=False, margin=dict(l=0,r=0,t=0,b=0))
             st.plotly_chart(fig, use_container_width=True)
             
-            # --- [คืนชีพ 100%] ข้อมูลพื้นฐาน Fundamental กลับมาแล้ว! ---
+            # --- ข้อมูลพื้นฐาน Fundamental ---
             st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
             pe_v = fund.get('pe_val', 0)
             if pe_v <= 0: pe_status = "🔴 ขาดทุน"
@@ -568,7 +568,12 @@ with tabs[1]:
         st.markdown(f'<div class="pro-box" style="border-top: 4px solid {m_col};"><h3>{m_sig}</h3><p>{m_desc}</p></div>', unsafe_allow_html=True)
         st.markdown("---")
 
-        # --- [คืนชีพ 100%] บทสรุปเอกฉันท์ 3 มิติ (The Objective Consensus) ---
+        # ประกาศตัวแปรเพื่อเช็คสภาวะตลาดสำหรับให้บทสรุปเอกฉันท์ใช้งาน (นี่คือตัวที่ทำให้เกิดบั๊กในรอบที่แล้วค่ะ)
+        spy_t = market_signal.get("spy_trend", "N/A")
+        v_val = market_signal.get("vix", 0.0)
+        is_market_good = "ขึ้น" in spy_t and (v_val < 25)
+
+        # --- บทสรุปเอกฉันท์ 3 มิติ (The Objective Consensus) ---
         st.markdown("### 👑 บทสรุปเอกฉันท์ (The Objective Consensus)")
         with st.spinner("⏳ ประมวลผลข้อมูล มหภาค + เทคนิค + พิทบูลพยากรณ์ อย่างเป็นกลาง..."):
             sim_df_quick, exp_p_quick, up_b_quick, low_b_quick, _ = run_monte_carlo(ticker, days_to_predict=30)
@@ -591,7 +596,7 @@ with tabs[1]:
             else: st.warning("⚠️ ไม่สามารถดึงข้อมูลพิทบูลมาสรุปผลได้ในขณะนี้")
         st.markdown("---")
         
-        # --- [คืนชีพ 100%] กราฟเจาะลึก 3 เดือน & ระบบเส้น Fibonacci ตัวเต็ม ---
+        # --- กราฟเจาะลึก 3 เดือน & ระบบเส้น Fibonacci ตัวเต็ม ---
         if tf_option == "1D (รายวัน)": zoom_text = "60 วันทำการล่าสุด (~3 เดือน)"
         elif tf_option == "1W (รายสัปดาห์)": zoom_text = "60 สัปดาห์ล่าสุด (~1 ปี 2 เดือน)"
         else: zoom_text = "60 เดือนล่าสุด (5 ปี)"
@@ -632,7 +637,7 @@ with tabs[2]:
         st.dataframe(screener_df, use_container_width=True)
 
 # ==========================================
-# หน้า 4: บัญชีลงทุน (คืนชีพพอร์ตโฟลิโอ & กราฟครบครัน)
+# หน้า 4: บัญชีลงทุน (พอร์ตโฟลิโอ & กราฟ)
 # ==========================================
 if st.session_state["logged_in"]:
     with tabs[3]:
@@ -658,7 +663,6 @@ if st.session_state["logged_in"]:
         if st.button("💾 บันทึกข้อมูลสมุดบัญชีขึ้นระบบ Cloud", type="primary", use_container_width=True):
             if save_df_to_sheet("Ledger", st.session_state.trade_ledger): st.success("✅ บันทึกข้อมูลสำเร็จ!")
 
-        # --- [คืนชีพ 100%] แดชบอร์ดสรุปพอร์ตและกราฟวงกลม/กราฟแท่ง ---
         st.markdown("---")
         st.subheader("📊 ตารางสรุปพอร์ตโฟลิโอปัจจุบัน (Auto Mark-to-Market)")
         live_fx = get_live_fx()
@@ -704,7 +708,7 @@ if st.session_state["logged_in"]:
         else: st.info("💼 พอร์ตว่างเปล่า ยังไม่มีหุ้นถือครองในระบบค่ะ")
 
 # ==========================================
-# หน้า 5: ระบบภาษี (คืนชีพเครื่องประเมิน ภ.ง.ด. 90 ตัวเต็ม)
+# หน้า 5: ระบบภาษี (เครื่องประเมิน ภ.ง.ด. 90 ตัวเต็ม)
 # ==========================================
     with tabs[4]:
         st.subheader("🧾 ระบบประเมินภาษีเงินได้บุคคลธรรมดา (ภ.ง.ด. 90)")
@@ -778,7 +782,7 @@ if st.session_state["logged_in"]:
                 r2.metric("🚨 ยอดที่ต้องชำระเพิ่มจริงหลังหักเครดิต", f"฿{max(0, tax_raw - sum_wht_thb_yr):,.2f}")
 
 # ==========================================
-# หน้า 6: พิทบูลพยากรณ์ (คืนชีพกราฟจำลอง 100 เส้นทาง)
+# หน้า 6: พิทบูลพยากรณ์ (กราฟจำลอง 100 เส้นทาง)
 # ==========================================
     with tabs[5]:
         st.markdown(f"## 🔮 พิทบูลพยากรณ์ (AI Monte Carlo Simulation) : {ticker}")
@@ -793,7 +797,6 @@ if st.session_state["logged_in"]:
                 c2.metric("🎯 ราคาคาดหวังตามสถิติ (Expected)", f"${exp_p:.2f}")
                 c3.metric("📈 กรณีมองโลกแง่ดีที่สุด (Upper 95%)", f"${up_b:.2f}")
                 
-                # --- [คืนชีพ 100%] ตัววาดเส้นกราฟจำลองข่ายใยแมงมุม 100 เส้นทาง ---
                 fig_sim = go.Figure()
                 for col in sim_df.columns:
                     fig_sim.add_trace(go.Scatter(x=sim_df.index, y=sim_df[col], mode='lines', line=dict(width=1, color='rgba(130, 177, 255, 0.1)'), showlegend=False))
@@ -805,7 +808,7 @@ if st.session_state["logged_in"]:
             else: st.error("❌ ดึงข้อมูลประมวลผลจำลองไม่สำเร็จ")
 
 # ==========================================
-# หน้า 7: แผนการเทรด (ตารางระบบลบข้อมูลแท็บเล็ตลื่นนิ้ว)
+# หน้า 7: แผนการเทรด (ตารางลบข้อมูลแท็บเล็ต)
 # ==========================================
     with tabs[6]:
         st.markdown(f"## 📝 แผนการเทรด (Trading Plan) : {ticker}")
@@ -860,7 +863,7 @@ if st.session_state["logged_in"]:
         else: st.info("📝 ยังไม่มีแผนการเทรดถูกบันทึกไว้ค่ะ")
 
 # ==========================================
-# หน้า 8: ระบบแบคเทสกลยุทธ์ 3 ประสาน
+# หน้า 8: ระบบแบคเทสกลยุทธ์ 3 ประสาน (ตัวเต็มสุดแม่นยำ)
 # ==========================================
     with tabs[7]:
         st.markdown(f"## 🧪 ระบบทดสอบกลยุทธ์ย้อนหลัง 3 ประสาน (EMA + MACD + RSI)")
