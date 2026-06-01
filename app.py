@@ -22,9 +22,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.59", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.60", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.59", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.60", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -431,7 +431,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.59")
+    else: st.title("🛡️ Strategic Hub 4.60")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -668,6 +668,8 @@ with tabs[1]:
         rsi = df['RSI'].iloc[-1]
         macd = df['MACD'].iloc[-1]
         sig = df['Sig'].iloc[-1]
+        is_bullish_macd = macd > sig
+        is_uptrend = last_close > ema50
         
         st.markdown(f"💡 **ราคาตลาดปัจจุบัน:** `${last_close:,.2f} USD` | **ส่วนต่างราคารายวันนับจากปิดวานนี้:** `{daily_diff:+,.2f} USD ({daily_pct:+.2f}%)`")
         
@@ -728,24 +730,28 @@ with tabs[1]:
             """, unsafe_allow_html=True)
             
         # =========================================================
-        # 👑 THE ULTIMATE CONSENSUS (บทสรุปเอกฉันท์ 3 มิติ) 
+        # 👑 THE ULTIMATE CONSENSUS (บทสรุปเอกฉันท์ 3 มิติ - ไร้อคติ) 
         # =========================================================
         st.markdown("---")
-        st.markdown("### 👑 บทสรุปเอกฉันท์ (The Ultimate Analyst Consensus)")
-        with st.spinner("⏳ ประมวลผลข้อมูล มหภาค + เทคนิค + พิทบูลพยากรณ์..."):
+        st.markdown("### 👑 บทสรุปเอกฉันท์ (The Objective Consensus)")
+        with st.spinner("⏳ ประมวลผลข้อมูล มหภาค + เทคนิค + พิทบูลพยากรณ์ อย่างเป็นกลาง..."):
             sim_df_quick, exp_p_quick, up_b_quick, low_b_quick, _ = run_monte_carlo(ticker, days_to_predict=30)
             if sim_df_quick is not None:
                 upside_quick = ((exp_p_quick - last_close) / last_close) * 100
                 
-                if last_close > ema200 and exp_p_quick > last_close and is_market_good:
-                    m_col, m_sig = "#00E676", "🌟 FULLY ALIGNED (ทิศทางขาขึ้นชัดเจน ซื้อเต็มกำลัง)"
-                    m_desc = f"สอดคล้อง 3 มิติ! **ตลาดโลกเป็นใจ** + **กราฟเทคนิค**เป็นขาขึ้นชัดเจน หนุนด้วย**พิทบูลพยากรณ์**ที่ให้เป้าหมาย 30 วันไปที่ **${exp_p_quick:.2f}** (+{upside_quick:.2f}%) แนะนำหาจังหวะย่อซื้อที่แนวรับ Fibonacci หรือ EMA 50"
-                elif last_close < ema200 and exp_p_quick < last_close:
-                    m_col, m_sig = "#FF5252", "🚨 HIGH RISK (ทิศทางขาลง ชะลอการลงทุน)"
-                    m_desc = f"อันตราย! **กราฟเทคนิค**เป็นขาลง สอดคล้องกับ**พิทบูลพยากรณ์**ที่ประเมินว่าราคาจะไหลลงไปที่ **${exp_p_quick:.2f}** ({upside_quick:.2f}%) แนะนำให้ 'ทับมือ' หรือหนีตายหากหลุด ${low_b_quick:.2f}"
+                # ตรรกะใหม่: เข้มงวดขึ้น ไร้อคติ และตรวจสอบโมเมนตัมปัจจุบัน
+                if last_close > ema50 and is_bullish_macd and rsi < 70 and exp_p_quick > last_close and is_market_good:
+                    m_col, m_sig = "#00E676", "🌟 FULLY ALIGNED (สอดคล้องทุกมิติ: ทยอยสะสม)"
+                    m_desc = f"สอดคล้อง 3 มิติ! **ตลาดโลกเป็นใจ** + **กราฟเทคนิค**เป็นขาขึ้นชัดเจนและโมเมนตัมสนับสนุน (MACD ตัดขึ้น) หนุนด้วย**สถิติพยากรณ์**ที่ให้เป้าหมาย 30 วันไปที่ **${exp_p_quick:.2f}** (+{upside_quick:.2f}%) แนะนำหาจังหวะย่อซื้อที่แนวรับและตั้ง Stop Loss เสมอ"
+                elif last_close > ema200 and (not is_bullish_macd or rsi >= 70):
+                    m_col, m_sig = "#FF9800", "⚠️ PULLBACK WARNING (สัญญาณพักฐาน: ชะลอการลงทุน)"
+                    m_desc = f"ระวัง! เทรนด์ยาวยังเป็นขาขึ้น แต่ **ภาพระยะสั้นโมเมนตัมกำลังหักหัวลง (MACD อ่อนแรง) หรือเข้าเขตซื้อมากเกินไป (Overbought)** แม้สถิติจะมองเป้าที่ **${exp_p_quick:.2f}** แต่ในทางปฏิบัติ นี่คือ 'การพักฐาน' แนะนำให้ **ทับมือ (Wait & See)** เพื่อรอรับที่แนวรับ ไม่ควรไล่ราคา"
+                elif last_close < ema50 and exp_p_quick < last_close:
+                    m_col, m_sig = "#FF5252", "🚨 HIGH RISK (ทิศทางขาลง: หลีกเลี่ยง)"
+                    m_desc = f"อันตราย! **กราฟเทคนิค**เป็นขาลงชัดเจน สอดคล้องกับ**สถิติพยากรณ์**ที่ประเมินว่าราคาจะไหลลงไปที่ **${exp_p_quick:.2f}** ({upside_quick:.2f}%) แนะนำให้ 'หลีกเลี่ยง' หรือหนีตายหากหลุด ${low_b_quick:.2f}"
                 else:
-                    m_col, m_sig = "#FFD600", "⚖️ NEUTRAL (สัญญาณขัดแย้ง รอจังหวะ)"
-                    m_desc = f"สัญญาณยังขัดแย้งกัน กราฟและพิทบูลมองไม่ตรงกัน (พิทบูลให้เป้า **${exp_p_quick:.2f}**) แนะนำเทรดเก็งกำไรสั้นๆ ในกรอบแนวรับแนวต้าน หรือรอดูความชัดเจน"
+                    m_col, m_sig = "#FFD600", "⚖️ NEUTRAL / DIVERGENCE (สัญญาณขัดแย้ง: รอเลือกทาง)"
+                    m_desc = f"สัญญาณจาก 3 มิติยังขัดแย้งกัน (เช่น ตลาดดีแต่กราฟกำลังพักฐาน หรือกราฟดีแต่สถิติมองลง) แนะนำให้ **เทรดอย่างระมัดระวังในกรอบแคบๆ** หรือรอดูความชัดเจนจนกว่าแนวโน้มและโมเมนตัมจะไปในทิศทางเดียวกัน"
 
                 st.markdown(f"""
                 <div style="background-color: #1E1E1E; border-left: 8px solid {m_col}; padding: 20px; border-radius: 8px; margin: 15px 0;">
@@ -1099,7 +1105,7 @@ if st.session_state["logged_in"]:
 if st.session_state["logged_in"]:
     with tabs[5]:
         st.markdown(f"## 🔮 พิทบูลพยากรณ์ (AI Monte Carlo Simulation) : {ticker}")
-        st.info("💡 **หลักการทำงาน:** ระบบจำลองมอนติคาร์โล (Monte Carlo) จะนำความผันผวนของราคาหุ้นในอดีต 1 ปี มาสุ่มสร้างเส้นทางจำลอง 100 รูปแบบ เพื่อคำนวณหาความน่าจะเป็นของราคาในอนาคต")
+        st.info("💡 **หลักการทำงาน:** ระบบจำลองมอนติคาร์โล (Monte Carlo) จะนำความผันผวนของราคาหุ้นในอดีต 1 ปี มาสุ่มสร้างเส้นทางจำลอง 100 รูปแบบ เพื่อคำนวณหาความน่าจะเป็นของราคาในอนาคต **(เป็นเพียงความน่าจะเป็นทางสถิติเท่านั้น ไม่ใช่ข้อเท็จจริงในอนาคต)**")
         
         sim_days = st.slider("จำนวนวันพยากรณ์ไปข้างหน้า:", 5, 90, 30)
         
@@ -1129,10 +1135,10 @@ if st.session_state["logged_in"]:
                     upside = ((exp_p - last_price) / last_price) * 100
                     
                     if exp_p > last_price:
-                        p_msg = f"🟢 **แนวโน้มเชิงบวก (Bullish):** ในอีก {sim_days} วันข้างหน้า พิทบูลมองว่าราคามีโอกาสปรับตัวขึ้นไปที่ **${exp_p:.2f}** (บวก {upside:+.2f}%) หากตลาดเป็นใจอาจทะลุไปถึงกรอบบนที่ **${up_b:.2f}** แนะนำให้ **ถือรันเทรนด์ (Hold)** หรือ **หาจังหวะย่อซื้อ** โดยใช้เส้นกรอบล่าง (${low_b:.2f}) เป็นจุดตัดขาดทุน (Stop Loss)"
+                        p_msg = f"🟢 **แนวโน้มเชิงบวก (Bullish Drift):** ในอีก {sim_days} วันข้างหน้า อิงจากความผันผวนทางสถิติ ราคามีโอกาสปรับตัวขึ้นไปที่ **${exp_p:.2f}** (บวก {upside:+.2f}%) แต่หากตลาดผันผวนแรงอาจลงไปแตะกรอบล่างที่ **${low_b:.2f}** แนะนำให้ใช้ข้อมูลนี้ประกอบกับกราฟเทคนิคเท่านั้น (อย่าเชื่อจนหมดใจ)"
                         st.success(p_msg)
                     else:
-                        p_msg = f"🔴 **แนวโน้มอ่อนแอ (Bearish/Sideway):** ในอีก {sim_days} วันข้างหน้า ราคามีเกณฑ์แกว่งตัวออกข้างหรือปรับฐานลงไปที่ **${exp_p:.2f}** (ติดลบ {upside:+.2f}%) ระวังความเสี่ยงหากราคาหลุดลึกไปถึง **${low_b:.2f}** แนะนำให้ **ชะลอการลงทุน (Wait & See)** หรือลดสัดส่วนพอร์ต"
+                        p_msg = f"🔴 **แนวโน้มอ่อนแอ (Bearish Drift):** ในอีก {sim_days} วันข้างหน้า ราคามีเกณฑ์แกว่งตัวออกข้างหรือปรับฐานลงไปที่ **${exp_p:.2f}** (ติดลบ {upside:+.2f}%) ระวังความเสี่ยงหากราคาหลุดลึกไปถึง **${low_b:.2f}** แนะนำให้ชะลอการลงทุน"
                         st.warning(p_msg)
                 else:
                     st.error("ไม่สามารถดึงข้อมูลเพื่อจำลองได้ กรุณาลองใหม่อีกครั้งค่ะ")
