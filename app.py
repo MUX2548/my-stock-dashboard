@@ -23,9 +23,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.80", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.85", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.80", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.85", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -401,7 +401,7 @@ def load_pro_data(ticker_symbol, tf):
         last = df['Close'].iloc[-1]
         v = df['Close'].pct_change().tail(14).std()
         tr = "ขึ้น 📈" if last > df['E50'].iloc[-1] else "ลง 📉"
-        mat = {"l": last * (1 - v*1.0) if tr == "ลง 📉" else last * (1 - v*0.5), "u": last * (1 - v*0.5) if tr == "ลง 📉" else last * (1 + v*1.0), "tr": tr}
+        mat = {"l": last * (1 - v*0.5), "u": last * (1 + v*1.0), "tr": tr}
         
         atr_proxy = df['High'].tail(14).max() - df['Low'].tail(14).min()
         levels = {
@@ -510,7 +510,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.80")
+    else: st.title("🛡️ Strategic Hub 4.85")
     
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True): 
         st.cache_data.clear()
@@ -574,7 +574,7 @@ if st.session_state["logged_in"]:
 tabs = st.tabs(tabs_list)
 
 # ==========================================
-# หน้า 1: วิเคราะห์กราฟรายตัว (ภาพรวมหลัก คืนชีพสีสัน Delta)
+# หน้า 1: วิเคราะห์กราฟรายตัว
 # ==========================================
 with tabs[0]:
     if not df.empty:
@@ -598,7 +598,6 @@ with tabs[0]:
                     delta=f"{daily_pct:+.2f}%")
         
         with st.expander("🏢 ข้อมูลธุรกิจ (Company Profile)", expanded=False):
-            st.markdown(f"**🇹🇭 สรุปธุรกิจ:**")
             st.info(f"{fund.get('business_desc_th', 'ไม่มีข้อมูล')}")
             c_b1, c_b2, c_b3 = st.columns(3)
             c_b1.markdown(f"**🏷️ กลุ่ม:** {fund.get('industry', 'N/A')}")
@@ -615,20 +614,15 @@ with tabs[0]:
         m4.metric("เงินใหญ่ (HYG/IEF)", "Credit Flow", sm_flow if sm_flow != "N/A" else None, delta_color="normal" if "ON" in sm_flow else "inverse" if "OFF" in sm_flow else "off")
         
         if is_market_good and is_uptrend and is_bullish_macd and rsi_val < 70:
-            rec, color = "STRONG BUY / HOLD", "#00E676"
-            msg = f"**'จังหวะน้ำขึ้นต้องรีบตัก'** - ตลาดเอื้ออำนวย หุ้นเป็นขาขึ้นเต็มตัว โมเมนตัมบวก แนะนำให้สะสมหรือรันเทรนด์ต่อ"
+            rec, color, msg = "STRONG BUY / HOLD", "#00E676", "ตลาดเอื้ออำนวย หุ้นเป็นขาขึ้นเต็มตัว โมเมนตัมบวก แนะนำให้สะสมหรือรันเทรนด์ต่อ"
         elif is_uptrend and rsi_val >= 70:
-            rec, color = "HOLD / TAKE PROFIT", "#FFD600"
-            msg = f"**'ระวังความร้อนแรง'** - หุ้นเป็นขาขึ้นแต่เข้าเขตซื้อมากเกินไป ไม่ควรไล่ราคา แนะนำรันเทรนด์แบบยก Stop Loss ตาม"
+            rec, color, msg = "HOLD / TAKE PROFIT", "#FFD600", "หุ้นเป็นขาขึ้นแต่เข้าเขตซื้อมากเกินไป ไม่ควรไล่ราคา แนะนำรันเทรนด์แบบยก Stop Loss ตาม"
         elif not is_uptrend and is_bullish_macd and rsi_val < 35:
-            rec, color = "SPECULATIVE BUY", "#2962FF"
-            msg = f"**'ลุ้นรีบาวด์'** - หุ้นเสียทรงขาขึ้นแต่เริ่มมีแรงซื้อกลับ เหมาะเก็งกำไรระยะสั้น (ต้องมีจุดตัดขาดทุนชัดเจน)"
+            rec, color, msg = "SPECULATIVE BUY", "#2962FF", "หุ้นเสียทรงขาขึ้นแต่เริ่มมีแรงซื้อกลับ เหมาะเก็งกำไรระยะสั้น (ต้องมีจุดตัดขาดทุนชัดเจน)"
         elif not is_uptrend:
-            rec, color = "AVOID / WAIT", "#FF5252"
-            msg = f"**'ทับมือรักษาเงินต้น'** - ภาพรวมเป็นขาลง โมเมนตัมอ่อนแอ แนะนำให้รอดูสถานการณ์ไปก่อน"
+            rec, color, msg = "AVOID / WAIT", "#FF5252", "ภาพรวมเป็นขาลง โมเมนตัมอ่อนแอ แนะนำให้รอดูสถานการณ์ไปก่อน"
         else:
-            rec, color = "NEUTRAL / SIDEWAY", "#B0BEC5"
-            msg = f"**'รอเลือกทาง'** - กราฟแกว่งตัว สัญญาณขัดแย้งกัน แนะนำเทรดในกรอบสั้นๆ หรือรอจนกว่าจะชัดเจน"
+            rec, color, msg = "NEUTRAL / SIDEWAY", "#B0BEC5", "กราฟแกว่งตัว สัญญาณขัดแย้งกัน แนะนำเทรดในกรอบสั้นๆ หรือรอจนกว่าจะชัดเจน"
 
         st.markdown(f"""
         <div style="background-color: #1E1E1E; border-left: 8px solid {color}; padding: 20px; border-radius: 8px; margin: 15px 0;">
@@ -733,7 +727,7 @@ with tabs[0]:
         st.warning(f"❌ ระบบถูก Yahoo บล็อกสัญญาณชั่วคราวค่ะ โปรดรอ 1-2 นาทีแล้วกดปุ่ม 'ดึงข้อมูลเรียลไทม์เดี๋ยวนี้' ด้านซ้ายบนอีกครั้งค่ะ")
 
 # ==========================================
-# หน้า 2: โซนเข้าซื้อเทคนิคอล (คืนชีพกล่องสถานะซ้ายขวา & กราฟตีเส้น 100%)
+# หน้า 2: โซนเข้าซื้อเทคนิคอล
 # ==========================================
 with tabs[1]:
     if not df.empty:
@@ -804,9 +798,6 @@ with tabs[1]:
             </div>
             """, unsafe_allow_html=True)
             
-        # =========================================================
-        # 👑 THE ULTIMATE CONSENSUS (บทสรุปเอกฉันท์ 3 มิติ - ไร้อคติ) 
-        # =========================================================
         st.markdown("---")
         st.markdown("### 👑 บทสรุปเอกฉันท์ (The Objective Consensus)")
         with st.spinner("⏳ ประมวลผลข้อมูล มหภาค + เทคนิค + พิทบูลพยากรณ์ อย่างเป็นกลาง..."):
@@ -858,7 +849,6 @@ with tabs[1]:
         if last_close < df_zoom['E25'].iloc[-1] and last_close >= (ema50 * 0.95):
              fig_zoom.add_hline(y=ema50, line_dash="solid", line_color="#00E676", annotation_text="โซนเฝ้าระวังเข้าซื้อ (Buy Zone)", row=1, col=1, opacity=0.5)
 
-        # 📐 ระบบวาดเส้น Fibonacci อัตโนมัติ 
         st.markdown("---")
         show_fibo = st.checkbox(f"📐 เปิดใช้ระบบตีเส้น Fibonacci Retracement ({zoom_text})", value=True)
         if show_fibo:
@@ -960,7 +950,7 @@ with tabs[2]:
             else: st.warning("ไม่พบข้อมูล กรุณาตรวจสอบรายชื่อหุ้นอีกครั้ง")
 
 # ==========================================
-# หน้า 4: บัญชีลงทุน (คืนชีพพอร์ตโฟลิโอ & กราฟวงกลม)
+# หน้า 4: บัญชีลงทุน
 # ==========================================
 if st.session_state["logged_in"]:
     with tabs[3]:
@@ -1041,7 +1031,7 @@ if st.session_state["logged_in"]:
                 st.rerun()
 
         st.markdown("---")
-        st.subheader("📊 พอร์ตโฟลิโอ (Auto Mark-to-Market)")
+        st.subheader("📊 ตารางสรุปพอร์ตโฟลิโอปัจจุบัน (Auto Mark-to-Market)")
         live_fx = get_live_fx()
         st.info(f"💱 **เรท USD/THB ล่าสุด:** ฿{live_fx:.4f}")
         port_summary, total_invested = [], 0.0
@@ -1085,7 +1075,7 @@ if st.session_state["logged_in"]:
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
 # ==========================================
-# หน้า 5: ระบบภาษี (ประเมิน ภ.ง.ด. 90 ตัวเต็ม)
+# หน้า 5: ระบบภาษี
 # ==========================================
     with tabs[4]:
         t1, t2 = st.columns([8, 2])
@@ -1176,7 +1166,7 @@ if st.session_state["logged_in"]:
                 r2.metric(f"🚨 จ่ายเพิ่มจริง (หักเครดิต ตปท.)", f"฿{max(0, tax_raw - sum_wht_thb_yr):,.2f}")
 
 # ==========================================
-# หน้า 6: พิทบูลพยากรณ์ (กราฟ 100 เส้นทาง)
+# หน้า 6: พิทบูลพยากรณ์
 # ==========================================
     with tabs[5]:
         st.markdown(f"## 🔮 พิทบูลพยากรณ์ (AI Monte Carlo Simulation) : {ticker}")
@@ -1219,7 +1209,7 @@ if st.session_state["logged_in"]:
                     st.error("ไม่สามารถดึงข้อมูลเพื่อจำลองได้ กรุณาลองใหม่อีกครั้งค่ะ")
 
 # ==========================================
-# หน้า 7: แผนการเทรด (คืนชีพตัวชี้วัดสีเขียว-แดง & ระบบลบสำหรับแท็บเล็ต)
+# หน้า 7: แผนการเทรด (มีปุ่มลบแท็บเล็ต + คืนชีพสีสัน)
 # ==========================================
     with tabs[6]:
         st.markdown(f"## 📝 แผนการเทรด (Trading Plan) : {ticker}")
@@ -1262,11 +1252,14 @@ if st.session_state["logged_in"]:
                 expected_profit = max_shares * reward_per_share
 
                 if rr_ratio >= 2.0:
-                    rr_status, rr_color = "🟢 ดีเยี่ยม (Very Good)", "normal"
+                    rr_status = "🟢 ดีเยี่ยม (Very Good)"
+                    rr_color = "normal"
                 elif rr_ratio >= 1.5:
-                    rr_status, rr_color = "🟡 พอใช้ได้ (Acceptable)", "off"
+                    rr_status = "🟡 พอใช้ได้ (Acceptable)"
+                    rr_color = "off"
                 else:
-                    rr_status, rr_color = "🔴 ไม่คุ้มเสี่ยง (Poor)", "inverse"
+                    rr_status = "🔴 ไม่คุ้มเสี่ยง (Poor)"
+                    rr_color = "inverse"
 
                 c_sum1, c_sum2, c_sum3, c_sum4 = st.columns(4)
                 c_sum1.metric("🛒 ซื้อได้สูงสุด", f"{max_shares:,} หุ้น")
@@ -1341,7 +1334,7 @@ if st.session_state["logged_in"]:
             st.warning("⏳ กรุณารอข้อมูลกราฟโหลดเสร็จสิ้นเพื่อคำนวณแผนการเทรดค่ะ...")
 
 # ==========================================
-# หน้า 8: ระบบแบคเทสกลยุทธ์ 3 ประสาน
+# หน้า 8: ระบบแบคเทสกลยุทธ์ 3 ประสาน (ตัวเต็ม + ใส่สีสันให้ตาราง)
 # ==========================================
     with tabs[7]:
         st.markdown(f"## 🧪 ระบบทดสอบกลยุทธ์ย้อนหลัง 3 ประสาน (EMA + MACD + RSI)")
@@ -1361,16 +1354,32 @@ if st.session_state["logged_in"]:
                     trades_df.to_sql("backtest_trades", conn, if_exists="append", index=False)
                     conn.close()
                     
+                    # 1. โชว์สถานะสถิติ 3 ช่อง (เพิ่มสีสันตรง ผลตอบแทน)
                     c_bt1, c_bt2, c_bt3 = st.columns(3)
                     c_bt1.metric("🎯 อัตราการชนะ (Win Rate)", f"{win_rate:.2f}%")
-                    c_bt2.metric("📈 ผลตอบแทนสะสมโมเดล (3 ปี)", f"{total_ret:+.2f}%")
+                    c_bt2.metric("📈 ผลตอบแทนสะสมโมเดล (3 ปี)", f"{total_ret:+.2f}%", delta=f"{total_ret:+.2f}%")
                     c_bt3.metric("📋 จำนวนไม้ที่สแกนเจอตามกฎ", f"{len(trades_df)} ไม้")
                     
                     st.markdown("### 📋 ตารางบันทึกรายงานผลคำสั่งซื้อขายในอดีต")
+                    
+                    # 2. จัดรูปแบบตารางและใส่สีเขียว-แดง
                     display_bt = trades_df.rename(columns={
                         "entry_date": "วันที่เข้าซื้อ", "entry_price": "ราคาซื้อ ($)",
                         "exit_date": "วันที่ขายปิดไม้", "exit_price": "ราคาขาย ($)",
-                        "p_l_pct": "เปอร์เซ็นต์ กำไร/ขาดทุน", "exit_reason": "สัญญาณที่ระบบสั่งขาย"
+                        "p_l_pct": "กำไร/ขาดทุน (%)", "exit_reason": "สัญญาณที่ระบบสั่งขาย"
                     })
-                    st.dataframe(display_bt[["วันที่เข้าซื้อ", "ราคาซื้อ ($)", "วันที่ขายปิดไม้", "ราคาขาย ($)", "เปอร์เซ็นต์ กำไร/ขาดทุน", "สัญญาณที่ระบบสั่งขาย"]], use_container_width=True)
-                else: st.error("⚠️ ไม่พบจังหวะสัญญาณที่เข้าเกณฑ์กฎ 3 ประสานในช่วง 3 ปีที่ผ่านมาสำหรับหุ้นตัวนี้ค่ะ")
+                    
+                    def color_bt_profit(val):
+                        try:
+                            return 'color: #00E676; font-weight: bold;' if float(val) > 0 else 'color: #FF5252; font-weight: bold;'
+                        except:
+                            return ''
+                            
+                    formatted_df = display_bt[["วันที่เข้าซื้อ", "ราคาซื้อ ($)", "วันที่ขายปิดไม้", "ราคาขาย ($)", "กำไร/ขาดทุน (%)", "สัญญาณที่ระบบสั่งขาย"]]
+                    st.dataframe(formatted_df.style.map(color_bt_profit, subset=["กำไร/ขาดทุน (%)"]).format({
+                        "ราคาซื้อ ($)": "{:.2f}", 
+                        "ราคาขาย ($)": "{:.2f}", 
+                        "กำไร/ขาดทุน (%)": "{:.2f}%"
+                    }), use_container_width=True)
+                else: 
+                    st.error("⚠️ ไม่พบจังหวะสัญญาณที่เข้าเกณฑ์กฎ 3 ประสานในช่วง 3 ปีที่ผ่านมาสำหรับหุ้นตัวนี้ค่ะ")
