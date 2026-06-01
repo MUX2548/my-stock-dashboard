@@ -1278,3 +1278,145 @@ if st.session_state["logged_in"]:
                 st.error("⚠️ การคำนวณผิดพลาด: **จุดตัดขาดทุน (Stop Loss)** ต้องตั้งให้น้อยกว่า **ราคาเข้าซื้อ (Entry Price)** เสมอนะคะ")
         else:
             st.warning("⏳ กรุณารอข้อมูลกราฟโหลดเสร็จสิ้นเพื่อคำนวณแผนการเทรดค่ะ...")
+            import sqlite3
+import pandas as pd
+import numpy as np
+import yfinance as yf
+
+# ==========================================
+# 🗄️ ส่วนที่ 1: การตั้งค่าระบบฐานข้อมูลออฟไลน์
+# ==========================================
+def init_backtest_db():
+    conn = sqlite3.connect("backtest_history.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS backtest_trades (
+            trade_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT,
+            entry_date TEXT,
+            entry_price REAL,
+            exit_date TEXT,
+            exit_price REAL,
+            p_l_usd REAL,
+            p_l_pct REAL,
+            exit_reason TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# ==========================================
+# 📊 ส่วนที่ 2: ฟังก์ชันคำนวณอินดิเคเตอร์ 3 ประสาน
+# ==========================================
+def calculate_indicators(df):
+    # 1. EMA 50
+    df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
+    
+    # 2. RSI 14
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14).mean()
+    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14).mean()
+    df['RSI'] = 100 - (100 / (1 + gain/loss))
+    
+    # 3. MACD (12, 26, 9)
+    df['MACD'] = df['Close'].ewm(span=12, adjust=False).mean() - df['Close'].ewm(span=26, adjust=False).mean()
+    df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+    
+    return df.dropna(subset=['EMA50', 'RSI', 'MACD', 'Signal'])
+
+# ==========================================
+# 🚀 ส่วนที่ 3: ระบบประมวลผล Backtest Engine
+# ==========================================
+def run_3_prasan_backtest(ticker_symbol, period_years=3, initial_capital=10000.0):
+    # ดึงข้อมูลย้อนหลังตามขอบเขตที่กำหนด
+    end_date = pd.Timestamp.now()
+    start_date = end_date - pd.DateOffset(years=period_years)
+    
+    df = yf.download(ticker_symbol, start=start_date, end=end_date, progress=False)
+    if df.empty:
+        return "❌ ไม่พบข้อมูลสินทรัพย์"
+        
+    df = calculate_indicators(df)
+    
+    # สถานะการจำลองพอร์ต
+    in_position = False
+    entry_price = 0.0
+    entry_date = None
+    shares_held = 0
+    cash = initial_capital
+    
+    trade_logs = []
+    
+    # วิ่งไล่ตรวจเช็คราคาทีละวันทำการ (เคร่งครัดตามกฎ ไร้อคติมองอนาคต)
+    for idx, row in df.iterrows():
+        current_price = float(row['Close'])
+        current_date_str = idx.strftime("%d/%m/%Y")
+        
+        # 🟢 เงื่อนไขการเข้าซื้อ (Entry Rule)
+        if not in_position:
+            if current_price > float(row['EMA50']) and float(row['MACD']) > float(row['Signal']) and 50 <= float(row['RSI']) <= 65:
+                in_position = True
+                entry_price = current_price
+                entry_date = current_date_str
+                # แบ่งเงินซื้อหมดไม้ชั่วคราวเพื่อคำนวณสถิติ
+                shares_held = cash / entry_price
+                cash = 0.0
+                
+        # 🔴 เงื่อนไขการขายออก (Exit Rule)
+        elif in_position:
+            is_rsi_overbought = float(row['RSI']) > 70
+            is_momentum_negative = float(row['MACD']) < float(row['Signal'])
+            
+            if is_rsi_overbought or is_momentum_negative:
+                in_position = False
+                exit_price = current_price
+                cash = shares_held * exit_price
+                
+                # คำนวณผลลัพธ์ประจำไม้
+                p_l_usd = (exit_price - entry_price) * shares_held
+                p_l_pct = ((exit_price - entry_price) / entry_price) * 100
+                reason = "RSI Overbought" if is_rsi_overbought else "MACD Dead Cross"
+                
+                trade_logs.append({
+                    "ticker": ticker_symbol,
+                    "entry_date": entry_date,
+                    "entry_price": entry_price,
+                    "exit_date": current_date_str,
+                    "exit_price": exit_price,
+                    "p_l_usd": p_l_usd,
+                    "p_l_pct": p_l_pct,
+                    "exit_reason": reason
+                })
+                shares_held = 0
+                
+    # นำเงินกลับมาคำนวณมูลค่าสุทธิกรณีไม้สุดท้ายยังไม่ปิดสัญญา
+    final_portfolio_value = cash if cash > 0 else (shares_held * float(df['Close'].iloc[-1]))
+    
+    return pd.DataFrame(trade_logs), final_portfolio_value
+
+# ==========================================
+# 📊 ส่วนที่ 4: การคำนวณสถิติระดับสูง (Advanced Metrics)
+# ==========================================
+def calculate_performance_metrics(trades_df, initial_capital, final_value):
+    if trades_df.empty:
+        return {}
+        
+    win_trades = trades_df[trades_df['p_l_usd'] > 0]
+    win_rate = (len(win_trades) / len(trades_df)) * 100
+    total_return_pct = ((final_value - initial_capital) / initial_capital) * 100
+    
+    # คำนวณ Maximum Drawdown แบบคร่าวๆ จากประวัติไม้เทรด
+    trades_df['cum_balance'] = initial_capital + trades_df['p_l_usd'].cumsum()
+    trades_df['peak'] = trades_df['cum_balance'].cummax()
+    trades_df['drawdown'] = (trades_df['cum_balance'] - trades_df['peak']) / trades_df['peak'] * 100
+    max_drawdown = trades_df['drawdown'].min()
+    
+    return {
+        "win_rate": win_rate,
+        "total_trades": len(trades_df),
+        "final_value": final_value,
+        "total_return_pct": total_return_pct,
+        "max_drawdown": max_drawdown
+    }
+
+            
