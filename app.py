@@ -4,6 +4,7 @@ import os
 import math
 import sqlite3
 import urllib.parse
+import random
 import requests
 import streamlit as st
 import gspread
@@ -20,24 +21,21 @@ from datetime import datetime, timezone, timedelta
 # 🎨 1. การตั้งค่าแบรนด์และสไตล์หน้าเพจ
 # ==========================================
 logo_path = "strategic_hub_logo.png"
-
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.95", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.99", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.95", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 4.99", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
     .stButton>button { border-radius: 12px; font-weight: bold; transition: all 0.3s ease; border: 1px solid #4CAF50; }
     .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(76, 175, 80, 0.4); border-color: #4CAF50; }
-    .stButton>button[data-baseweb="button"] { border-radius: 12px; }
     div[data-testid="stMetricValue"] { padding-bottom: 0px; font-size: 1.5rem !important; white-space: pre-wrap !important; word-break: break-word !important; }
     [data-testid="stMetricDelta"] > div { white-space: pre-wrap !important; word-break: break-word !important; }
     .stSpinner > div > div { border-top-color: #deff9a !important; }
     [data-testid="stSidebar"] { background-color: #0e1117; }
     [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
-    
     .pro-box { background-color: #1E1E1E; border-radius: 8px; padding: 15px; margin-bottom: 15px; border: 1px solid #333; }
     .pro-title { font-weight: bold; font-size: 1.1em; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px; }
     .pro-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.95em; }
@@ -50,7 +48,7 @@ current_date = datetime.now(tz_th).strftime("%d/%m/%Y")
 current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 
 # ==========================================
-# 🔐 2. การบริหารสถานะข้อมูลระบบ (Persistent Memory)
+# 🔐 2. การบริหารสถานะข้อมูลระบบ
 # ==========================================
 if "current_ticker" not in st.session_state: st.session_state.current_ticker = "RKLB"
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
@@ -67,9 +65,7 @@ def init_connection():
     return gc.open_by_url(sheet_url)
 
 try: sh = init_connection()
-except Exception as e:
-    st.error(f"⚠️ ไม่สามารถเชื่อมต่อฐานข้อมูลได้: {e}")
-    st.stop()
+except: st.stop()
 
 def clean_df_types(df):
     df_clean = df.copy()
@@ -92,8 +88,7 @@ def load_ledger_data():
     for col in req_cols:
         if col not in df.columns: df[col] = ""
     df = clean_df_types(df)
-    if not df.empty and "Date" in df.columns:
-        df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.strftime("%d/%m/%Y").replace("NaT", "")
+    if not df.empty and "Date" in df.columns: df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce").dt.strftime("%d/%m/%Y").replace("NaT", "")
     return df[req_cols]
 
 def load_plans_data():
@@ -116,16 +111,13 @@ def save_df_to_sheet(worksheet_name, df):
         try:
             sh = init_connection()
             ws = sh.worksheet(worksheet_name)
-        except gspread.exceptions.WorksheetNotFound:
-            ws = sh.add_worksheet(title=worksheet_name, rows="1000", cols="15")
+        except: ws = sh.add_worksheet(title=worksheet_name, rows="1000", cols="15")
     try:
         ws.clear()
         clean_df = df.copy().astype(str).replace(["nan", "None", "<NA>", "NaN"], "")
         ws.update(values=[clean_df.columns.values.tolist()] + clean_df.values.tolist(), range_name='A1')
         return True
-    except Exception as e:
-        st.error(f"❌ เกิดข้อผิดพลาดขณะเขียนข้อมูลลง Cloud: {e}")
-        return False
+    except: return False
 
 # ==========================================
 # 🧪 3. ส่วนระบบจำลองกลยุทธ์ (Backtest Engine)
@@ -133,12 +125,7 @@ def save_df_to_sheet(worksheet_name, df):
 def init_backtest_db():
     conn = sqlite3.connect("backtest_history.db")
     cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS backtest_trades (
-            trade_id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT, entry_date TEXT, entry_price REAL,
-            exit_date TEXT, exit_price REAL, p_l_usd REAL, p_l_pct REAL, exit_reason TEXT
-        )
-    """)
+    cursor.execute("CREATE TABLE IF NOT EXISTS backtest_trades (trade_id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT, entry_date TEXT, entry_price REAL, exit_date TEXT, exit_price REAL, p_l_usd REAL, p_l_pct REAL, exit_reason TEXT)")
     conn.commit()
     conn.close()
 
@@ -161,7 +148,6 @@ def run_3_prasan_backtest(ticker_symbol, period_years=3, initial_capital=10000.0
 
     in_position, entry_p, entry_d, shares, cash = False, 0.0, None, 0.0, initial_capital
     logs = []
-
     for idx, row in df_clean.iterrows():
         close_p, rsi_v, macd_v, sig_v, ema_v = float(row['Close']), float(row['RSI']), float(row['MACD']), float(row['Signal']), float(row['EMA50'])
         date_str = idx.strftime("%d/%m/%Y")
@@ -174,13 +160,11 @@ def run_3_prasan_backtest(ticker_symbol, period_years=3, initial_capital=10000.0
                 cash = shares * exit_p
                 logs.append({"ticker": ticker_symbol, "entry_date": entry_d, "entry_price": entry_p, "exit_date": date_str, "exit_price": exit_p, "p_l_usd": (exit_p - entry_p) * shares, "p_l_pct": ((exit_p - entry_p) / entry_p) * 100, "exit_reason": "RSI Overbought (>70)" if rsi_v > 70 else "โมเมนตัมตัดลง (MACD)"})
                 shares = 0.0
-
     final_val = cash if cash > 0 else (shares * float(df_clean['Close'].iloc[-1]))
     return pd.DataFrame(logs), final_val
 
 if "trade_ledger" not in st.session_state: st.session_state.trade_ledger = load_ledger_data()
 if "trading_plans" not in st.session_state: st.session_state.trading_plans = load_plans_data()
-
 def log_visitor():
     try:
         ws = sh.worksheet("Visitor_Log")
@@ -188,7 +172,7 @@ def log_visitor():
             ws.append_row([datetime.now(tz_th).strftime("%d/%m/%Y %H:%M:%S")])
             st.session_state.has_logged_visit = True
         return len(ws.col_values(1))
-    except Exception: return "N/A"
+    except: return "N/A"
 visitor_count = log_visitor()
 
 # ==========================================
@@ -199,8 +183,7 @@ def calculate_stats(df_input):
     if not df.empty and "Date" in df.columns:
         df["Date_Temp"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", errors="coerce")
         df = df.sort_values(by="Date_Temp").drop(columns=["Date_Temp"]).reset_index(drop=True)
-    cb = 0.0
-    stat = {"outward": 0.0, "inward": 0.0, "bought": 0.0, "sold": 0.0, "dividend": 0.0, "realized_profit": 0.0}
+    cb, stat = 0.0, {"outward": 0.0, "inward": 0.0, "bought": 0.0, "sold": 0.0, "dividend": 0.0, "realized_profit": 0.0}
     r_bals, hld = [], {}
     df = df[~df['Action'].isin(['None', '', 'nan', 'กำไรจากการขายหุ้น (Profit)'])].copy().reset_index(drop=True)
     for idx, row in df.iterrows():
@@ -209,7 +192,6 @@ def calculate_stats(df_input):
         trade_value = p * s
         manual_amount = float(row.get("Amount_USD", 0.0))
         a = manual_amount if manual_amount > 0 and action not in ["ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)"] else trade_value
-        
         if action == "นำเงินออกนอกประเทศ (Outward)": cb += a; stat["outward"] += a
         elif action == "นำเงินเข้าประเทศไทย (Inward)": cb -= a; stat["inward"] += a
         elif action == "รับเงินปันผล (Dividend)": cb += a; stat["dividend"] += a
@@ -243,17 +225,26 @@ def translate_to_thai(text):
         return "".join([s[0] for s in res.json()[0]])
     except: return short_text + "..."
 
-# 🥷 สวมหน้ากากนินจา User-Agent เพื่อหลอก Yahoo ว่าเราคือบราวเซอร์ Chrome ปกติ
+# 🥷 สวมหน้ากากนินจา User-Agent ขั้นสูงเพื่อหลอก Yahoo
+def get_random_headers():
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0"
+    ]
+    return {
+        "User-Agent": random.choice(user_agents),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5"
+    }
+
 @st.cache_data(ttl=900)
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
     p, i = stgs[tf]["p"], stgs[tf]["i"]
     
-    # กำหนด Session เพื่อหลอก Yahoo
     session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    })
+    session.headers.update(get_random_headers())
     
     df = pd.DataFrame()
     for attempt in range(3):
@@ -264,21 +255,22 @@ def load_pro_data(ticker_symbol, tf):
             if not df.empty:
                 df = df.dropna(subset=['Close'])
                 if not df.empty: break
-        except Exception: pass
+        except: pass
         time.sleep(1)
         
     if df.empty: return pd.DataFrame(), {}, None, None, {}
     
     fund = {
         "ps": "N/A", "pe": "N/A", "roe": "N/A", "rev_growth": "N/A", "dividend": "ไม่มีข้อมูล",
-        "earnings_date": "รอประกาศ", "business_desc_th": "ข้อมูลถูกจำกัดจาก Yahoo ชั่วคราว (กราฟยังทำงานปกติ)",
+        "earnings_date": "รอประกาศ", "business_desc_th": "ข้อมูลถูกจำกัดจาก Yahoo ชั่วคราว (ระบบกราฟยังทำงานปกติค่ะ)",
         "industry": "N/A", "sector": "N/A", "location": "N/A", "website": "#",
         "pe_val": 0, "roe_val": 0
     }
     
     try:
         info = s.info
-        fund["business_desc_th"] = translate_to_thai(info.get('longBusinessSummary', 'N/A'))
+        if 'longBusinessSummary' in info:
+            fund["business_desc_th"] = translate_to_thai(info.get('longBusinessSummary', 'N/A'))
         div_y = info.get('dividendYield', 0)
         earnings_date = "N/A"
         if 'earningsTimestamp' in info and info['earningsTimestamp']:
@@ -368,7 +360,7 @@ def run_ai_screener(tickers):
     if not tickers: return pd.DataFrame()
     results = []
     session = requests.Session()
-    session.headers.update({"User-Agent": "Mozilla/5.0"})
+    session.headers.update(get_random_headers())
     for t in tickers:
         try:
             hist = yf.Ticker(t, session=session).history(period="6mo")
@@ -421,7 +413,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.95")
+    else: st.title("🛡️ Strategic Hub 4.99")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -504,7 +496,7 @@ with tabs[0]:
         
         with st.expander("🏢 ข้อมูลธุรกิจ (Company Profile)", expanded=False):
             st.markdown(f"**🇹🇭 สรุปธุรกิจ:**")
-            if "จำกัดการเชื่อมต่อ" in fund.get('business_desc_th', ''):
+            if "จำกัด" in fund.get('business_desc_th', ''):
                 st.warning(fund.get('business_desc_th', ''))
             else:
                 st.info(fund.get('business_desc_th', 'ไม่มีข้อมูล'))
@@ -634,7 +626,7 @@ with tabs[0]:
                 ra = t_cap * (r_pct / 100.0)
                 if last_p > sl: st.success(f"🧮 **เข้าซื้อได้สูงสุด:** {ra/(last_p-sl):.0f} หุ้น")
     else: 
-        st.warning(f"❌ ระบบไม่สามารถดึงข้อมูลได้ค่ะ โปรดตรวจสอบชื่อหุ้น หรือรอ 1-2 นาทีแล้วกดปุ่มดึงข้อมูลอีกครั้ง")
+        st.warning(f"❌ ระบบถูกบล็อกสัญญาณชั่วคราวค่ะ โปรดรอ 2-3 นาทีแล้วกดปุ่ม 'ดึงข้อมูลเรียลไทม์เดี๋ยวนี้' ด้านซ้ายบนอีกครั้งค่ะ")
 
 # ==========================================
 # หน้า 2: โซนเข้าซื้อเทคนิคอล
@@ -745,7 +737,7 @@ with tabs[1]:
         else:
             zoom_text = "60 เดือนล่าสุด (5 ปี)"
             
-        st.markdown(f"### 🔎 กราเจาะลึกแบบซูมระยะประชิด ({zoom_text})")
+        st.markdown(f"### 🔎 กราฟเจาะลึกแบบซูมระยะประชิด ({zoom_text})")
         df_zoom = df.tail(60)
         
         fig_zoom = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.6, 0.2, 0.2])
@@ -965,8 +957,8 @@ if st.session_state["logged_in"]:
                     total_v += val
             
             p1, p2, p3, p4 = st.columns(4)
-            p1.metric("มูลค่าหุ้นรวมทั้งหมด", f"${total_v:,.2f}")
-            p2.metric("ต้นทุนหุ้นทั้งหมด", f"${total_invested:,.2f}")
+            p1.metric("มูลค่าหุ้นรวม ($)", f"${total_v:,.2f}")
+            p2.metric("ต้นทุนทั้งหมด ($)", f"${total_invested:,.2f}")
             p3.metric("กำไร/ขาดทุนรวม ($)", f"${total_v - total_invested:,.2f}", f"{((total_v - total_invested) / total_invested * 100 if total_invested > 0 else 0):.2f}%")
             p4.metric("กำไร/ขาดทุนรวม (฿)", f"฿{(total_v - total_invested) * live_fx:,.2f}")
             
@@ -974,17 +966,17 @@ if st.session_state["logged_in"]:
             chart_col1, chart_col2 = st.columns(2)
             with chart_col1:
                 fig_pie = go.Figure(data=[go.Pie(labels=res_df['หุ้น'], values=res_df['มูลค่ารวม'], hole=.4)])
-                fig_pie.update_layout(title="สัดส่วนมูลค่าพอร์ตการลงทุน", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
+                fig_pie.update_layout(title="สัดส่วนพอร์ต", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
                 st.plotly_chart(fig_pie, use_container_width=True)
             with chart_col2:
                 fig_bar = go.Figure(data=[go.Bar(x=res_df['หุ้น'], y=res_df['กำไร/ขาดทุน ($)'], marker_color=['#00E676' if val >= 0 else '#FF5252' for val in res_df['กำไร/ขาดทุน ($)']])])
-                fig_bar.update_layout(title="ผลกำไร/ขาดทุนแยกรายตัว ($)", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
+                fig_bar.update_layout(title="กำไร/ขาดทุนรายตัว", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
                 st.plotly_chart(fig_bar, use_container_width=True)
                 
             def color_profit(val): return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
             st.dataframe(res_df.style.map(color_profit, subset=["กำไร/ขาดทุน ($)", "กำไร/ขาดทุน (฿)", "% เปลี่ยนแปลง"]).format({"จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}", "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", "มูลค่ารวม": "${:,.2f}"}), use_container_width=True)
             st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv')
-        else: st.info("💼 พอร์ตว่างเปล่า ยังไม่มีหุ้นถือครองในระบบค่ะ")
+        else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
 # ==========================================
 # หน้า 5: ระบบภาษี
@@ -1082,27 +1074,43 @@ if st.session_state["logged_in"]:
 # ==========================================
     with tabs[5]:
         st.markdown(f"## 🔮 พิทบูลพยากรณ์ (AI Monte Carlo Simulation) : {ticker}")
-        st.info("💡 ระบบจะดึงความผันผวนย้อนหลังมาทำการสุ่มโอกาสทางสถิติรูปแบบเส้นทางเดินราคา 100 รูปแบบในอนาคต")
-        sim_days = st.slider("เลือกจำนวนวันพยากรณ์ล่วงหน้า (วันทำการ):", 5, 90, 30)
+        st.info("💡 **หลักการทำงาน:** ระบบจำลองมอนติคาร์โล (Monte Carlo) จะนำความผันผวนของราคาหุ้นในอดีต 1 ปี มาสุ่มสร้างเส้นทางจำลอง 100 รูปแบบ เพื่อคำนวณหาความน่าจะเป็นของราคาในอนาคต")
         
-        if st.button("🎲 เริ่มการประมวลผลสุ่มจำลองมอนติคาร์โล", type="primary", use_container_width=True):
+        sim_days = st.slider("จำนวนวันพยากรณ์ไปข้างหน้า:", 5, 90, 30)
+        
+        if st.button("🎲 เริ่มการจำลองพยากรณ์อนาคต", type="primary", use_container_width=True):
             with st.spinner("พิทบูลกำลังเคี้ยวข้อมูลและคำนวณความน่าจะเป็น 100 เส้นทาง..."):
                 sim_df, exp_p, up_b, low_b, last_price = run_monte_carlo(ticker, days_to_predict=sim_days)
+                
                 if sim_df is not None:
                     c1, c2, c3 = st.columns(3)
-                    c1.metric("📉 กรณีเลวร้ายที่สุด (Lower 5%)", f"${low_b:.2f}")
-                    c2.metric("🎯 ราคาคาดหวังตามสถิติ (Expected)", f"${exp_p:.2f}")
-                    c3.metric("📈 กรณีมองโลกแง่ดีที่สุด (Upper 95%)", f"${up_b:.2f}")
+                    c1.metric("📉 กรณีเลวร้าย (Lower 5%)", f"${low_b:.2f}")
+                    c2.metric("🎯 ราคาคาดหวัง (Expected)", f"${exp_p:.2f}")
+                    c3.metric("📈 กรณีดีที่สุด (Upper 95%)", f"${up_b:.2f}")
                     
                     fig_sim = go.Figure()
                     for col in sim_df.columns:
                         fig_sim.add_trace(go.Scatter(x=sim_df.index, y=sim_df[col], mode='lines', line=dict(width=1, color='rgba(130, 177, 255, 0.1)'), showlegend=False))
+                    
                     fig_sim.add_trace(go.Scatter(x=[0, sim_days-1], y=[last_price, exp_p], mode='lines+markers', name='Expected Path', line=dict(color='#00E676', width=3, dash='dash')))
-                    fig_sim.add_hline(y=up_b, line_dash="dot", line_color="#FFD600", annotation_text="Upper Bound")
-                    fig_sim.add_hline(y=low_b, line_dash="dot", line_color="#FF5252", annotation_text="Lower Bound")
-                    fig_sim.update_layout(title=f"โครงข่ายวิเคราะห์ทิศทางราคาอนาคตของ {ticker}", template="plotly_dark", height=400, xaxis_title="วันในอนาคต", yaxis_title="ราคา (USD)")
+                    fig_sim.add_hline(y=up_b, line_dash="dot", line_color="#FFD600", annotation_text="Upper Bound (95%)")
+                    fig_sim.add_hline(y=low_b, line_dash="dot", line_color="#FF5252", annotation_text="Lower Bound (5%)")
+                    
+                    fig_sim.update_layout(title=f"การจำลอง 100 รูปแบบในอีก {sim_days} วันของ {ticker}", template="plotly_dark", height=500, xaxis_title="วันทำการในอนาคต", yaxis_title="ราคา (USD)")
                     st.plotly_chart(fig_sim, use_container_width=True)
-                else: st.error("❌ ดึงข้อมูลประมวลผลจำลองไม่สำเร็จ")
+                    
+                    st.markdown("---")
+                    st.markdown("#### 🐶 สรุปคำทำนายพิทบูล (Pitbull Analysis)")
+                    upside = ((exp_p - last_price) / last_price) * 100
+                    
+                    if exp_p > last_price:
+                        p_msg = f"🟢 **แนวโน้มเชิงบวก (Bullish):** ในอีก {sim_days} วันข้างหน้า พิทบูลมองว่าราคามีโอกาสปรับตัวขึ้นไปที่ **${exp_p:.2f}** (บวก {upside:+.2f}%) หากตลาดเป็นใจอาจทะลุไปถึงกรอบบนที่ **${up_b:.2f}** แนะนำให้ **ถือรันเทรนด์ (Hold)** หรือ **หาจังหวะย่อซื้อ** โดยใช้เส้นกรอบล่าง (${low_b:.2f}) เป็นจุดตัดขาดทุน (Stop Loss)"
+                        st.success(p_msg)
+                    else:
+                        p_msg = f"🔴 **แนวโน้มอ่อนแอ (Bearish/Sideway):** ในอีก {sim_days} วันข้างหน้า ราคามีเกณฑ์แกว่งตัวออกข้างหรือปรับฐานลงไปที่ **${exp_p:.2f}** (ติดลบ {upside:+.2f}%) ระวังความเสี่ยงหากราคาหลุดลึกไปถึง **${low_b:.2f}** แนะนำให้ **ชะลอการลงทุน (Wait & See)** หรือลดสัดส่วนพอร์ต"
+                        st.warning(p_msg)
+                else:
+                    st.error("ไม่สามารถดึงข้อมูลเพื่อจำลองได้ กรุณาลองใหม่อีกครั้งค่ะ")
 
 # ==========================================
 # หน้า 7: แผนการเทรด
