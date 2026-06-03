@@ -21,11 +21,12 @@ from datetime import datetime, timezone, timedelta
 # 🎨 1. การตั้งค่าแบรนด์และสไตล์หน้าเพจ
 # ==========================================
 logo_path = "strategic_hub_logo.png"
+
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 4.99", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.00", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 4.99", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.00", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -256,7 +257,7 @@ def load_pro_data(ticker_symbol, tf):
                 df = df.dropna(subset=['Close'])
                 if not df.empty: break
         except: pass
-        time.sleep(1)
+        time.sleep(2) # เพิ่มเวลาพักหายใจหลอก Yahoo
         
     if df.empty: return pd.DataFrame(), {}, None, None, {}
     
@@ -355,6 +356,7 @@ def get_live_fx():
     try: return yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
     except: return 35.00
 
+# 🛡️ โหมด Safe Mode: ดึงช้าลงเพื่อรักษาชีวิต
 @st.cache_data(ttl=1800)
 def run_ai_screener(tickers):
     if not tickers: return pd.DataFrame()
@@ -379,6 +381,7 @@ def run_ai_screener(tickers):
             elif close > ema50 and rsi_val >= 70: action = "🔥 OVERBOUGHT"
             results.append({"หุ้น": t, "ราคาล่าสุด": f"${close:.2f}", "EMA50": f"${ema50:.2f}", "RSI": f"{rsi_val:.1f}", "คำแนะนำ AI": action})
         except: pass
+        time.sleep(2) # 🛡️ หัวใจของโหมด Safe Mode: พัก 2 วินาทีต่อหุ้น
     return pd.DataFrame(results)
 
 @st.cache_data(ttl=3600)
@@ -413,7 +416,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 4.99")
+    else: st.title("🛡️ Strategic Hub 5.00")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -626,7 +629,7 @@ with tabs[0]:
                 ra = t_cap * (r_pct / 100.0)
                 if last_p > sl: st.success(f"🧮 **เข้าซื้อได้สูงสุด:** {ra/(last_p-sl):.0f} หุ้น")
     else: 
-        st.warning(f"❌ ระบบถูกบล็อกสัญญาณชั่วคราวค่ะ โปรดรอ 2-3 นาทีแล้วกดปุ่ม 'ดึงข้อมูลเรียลไทม์เดี๋ยวนี้' ด้านซ้ายบนอีกครั้งค่ะ")
+        st.error("❌ โดนบล็อกสัญญาณถาวร กรุณาใช้วิธี 'สลับอินเทอร์เน็ต' หรือเปิด VPN ตามคำแนะนำของพี่นักพัฒนานะคะ!")
 
 # ==========================================
 # หน้า 2: โซนเข้าซื้อเทคนิคอล
@@ -809,7 +812,7 @@ with tabs[1]:
 # ==========================================
 with tabs[2]:
     st.markdown("## 🎯 เรดาร์สแกนหุ้น (AI Screener & Mini-Chart)")
-    st.markdown("### 📋 จัดการรายชื่อหุ้นในเรดาร์ (สูงสุด 20 ตัว)")
+    st.markdown("### 📋 จัดการรายชื่อหุ้นในเรดาร์ (แนะนำ 5-10 ตัว เพื่อลดโอกาสโดนแบน)")
     
     c_rad1, c_rad2 = st.columns([7, 3])
     with c_rad1:
@@ -833,8 +836,8 @@ with tabs[2]:
                 st.session_state.radar_tickers.append(new_ticker)
                 st.rerun()
 
-    if st.button("🚀 สแกนและอัปเดตกราฟ", type="primary", use_container_width=True):
-        with st.spinner("⏳ AI กำลังวิ่งดึงกราฟและข้อมูลทีละตัว..."):
+    if st.button("🚀 สแกนและอัปเดตกราฟ (Safe Mode ทำงานช้าลงเพื่อความปลอดภัย)", type="primary", use_container_width=True):
+        with st.spinner("⏳ AI กำลังวิ่งดึงกราฟ... (รอประมาณ 2 วินาทีต่อ 1 หุ้น เพื่อหลบการแบนจาก Yahoo)"):
             screener_df = run_ai_screener(st.session_state.radar_tickers)
             if not screener_df.empty:
                 def color_action(val):
@@ -957,8 +960,8 @@ if st.session_state["logged_in"]:
                     total_v += val
             
             p1, p2, p3, p4 = st.columns(4)
-            p1.metric("มูลค่าหุ้นรวม ($)", f"${total_v:,.2f}")
-            p2.metric("ต้นทุนทั้งหมด ($)", f"${total_invested:,.2f}")
+            p1.metric("มูลค่าหุ้นรวมทั้งหมด", f"${total_v:,.2f}")
+            p2.metric("ต้นทุนหุ้นทั้งหมด", f"${total_invested:,.2f}")
             p3.metric("กำไร/ขาดทุนรวม ($)", f"${total_v - total_invested:,.2f}", f"{((total_v - total_invested) / total_invested * 100 if total_invested > 0 else 0):.2f}%")
             p4.metric("กำไร/ขาดทุนรวม (฿)", f"฿{(total_v - total_invested) * live_fx:,.2f}")
             
@@ -966,17 +969,16 @@ if st.session_state["logged_in"]:
             chart_col1, chart_col2 = st.columns(2)
             with chart_col1:
                 fig_pie = go.Figure(data=[go.Pie(labels=res_df['หุ้น'], values=res_df['มูลค่ารวม'], hole=.4)])
-                fig_pie.update_layout(title="สัดส่วนพอร์ต", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
+                fig_pie.update_layout(title="สัดส่วนมูลค่าพอร์ตการลงทุน", template="plotly_dark", height=300, margin=dict(t=40,b=0,l=0,r=0))
                 st.plotly_chart(fig_pie, use_container_width=True)
             with chart_col2:
                 fig_bar = go.Figure(data=[go.Bar(x=res_df['หุ้น'], y=res_df['กำไร/ขาดทุน ($)'], marker_color=['#00E676' if val >= 0 else '#FF5252' for val in res_df['กำไร/ขาดทุน ($)']])])
-                fig_bar.update_layout(title="กำไร/ขาดทุนรายตัว", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
+                fig_bar.update_layout(title="ผลกำไร/ขาดทุนแยกรายตัว ($)", template="plotly_dark", height=300, margin=dict(t=40,b=0,l=0,r=0))
                 st.plotly_chart(fig_bar, use_container_width=True)
                 
             def color_profit(val): return f'color: {"#FF5252" if val < 0 else "#00E676"}; font-weight: bold;'
-            st.dataframe(res_df.style.map(color_profit, subset=["กำไร/ขาดทุน ($)", "กำไร/ขาดทุน (฿)", "% เปลี่ยนแปลง"]).format({"จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}", "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", "มูลค่ารวม": "${:,.2f}"}), use_container_width=True)
-            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv')
-        else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
+            st.dataframe(res_df.style.map(color_profit, subset=["กำไร/ขาดทุน ($)", "กำไร/ขาดทุน (฿)", "% เปลี่ยนแปลง"]).format({"จำนวนหุ้น": "{:,.2f}", "ต้นทุนเฉลี่ย": "${:,.2f}", "ราคาปัจจุบัน": "${:,.2f}", "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", "มูลค่ารวม": "${:,.2f}"}), use_container_width=True)
+        else: st.info("💼 พอร์ตว่างเปล่า ยังไม่มีหุ้นถือครองในระบบค่ะ")
 
 # ==========================================
 # หน้า 5: ระบบภาษี
@@ -990,7 +992,7 @@ if st.session_state["logged_in"]:
         tax_v = st.session_state.trade_ledger[tax_idx].copy()
         tax_v["Out_USD"] = np.where(tax_v["Action"] == "นำเงินออกนอกประเทศ (Outward)", tax_v["Amount_USD"], 0.0)
         tax_v["In_USD"] = np.where(tax_v["Action"].isin(["นำเงินเข้าประเทศไทย (Inward)", "รับเงินปันผล (Dividend)"]), tax_v["Amount_USD"], 0.0)
-        tax_v["FX_Rate"] = pd.to_numeric(tax_v["FX_Rate"], errors='coerce').fillna(0.0)
+        tax_v["FX_Rate"] = pd.to_numeric(tax_v["FX_Rate"], errors='coerce').fillna(live_fx)
         tax_v["WHT_USD"] = pd.to_numeric(tax_v["WHT_USD"], errors='coerce').fillna(0.0)
         tax_v["Out_THB"], tax_v["In_THB"] = tax_v["Out_USD"] * tax_v["FX_Rate"], tax_v["In_USD"] * tax_v["FX_Rate"]
         
@@ -1022,39 +1024,31 @@ if st.session_state["logged_in"]:
 
         st.markdown("---")
         c1, c2, c3 = st.columns(3)
-        with c1: selected_year = st.selectbox("📅 ปีภาษี", [
-            "2567 (2024)", "2568 (2025)", "2569 (2026)", 
-            "2570 (2027)", "2571 (2028)", "2572 (2029)", "2573 (2030)"
-        ]).split("(")[1][:4]
-        with c2: is_resident = st.radio("อาศัยในไทย?", ["เกิน 180 วัน", "ไม่ถึง 180 วัน"])
-        with c3: other_income = st.number_input("รายได้อื่นๆ (บาท)", min_value=0.0, value=500000.0, step=50000.0)
+        with c1: selected_year = st.selectbox("📅 เลือกปีภาษีที่ต้องการประเมิน", ["2567 (2024)", "2568 (2025)", "2569 (2026)", "2570 (2027)"]).split("(")[1][:4]
+        with c2: is_resident = st.radio("ระยะเวลาพำนักในประเทศไทยปีนี้", ["เกิน 180 วัน (เข้าเกณฑ์เสียภาษี)", "ไม่ถึง 180 วัน (ได้รับยกเว้น)"])
+        with c3: other_income = st.number_input("รายได้พึงประเมินอื่นๆ ในไทย (บาท/ปี)", min_value=0.0, value=500000.0)
 
         t_yr = tax_v[tax_v['Date'].str.endswith(selected_year)]
         net_tax_gain_yr = t_yr["Taxable_Gain_THB"].sum()
         sum_wht_thb_yr = (t_yr["WHT_USD"] * t_yr["FX_Rate"]).sum()
 
         cf1, cf2, cf3 = st.columns(3)
-        cf1.metric("📤 โอนออกปีนี้", f"฿{t_yr['Out_THB'].sum():,.2f}")
-        cf2.metric("📥 นำกลับปีนี้", f"฿{t_yr['In_THB'].sum():,.2f}")
-        cf3.metric("🚨 กำไรที่เสียภาษี", f"฿{net_tax_gain_yr:,.2f}", delta_color="inverse")
+        cf1.metric("📤 ยอดโอนออกสะสมปีนี้", f"฿{t_yr['Out_THB'].sum():,.2f}")
+        cf2.metric("📥 ยอดดึงกลับประเทศปีนี้", f"฿{t_yr['In_THB'].sum():,.2f}")
+        cf3.metric("🚨 ส่วนต่างกำไรที่ต้องประเมินภาษี", f"฿{net_tax_gain_yr:,.2f}")
 
-        st.markdown("---")
-        with st.expander("📝 ลดหย่อน", expanded=False):
+        with st.expander("📝 ตั้งค่าข้อมูลลดหย่อนภาษีส่วนตัว"):
             d1, d2 = st.columns(2)
-            s_deduct = d1.checkbox("คู่สมรสไม่มีรายได้")
-            c_count = d2.number_input("บุตร", min_value=0)
-            inv1, inv2, inv3 = st.columns(3)
-            life = inv1.number_input("ประกันชีวิต", min_value=0.0)
-            health = inv2.number_input("ประกันสุขภาพ", min_value=0.0)
-            pvd = inv3.number_input("PVD", min_value=0.0)
+            s_deduct = d1.checkbox("คู่สมรสไม่มีรายได้ (ลดหย่อน 60,000 บาท)")
+            c_count = d2.number_input("จำนวนบุตร (คนละ 30,000 บาท)", min_value=0, step=1)
+            
+        t_deduct = 100000 + 60000 + (60000 if s_deduct else 0) + (c_count * 30000)
         
-        t_deduct = min(other_income * 0.5, 100000) + 60000 + (60000 if s_deduct else 0) + (c_count * 30000) + min(life + min(health, 25000), 100000) + min(pvd, 500000)
-        
-        if st.button(f"📊 ประเมินภาษี {selected_year}", type="primary", use_container_width=True):
-            if "ไม่ถึง" in is_resident: st.success("🎉 ยกเว้นภาษี (อยู่ในไทยไม่ถึง 180 วัน)")
-            elif net_tax_gain_yr <= 0: st.success(f"🎉 ปี {selected_year} ไม่มีส่วนกำไรที่ถูกดึงกลับเข้าประเทศ")
+        if st.button(f"📊 คำนวณประมาณการภาษีประจำปี {selected_year}", type="primary", use_container_width=True):
+            if "ไม่ถึง" in is_resident: st.success("🎉 ได้รับยกเว้นเนื่องจากอยู่อาศัยในไทยไม่ถึง 180 วันในปีภาษีนี้")
+            elif net_tax_gain_yr <= 0: st.success("🎉 ไม่มีกำไรส่วนเกินที่ถูกดึงกลับประเทศเข้าเกณฑ์ต้องเสียภาษี")
             else:
-                def calc_tax(n):
+                def calc_tax_brackets(n):
                     if n > 5000000: return (n-5000000)*0.35 + 1265000
                     if n > 2000000: return (n-2000000)*0.30 + 365000
                     if n > 1000000: return (n-1000000)*0.25 + 115000
@@ -1063,65 +1057,47 @@ if st.session_state["logged_in"]:
                     if n > 300000: return (n-300000)*0.10 + 7500
                     if n > 150000: return (n-150000)*0.05
                     return 0
-                tax_raw = calc_tax(max(0, (other_income + net_tax_gain_yr) - t_deduct)) - calc_tax(max(0, other_income - t_deduct))
-                st.subheader(f"ผลการประเมิน (ปี {selected_year})")
+                total_net_income = max(0, (other_income + net_tax_gain_yr) - t_deduct)
+                base_net_income = max(0, other_income - t_deduct)
+                tax_raw = calc_tax_brackets(total_net_income) - calc_tax_brackets(base_net_income)
+                
+                st.subheader("📋 สรุปรายการภาษีพอร์ตต่างประเทศ")
                 r1, r2 = st.columns(2)
-                r1.metric("ภาษีจากพอร์ต ตปท.", f"฿{tax_raw:,.2f}")
-                r2.metric(f"🚨 จ่ายเพิ่มจริง (หักเครดิต ตปท.)", f"฿{max(0, tax_raw - sum_wht_thb_yr):,.2f}")
+                r1.metric("ภาษีที่คำนวณจากกำไรพอร์ต", f"฿{tax_raw:,.2f}")
+                r2.metric("🚨 ยอดที่ต้องชำระเพิ่มจริงหลังหักเครดิต", f"฿{max(0, tax_raw - sum_wht_thb_yr):,.2f}")
 
 # ==========================================
 # หน้า 6: พิทบูลพยากรณ์
 # ==========================================
     with tabs[5]:
         st.markdown(f"## 🔮 พิทบูลพยากรณ์ (AI Monte Carlo Simulation) : {ticker}")
-        st.info("💡 **หลักการทำงาน:** ระบบจำลองมอนติคาร์โล (Monte Carlo) จะนำความผันผวนของราคาหุ้นในอดีต 1 ปี มาสุ่มสร้างเส้นทางจำลอง 100 รูปแบบ เพื่อคำนวณหาความน่าจะเป็นของราคาในอนาคต")
+        st.info("💡 ระบบจะดึงความผันผวนย้อนหลังมาทำการสุ่มโอกาสทางสถิติรูปแบบเส้นทางเดินราคา 100 รูปแบบในอนาคต")
+        sim_days = st.slider("เลือกจำนวนวันพยากรณ์ล่วงหน้า (วันทำการ):", 5, 90, 30)
         
-        sim_days = st.slider("จำนวนวันพยากรณ์ไปข้างหน้า:", 5, 90, 30)
-        
-        if st.button("🎲 เริ่มการจำลองพยากรณ์อนาคต", type="primary", use_container_width=True):
-            with st.spinner("พิทบูลกำลังเคี้ยวข้อมูลและคำนวณความน่าจะเป็น 100 เส้นทาง..."):
-                sim_df, exp_p, up_b, low_b, last_price = run_monte_carlo(ticker, days_to_predict=sim_days)
+        if st.button("🎲 เริ่มการประมวลผลสุ่มจำลองมอนติคาร์โล", type="primary", use_container_width=True):
+            sim_df, exp_p, up_b, low_b, last_price = run_monte_carlo(ticker, days_to_predict=sim_days)
+            if sim_df is not None:
+                c1, c2, c3 = st.columns(3)
+                c1.metric("📉 กรณีเลวร้ายที่สุด (Lower 5%)", f"${low_b:.2f}")
+                c2.metric("🎯 ราคาคาดหวังตามสถิติ (Expected)", f"${exp_p:.2f}")
+                c3.metric("📈 กรณีมองโลกแง่ดีที่สุด (Upper 95%)", f"${up_b:.2f}")
                 
-                if sim_df is not None:
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("📉 กรณีเลวร้าย (Lower 5%)", f"${low_b:.2f}")
-                    c2.metric("🎯 ราคาคาดหวัง (Expected)", f"${exp_p:.2f}")
-                    c3.metric("📈 กรณีดีที่สุด (Upper 95%)", f"${up_b:.2f}")
-                    
-                    fig_sim = go.Figure()
-                    for col in sim_df.columns:
-                        fig_sim.add_trace(go.Scatter(x=sim_df.index, y=sim_df[col], mode='lines', line=dict(width=1, color='rgba(130, 177, 255, 0.1)'), showlegend=False))
-                    
-                    fig_sim.add_trace(go.Scatter(x=[0, sim_days-1], y=[last_price, exp_p], mode='lines+markers', name='Expected Path', line=dict(color='#00E676', width=3, dash='dash')))
-                    fig_sim.add_hline(y=up_b, line_dash="dot", line_color="#FFD600", annotation_text="Upper Bound (95%)")
-                    fig_sim.add_hline(y=low_b, line_dash="dot", line_color="#FF5252", annotation_text="Lower Bound (5%)")
-                    
-                    fig_sim.update_layout(title=f"การจำลอง 100 รูปแบบในอีก {sim_days} วันของ {ticker}", template="plotly_dark", height=500, xaxis_title="วันทำการในอนาคต", yaxis_title="ราคา (USD)")
-                    st.plotly_chart(fig_sim, use_container_width=True)
-                    
-                    st.markdown("---")
-                    st.markdown("#### 🐶 สรุปคำทำนายพิทบูล (Pitbull Analysis)")
-                    upside = ((exp_p - last_price) / last_price) * 100
-                    
-                    if exp_p > last_price:
-                        p_msg = f"🟢 **แนวโน้มเชิงบวก (Bullish):** ในอีก {sim_days} วันข้างหน้า พิทบูลมองว่าราคามีโอกาสปรับตัวขึ้นไปที่ **${exp_p:.2f}** (บวก {upside:+.2f}%) หากตลาดเป็นใจอาจทะลุไปถึงกรอบบนที่ **${up_b:.2f}** แนะนำให้ **ถือรันเทรนด์ (Hold)** หรือ **หาจังหวะย่อซื้อ** โดยใช้เส้นกรอบล่าง (${low_b:.2f}) เป็นจุดตัดขาดทุน (Stop Loss)"
-                        st.success(p_msg)
-                    else:
-                        p_msg = f"🔴 **แนวโน้มอ่อนแอ (Bearish/Sideway):** ในอีก {sim_days} วันข้างหน้า ราคามีเกณฑ์แกว่งตัวออกข้างหรือปรับฐานลงไปที่ **${exp_p:.2f}** (ติดลบ {upside:+.2f}%) ระวังความเสี่ยงหากราคาหลุดลึกไปถึง **${low_b:.2f}** แนะนำให้ **ชะลอการลงทุน (Wait & See)** หรือลดสัดส่วนพอร์ต"
-                        st.warning(p_msg)
-                else:
-                    st.error("ไม่สามารถดึงข้อมูลเพื่อจำลองได้ กรุณาลองใหม่อีกครั้งค่ะ")
+                fig_sim = go.Figure()
+                for col in sim_df.columns:
+                    fig_sim.add_trace(go.Scatter(x=sim_df.index, y=sim_df[col], mode='lines', line=dict(width=1, color='rgba(130, 177, 255, 0.1)'), showlegend=False))
+                fig_sim.add_trace(go.Scatter(x=[0, sim_days-1], y=[last_price, exp_p], mode='lines+markers', name='Expected Path', line=dict(color='#00E676', width=3, dash='dash')))
+                fig_sim.add_hline(y=up_b, line_dash="dot", line_color="#FFD600", annotation_text="Upper Bound")
+                fig_sim.add_hline(y=low_b, line_dash="dot", line_color="#FF5252", annotation_text="Lower Bound")
+                fig_sim.update_layout(title=f"โครงข่ายวิเคราะห์ทิศทางราคาอนาคตของ {ticker}", template="plotly_dark", height=400, xaxis_title="วันในอนาคต", yaxis_title="ราคา (USD)")
+                st.plotly_chart(fig_sim, use_container_width=True)
+            else: st.error("❌ ดึงข้อมูลประมวลผลจำลองไม่สำเร็จ")
 
 # ==========================================
 # หน้า 7: แผนการเทรด
 # ==========================================
     with tabs[6]:
         st.markdown(f"## 📝 แผนการเทรด (Trading Plan) : {ticker}")
-        st.info("💡 **Position Sizing Calculator:** วางแผนจุดเข้าซื้อ จุดตัดขาดทุน และเป้าหมายทำกำไร เพื่อคำนวณจำนวนหุ้นที่เหมาะสมตามหลักบริหารความเสี่ยง")
-        
-        curr_price = df['Close'].iloc[-1] if not df.empty else 10.0
-        ema_50_val = df['E50'].iloc[-1] if not df.empty else 9.0
-            
+        curr_p = df['Close'].iloc[-1] if not df.empty else 10.0
         c_plan1, c_plan2 = st.columns(2)
         with c_plan1:
             st.markdown("#### 1️⃣ ตั้งค่าบริหารหน้าตักความเสี่ยง")
@@ -1129,80 +1105,47 @@ if st.session_state["logged_in"]:
             plan_risk_pct = st.number_input("เปอร์เซ็นต์ความเสี่ยงต่อไม้ที่รับได้ (%)", value=float(r_pct))
             risk_budget = plan_cap * (plan_risk_pct / 100.0)
             st.write(f"💸 **จำนวนเงินสูงสุดที่ยอมตัดขาดทุนได้ในไม้นี้:** :red[${risk_budget:,.2f}]")
-
         with c_plan2:
             st.markdown("#### 2️⃣ ตั้งค่าราคาจุดปฏิบัติการ")
-            plan_entry = st.number_input("🎯 ระบุราคาใจสั่งให้เข้าซื้อ ($)", value=float(curr_price))
-            plan_sl = st.number_input("🛑 ระบุจุดตั้งตัดขาดทุน Stop Loss ($)", value=float(ema_50_val if ema_50_val < curr_price else curr_price * 0.9))
-            plan_tp = st.number_input("🏆 ระบุจุดตั้งเป้าทำกำไร Take Profit ($)", value=float(plan_entry + ((plan_entry - plan_sl) * 2) if plan_entry > plan_sl else curr_price * 1.1))
-
-        st.markdown("---")
-        st.markdown("#### 📊 สรุปแผนการเทรด (Trade Summary)")
+            plan_entry = st.number_input("🎯 ระบุราคาใจสั่งให้เข้าซื้อ ($)", value=float(curr_p))
+            plan_sl = st.number_input("🛑 ระบุจุดตั้งตัดขาดทุน Stop Loss ($)", value=float(curr_p*0.9))
+            plan_tp = st.number_input("🏆 ระบุจุดตั้งเป้าทำกำไร Take Profit ($)", value=float(curr_p*1.2))
+            plan_note = st.text_input("📝 บันทึกช่วยจำเพิ่มเติม")
 
         if plan_entry > plan_sl:
             risk_per_share = plan_entry - plan_sl
-            reward_per_share = plan_tp - plan_entry
             max_shares = math.floor(risk_budget / risk_per_share) if risk_per_share > 0 else 0
             position_value = max_shares * plan_entry
-            rr_ratio = reward_per_share / risk_per_share if risk_per_share > 0 else 0
-            expected_profit = max_shares * reward_per_share
-
-            if rr_ratio >= 2.0: rr_status, rr_color = "🟢 ดีเยี่ยม (Very Good)", "normal"
-            elif rr_ratio >= 1.5: rr_status, rr_color = "🟡 พอใช้ได้ (Acceptable)", "off"
-            else: rr_status, rr_color = "🔴 ไม่คุ้มเสี่ยง (Poor)", "inverse"
-
-            c_sum1, c_sum2, c_sum3, c_sum4 = st.columns(4)
+            rr_ratio = (plan_tp - plan_entry) / risk_per_share if risk_per_share > 0 else 0
+            
+            c_sum1, c_sum2, c_sum3 = st.columns(3)
             c_sum1.metric("🛒 โควตาหุ้นที่ควรซื้อ", f"{max_shares:,} หุ้น")
             c_sum2.metric("💳 รวมมูลค่าเงินที่ต้องใช้", f"${position_value:,.2f}")
-            c_sum3.metric("⚖️ อัตราส่วน Risk/Reward", f"1 : {rr_ratio:.2f}", rr_status, delta_color=rr_color)
-            c_sum4.metric("💰 คาดหวังกำไรสุทธิ", f"${expected_profit:,.2f}")
-
-            if position_value > plan_cap:
-                st.warning(f"⚠️ **คำเตือน:** เงินลงทุนที่ต้องใช้ (${position_value:,.2f}) มากกว่าเงินทุนที่คุณมี (${plan_cap:,.2f}) แนะนำให้ปรับลด % ความเสี่ยงลงค่ะ")
+            c_sum3.metric("⚖️ อัตราส่วน Risk/Reward", f"1 : {rr_ratio:.2f}")
             
-            st.markdown("#### 💾 บันทึกแผน (Save Plan)")
-            c_save1, c_save2 = st.columns([7, 3])
-            with c_save1: plan_note = st.text_input("📝 หมายเหตุ (ตัวอย่าง: รอราคาย่อมาแตะ EMA50 ค่อยกดซื้อ)")
-            with c_save2:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("💾 บันทึกแผนนี้เก็บไว้ดูภายหลัง", type="primary", use_container_width=True):
-                    new_plan = pd.DataFrame([{"Date": current_date, "Ticker": ticker, "Entry": plan_entry, "Stop_Loss": plan_sl, "Take_Profit": plan_tp, "Risk_Budget": risk_budget, "Max_Shares": max_shares, "Note": plan_note}])
-                    st.session_state.trading_plans = pd.concat([st.session_state.trading_plans, new_plan], ignore_index=True)
+            if st.button("💾 กดบันทึกแผนการเทรดนี้เก็บเข้าสมุดจำย้อนหลัง", type="primary", use_container_width=True):
+                new_plan = pd.DataFrame([{"Date": current_date, "Ticker": ticker, "Entry": plan_entry, "Stop_Loss": plan_sl, "Take_Profit": plan_tp, "Risk_Budget": risk_budget, "Max_Shares": max_shares, "Note": plan_note}])
+                st.session_state.trading_plans = pd.concat([st.session_state.trading_plans, new_plan], ignore_index=True)
+                save_df_to_sheet("Trading_Plans", st.session_state.trading_plans)
+                st.success("✅ บันทึกแผนเรียบร้อยแล้วค่ะ!")
+                time.sleep(0.5)
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown("### 📚 สมุดประวัติแผนการเทรดที่บันทึกไว้ (Saved Plans Table)")
+        display_df = st.session_state.trading_plans.copy()
+        if not display_df.empty:
+            display_df.insert(0, "Select_Delete", False)
+            ed_plans = st.data_editor(display_df, use_container_width=True, column_config={"Select_Delete": st.column_config.CheckboxColumn("🗑️ เลือกเพื่อลบ", default=False)})
+            if ed_plans["Select_Delete"].any():
+                st.warning("⚠️ ติ๊กเลือกรายการลบแล้ว โปรดกดปุ่มยันยันสีแดงด้านล่างค่ะ")
+                if st.button("🗑️ ยืนยันการลบแผนการเทรดที่เลือกออกจากฐานข้อมูล", type="primary", use_container_width=True):
+                    st.session_state.trading_plans = ed_plans[~ed_plans["Select_Delete"]].drop(columns=["Select_Delete"])
                     save_df_to_sheet("Trading_Plans", st.session_state.trading_plans)
-                    st.success("✅ บันทึกแผนสำเร็จ! ดูที่ตารางด้านล่างได้เลยค่ะ")
+                    st.success("ลบแผนออกจากระบบสำเร็จ!")
                     time.sleep(0.5)
                     st.rerun()
-
-            st.markdown("---")
-            st.markdown("### 📚 ประวัติแผนการเทรดของฉัน (Saved Plans)")
-            display_df = st.session_state.trading_plans.copy()
-            if not display_df.empty:
-                display_df.insert(0, "Select_Delete", False)
-                ed_plans = st.data_editor(display_df, num_rows="dynamic", use_container_width=True,
-                    column_config={
-                        "Select_Delete": st.column_config.CheckboxColumn("🗑️ เลือกเพื่อลบ", default=False),
-                        "Date": "วันที่บันทึก", "Ticker": "ชื่อหุ้น", "Entry": st.column_config.NumberColumn("ราคาเข้าซื้อ ($)", format="%.2f"),
-                        "Stop_Loss": st.column_config.NumberColumn("จุดตัดขาดทุน ($)", format="%.2f"), "Take_Profit": st.column_config.NumberColumn("เป้าทำกำไร ($)", format="%.2f"),
-                        "Risk_Budget": st.column_config.NumberColumn("งบความเสี่ยง ($)", format="%.2f"), "Max_Shares": st.column_config.NumberColumn("โควตาที่ซื้อได้ (หุ้น)", format="%d"),
-                        "Note": "หมายเหตุ"
-                    })
-                
-                if ed_plans["Select_Delete"].any():
-                    st.warning("⚠️ คุณได้ติ๊กเลือกแผนที่ต้องการลบแล้ว กดปุ่มสีแดงด้านล่างเพื่อยืนยันการลบถาวรค่ะ")
-                    if st.button("🗑️ ยืนยันการลบแผนที่เลือก", type="primary", use_container_width=True):
-                        st.session_state.trading_plans = ed_plans[~ed_plans["Select_Delete"]].drop(columns=["Select_Delete"])
-                        save_df_to_sheet("Trading_Plans", st.session_state.trading_plans)
-                        st.success("✅ ลบข้อมูลสำเร็จ!")
-                        time.sleep(1)
-                        st.rerun()
-                else:
-                    updated_df = ed_plans.drop(columns=["Select_Delete"])
-                    if not updated_df.equals(st.session_state.trading_plans):
-                        st.session_state.trading_plans = updated_df.copy()
-                        save_df_to_sheet("Trading_Plans", st.session_state.trading_plans)
-                        st.rerun()
-            else: st.info("ยังไม่มีประวัติแผนการเทรดค่ะ")
-        else: st.error("⚠️ การคำนวณผิดพลาด: จุดตัดขาดทุน ต้องตั้งให้น้อยกว่า ราคาเข้าซื้อ เสมอนะคะ")
+        else: st.info("📝 ยังไม่มีแผนการเทรดถูกบันทึกไว้ค่ะ")
 
 # ==========================================
 # หน้า 8: ระบบแบคเทสกลยุทธ์ 3 ประสาน
@@ -1234,16 +1177,11 @@ if st.session_state["logged_in"]:
                     display_bt = trades_df.rename(columns={
                         "entry_date": "วันที่เข้าซื้อ", "entry_price": "ราคาซื้อ ($)",
                         "exit_date": "วันที่ขายปิดไม้", "exit_price": "ราคาขาย ($)",
-                        "p_l_pct": "กำไร/ขาดทุน (%)", "exit_reason": "สัญญาณที่ระบบสั่งขาย"
+                        "p_l_pct": "เปอร์เซ็นต์ กำไร/ขาดทุน", "exit_reason": "สัญญาณที่ระบบสั่งขาย"
                     })
-                    
                     def color_bt_profit(val):
                         try: return 'color: #00E676; font-weight: bold;' if float(val) > 0 else 'color: #FF5252; font-weight: bold;'
                         except: return ''
-                            
-                    formatted_df = display_bt[["วันที่เข้าซื้อ", "ราคาซื้อ ($)", "วันที่ขายปิดไม้", "ราคาขาย ($)", "กำไร/ขาดทุน (%)", "สัญญาณที่ระบบสั่งขาย"]]
-                    st.dataframe(formatted_df.style.map(color_bt_profit, subset=["กำไร/ขาดทุน (%)"]).format({
-                        "ราคาซื้อ ($)": "{:.2f}", "ราคาขาย ($)": "{:.2f}", "กำไร/ขาดทุน (%)": "{:.2f}%"
-                    }), use_container_width=True)
-                else: 
-                    st.error("⚠️ ไม่พบจังหวะสัญญาณที่เข้าเกณฑ์กฎ 3 ประสานในช่วง 3 ปีที่ผ่านมาสำหรับหุ้นตัวนี้ค่ะ")
+                    formatted_df = display_bt[["วันที่เข้าซื้อ", "ราคาซื้อ ($)", "วันที่ขายปิดไม้", "ราคาขาย ($)", "เปอร์เซ็นต์ กำไร/ขาดทุน", "สัญญาณที่ระบบสั่งขาย"]]
+                    st.dataframe(formatted_df.style.map(color_bt_profit, subset=["เปอร์เซ็นต์ กำไร/ขาดทุน"]).format({"ราคาซื้อ ($)": "{:.2f}", "ราคาขาย ($)": "{:.2f}", "เปอร์เซ็นต์ กำไร/ขาดทุน": "{:.2f}%"}), use_container_width=True)
+                else: st.error("⚠️ ไม่พบจังหวะสัญญาณที่เข้าเกณฑ์กฎ 3 ประสานในช่วง 3 ปีที่ผ่านมาสำหรับหุ้นตัวนี้ค่ะ")
