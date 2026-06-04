@@ -252,11 +252,11 @@ def get_random_headers():
 
 @st.cache_data(ttl=900)
 def load_pro_data(ticker_symbol, tf):
-    # ปรับ period ให้กว้างพอที่จะคำนวณ EMA 200 ได้สมบูรณ์ทุก Timeframe
+    # ปรับปรุง: ขยายระยะเวลาเพื่อรับประกันการคำนวณ EMA 200 ได้สมบูรณ์ทุก Timeframe
     stgs = {
-        "1D (รายวัน)": {"p": "1y", "i": "1d"}, 
-        "1W (รายสัปดาห์)": {"p": "5y", "i": "1wk"}, 
-        "1M (รายเดือน)": {"p": "20y", "i": "1mo"}
+        "1D (รายวัน)": {"p": "2y", "i": "1d"},       # ใช้ 2 ปีเพื่อรับประกันแท่ง 1D มีเกิน 200 แท่ง
+        "1W (รายสัปดาห์)": {"p": "10y", "i": "1wk"}, # ขยายเป็น 10 ปีเพื่อ 1W
+        "1M (รายเดือน)": {"p": "max", "i": "1mo"}    # ใช้ max ไปเลยสำหรับรายเดือนเพื่อความครอบคลุม
     }
     p, i = stgs[tf]["p"], stgs[tf]["i"]
     session = requests.Session()
@@ -265,25 +265,38 @@ def load_pro_data(ticker_symbol, tf):
     df = pd.DataFrame()
     for attempt in range(3):
         try:
-            s = yf.Ticker(ticker_symbol, session=session)
-            df = s.history(period=p, interval=i)
-            
-            if df.empty: 
-                df = yf.download(ticker_symbol, period=p, interval=i, progress=False)
-                # ป้องกันปัญหา MultiIndex เมื่อใช้ yf.download แบบ Fallback
-                if not df.empty and isinstance(df.columns, pd.MultiIndex):
-                    if ticker_symbol in df.columns.get_level_values(1):
-                        df.columns = df.columns.droplevel(1)
-                    else:
-                        df.columns = df.columns.get_level_values(0)
-                        
-            if not df.empty:
-                df = df.dropna(subset=['Close'])
-                if not df.empty: break
+            # ใช้ yf.download เป็นตัวดึงหลัก เพราะเสถียรกว่ามากใน Timeframe กว้างๆ
+            temp_df = yf.download(ticker_symbol, period=p, interval=i, progress=False)
+            if not temp_df.empty:
+                # แก้ปัญหา MultiIndex Columns
+                if isinstance(temp_df.columns, pd.MultiIndex):
+                    temp_df.columns = temp_df.columns.get_level_values(0)
+                if 'Close' in temp_df.columns:
+                    temp_df = temp_df.dropna(subset=['Close'])
+                    if not temp_df.empty:
+                        df = temp_df
+                        break
         except Exception: pass
+
+        # แผนสำรอง: กลับไปใช้ Ticker.history() 
+        if df.empty:
+            try:
+                s = yf.Ticker(ticker_symbol, session=session)
+                temp_df = s.history(period=p, interval=i)
+                if not temp_df.empty and 'Close' in temp_df.columns:
+                    temp_df = temp_df.dropna(subset=['Close'])
+                    if not temp_df.empty:
+                        df = temp_df
+                        break
+            except Exception: pass
+            
         time.sleep(2 ** attempt)
         
     if df.empty: return pd.DataFrame(), {}, None, None, {}
+    
+    # ปรับปรุง: ลบ Timezone ออกจาก Index ป้องกันปัญหาเปรียบเทียบข้อมูลคนละ Timezone
+    if df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
     
     fund = {
         "ps": "N/A", "pe": "N/A", "roe": "N/A", "rev_growth": "N/A", "dividend": "ไม่มีข้อมูล",
@@ -292,6 +305,7 @@ def load_pro_data(ticker_symbol, tf):
     }
     
     try:
+        s = yf.Ticker(ticker_symbol, session=session)
         info = s.info
         if 'longBusinessSummary' in info:
             fund["business_desc_th"] = translate_to_thai(info.get('longBusinessSummary', 'N/A'))
@@ -315,13 +329,20 @@ def load_pro_data(ticker_symbol, tf):
 
     market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 0.0, "vix_ts": 0.0, "smart_money": "N/A"}
     try:
-        spy = yf.Ticker("^GSPC", session=session).history(period=p, interval=i)
+        spy = yf.download("^GSPC", period=p, interval=i, progress=False)
         if not spy.empty:
-            df['RS'] = (df['Close'].pct_change(10) - spy['Close'].pct_change(10)) * 100
-            spy_p = spy['Close'].iloc[-1]
-            market_signal["spy_price"] = float(spy_p)
+            if isinstance(spy.columns, pd.MultiIndex): spy.columns = spy.columns.get_level_values(0)
+            if spy.index.tz is not None: spy.index = spy.index.tz_localize(None)
+            
+            # เรียงข้อมูล SPY ให้ตรงกับวันของหุ้นตัวนั้นๆ พอดี (ปลอดภัยจาก Error Index ไม่ตรงกัน)
+            spy_close = spy['Close'].reindex(df.index, method='ffill')
+            df['RS'] = (df['Close'].pct_change(10) - spy_close.pct_change(10)) * 100
+            
+            spy_p = float(spy['Close'].dropna().iloc[-1])
+            market_signal["spy_price"] = spy_p
             market_signal["spy_trend"] = "ขึ้น 📈" if spy_p > spy['Close'].ewm(span=50).mean().iloc[-1] else "ลง 📉"
     except Exception: df['RS'] = 0
+    
     try:
         vix = yf.Ticker("^VIX", session=session).history(period="1mo")
         if not vix.empty: market_signal["vix"] = float(vix['Close'].iloc[-1])
