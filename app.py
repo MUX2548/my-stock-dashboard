@@ -252,7 +252,12 @@ def get_random_headers():
 
 @st.cache_data(ttl=900)
 def load_pro_data(ticker_symbol, tf):
-    stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
+    # ปรับ period ให้กว้างพอที่จะคำนวณ EMA 200 ได้สมบูรณ์ทุก Timeframe
+    stgs = {
+        "1D (รายวัน)": {"p": "1y", "i": "1d"}, 
+        "1W (รายสัปดาห์)": {"p": "5y", "i": "1wk"}, 
+        "1M (รายเดือน)": {"p": "20y", "i": "1mo"}
+    }
     p, i = stgs[tf]["p"], stgs[tf]["i"]
     session = requests.Session()
     session.headers.update(get_random_headers())
@@ -262,12 +267,21 @@ def load_pro_data(ticker_symbol, tf):
         try:
             s = yf.Ticker(ticker_symbol, session=session)
             df = s.history(period=p, interval=i)
-            if df.empty: df = yf.download(ticker_symbol, period=p, interval=i, progress=False)
+            
+            if df.empty: 
+                df = yf.download(ticker_symbol, period=p, interval=i, progress=False)
+                # ป้องกันปัญหา MultiIndex เมื่อใช้ yf.download แบบ Fallback
+                if not df.empty and isinstance(df.columns, pd.MultiIndex):
+                    if ticker_symbol in df.columns.get_level_values(1):
+                        df.columns = df.columns.droplevel(1)
+                    else:
+                        df.columns = df.columns.get_level_values(0)
+                        
             if not df.empty:
                 df = df.dropna(subset=['Close'])
                 if not df.empty: break
         except Exception: pass
-        time.sleep(2 ** attempt) # ระบบสุ่มหน่วงเวลาหลบการแบน (Exponential backoff 1s, 2s, 4s)
+        time.sleep(2 ** attempt)
         
     if df.empty: return pd.DataFrame(), {}, None, None, {}
     
@@ -598,7 +612,6 @@ with tabs[0]:
                 <div class="pro-row"><span>แนวรับถัดไป</span> <span>${levels['s3']:.2f}</span></div></div>
                 """, unsafe_allow_html=True)
             
-            # [การแก้ไขป้องกัน SyntaxError จากการตัดบรรทัดอัตโนมัติของ Editor]
             if is_uptrend and is_bullish_macd:
                 p_main = "ย่อ = ซื้อเพิ่ม / ถือรันเทรนด์"
                 summary = "🟢 'เกมลุย'"
