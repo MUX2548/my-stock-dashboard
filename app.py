@@ -252,11 +252,10 @@ def get_random_headers():
 
 @st.cache_data(ttl=900)
 def load_pro_data(ticker_symbol, tf):
-    # ปรับปรุง: ขยายระยะเวลาเพื่อรับประกันการคำนวณ EMA 200 ได้สมบูรณ์ทุก Timeframe
     stgs = {
-        "1D (รายวัน)": {"p": "2y", "i": "1d"},       # ใช้ 2 ปีเพื่อรับประกันแท่ง 1D มีเกิน 200 แท่ง
-        "1W (รายสัปดาห์)": {"p": "10y", "i": "1wk"}, # ขยายเป็น 10 ปีเพื่อ 1W
-        "1M (รายเดือน)": {"p": "max", "i": "1mo"}    # ใช้ max ไปเลยสำหรับรายเดือนเพื่อความครอบคลุม
+        "1D (รายวัน)": {"p": "2y", "i": "1d"},       
+        "1W (รายสัปดาห์)": {"p": "10y", "i": "1wk"}, 
+        "1M (รายเดือน)": {"p": "max", "i": "1mo"}    
     }
     p, i = stgs[tf]["p"], stgs[tf]["i"]
     session = requests.Session()
@@ -265,10 +264,8 @@ def load_pro_data(ticker_symbol, tf):
     df = pd.DataFrame()
     for attempt in range(3):
         try:
-            # ใช้ yf.download เป็นตัวดึงหลัก เพราะเสถียรกว่ามากใน Timeframe กว้างๆ
             temp_df = yf.download(ticker_symbol, period=p, interval=i, progress=False)
             if not temp_df.empty:
-                # แก้ปัญหา MultiIndex Columns
                 if isinstance(temp_df.columns, pd.MultiIndex):
                     temp_df.columns = temp_df.columns.get_level_values(0)
                 if 'Close' in temp_df.columns:
@@ -278,7 +275,6 @@ def load_pro_data(ticker_symbol, tf):
                         break
         except Exception: pass
 
-        # แผนสำรอง: กลับไปใช้ Ticker.history() 
         if df.empty:
             try:
                 s = yf.Ticker(ticker_symbol, session=session)
@@ -290,11 +286,10 @@ def load_pro_data(ticker_symbol, tf):
                         break
             except Exception: pass
             
-        time.sleep(2 ** attempt)
+        time.sleep(1)
         
     if df.empty: return pd.DataFrame(), {}, None, None, {}
     
-    # ปรับปรุง: ลบ Timezone ออกจาก Index ป้องกันปัญหาเปรียบเทียบข้อมูลคนละ Timezone
     if df.index.tz is not None:
         df.index = df.index.tz_localize(None)
     
@@ -328,32 +323,59 @@ def load_pro_data(ticker_symbol, tf):
     except Exception: pass 
 
     market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 0.0, "vix_ts": 0.0, "smart_money": "N/A"}
+    
+    # ดึงข้อมูล Macro แบบมีแผนสำรอง
     try:
-        spy = yf.download("^GSPC", period=p, interval=i, progress=False)
-        if not spy.empty:
+        spy = pd.DataFrame()
+        try:
+            spy = yf.download("^GSPC", period=p, interval=i, progress=False)
             if isinstance(spy.columns, pd.MultiIndex): spy.columns = spy.columns.get_level_values(0)
-            if spy.index.tz is not None: spy.index = spy.index.tz_localize(None)
+        except Exception: pass
+        if spy.empty:
+            spy = yf.Ticker("^GSPC", session=session).history(period=p, interval=i)
             
-            # เรียงข้อมูล SPY ให้ตรงกับวันของหุ้นตัวนั้นๆ พอดี (ปลอดภัยจาก Error Index ไม่ตรงกัน)
+        if not spy.empty:
+            if spy.index.tz is not None: spy.index = spy.index.tz_localize(None)
             spy_close = spy['Close'].reindex(df.index, method='ffill')
             df['RS'] = (df['Close'].pct_change(10) - spy_close.pct_change(10)) * 100
-            
             spy_p = float(spy['Close'].dropna().iloc[-1])
             market_signal["spy_price"] = spy_p
             market_signal["spy_trend"] = "ขึ้น 📈" if spy_p > spy['Close'].ewm(span=50).mean().iloc[-1] else "ลง 📉"
     except Exception: df['RS'] = 0
     
     try:
-        vix = yf.Ticker("^VIX", session=session).history(period="1mo")
-        if not vix.empty: market_signal["vix"] = float(vix['Close'].iloc[-1])
-        vix3m = yf.Ticker("^VIX3M", session=session).history(period="1mo")
-        if not vix3m.empty and market_signal["vix"] > 0: market_signal["vix_ts"] = float(market_signal["vix"] / vix3m['Close'].iloc[-1])
+        vix = pd.DataFrame()
+        try:
+            vix = yf.download("^VIX", period="1mo", progress=False)
+            if isinstance(vix.columns, pd.MultiIndex): vix.columns = vix.columns.get_level_values(0)
+        except Exception: pass
+        if vix.empty: vix = yf.Ticker("^VIX", session=session).history(period="1mo")
+        if not vix.empty: market_signal["vix"] = float(vix['Close'].dropna().iloc[-1])
+            
+        vix3m = pd.DataFrame()
+        try:
+            vix3m = yf.download("^VIX3M", period="1mo", progress=False)
+            if isinstance(vix3m.columns, pd.MultiIndex): vix3m.columns = vix3m.columns.get_level_values(0)
+        except Exception: pass
+        if vix3m.empty: vix3m = yf.Ticker("^VIX3M", session=session).history(period="1mo")
+        if not vix3m.empty and market_signal["vix"] > 0: 
+            market_signal["vix_ts"] = float(market_signal["vix"] / vix3m['Close'].dropna().iloc[-1])
     except Exception: pass
+    
     try:
-        hyg = yf.Ticker("HYG", session=session).history(period="6mo")['Close']
-        ief = yf.Ticker("IEF", session=session).history(period="6mo")['Close']
-        if not hyg.empty and not ief.empty:
-            market_signal["smart_money"] = "Risk ON 🟢" if (hyg/ief).iloc[-1] > (hyg/ief).ewm(span=20).mean().iloc[-1] else "Risk OFF 🔴"
+        hyg = yf.download("HYG", period="6mo", progress=False)
+        ief = yf.download("IEF", period="6mo", progress=False)
+        if isinstance(hyg.columns, pd.MultiIndex): hyg.columns = hyg.columns.get_level_values(0)
+        if isinstance(ief.columns, pd.MultiIndex): ief.columns = ief.columns.get_level_values(0)
+        if hyg.empty: hyg = yf.Ticker("HYG", session=session).history(period="6mo")
+        if ief.empty: ief = yf.Ticker("IEF", session=session).history(period="6mo")
+        
+        if not hyg.empty and not ief.empty and 'Close' in hyg.columns and 'Close' in ief.columns:
+            hyg_c = hyg['Close'].dropna()
+            ief_c = ief['Close'].dropna()
+            if not hyg_c.empty and not ief_c.empty:
+                ratio = hyg_c / ief_c
+                market_signal["smart_money"] = "Risk ON 🟢" if float(ratio.iloc[-1]) > float(ratio.ewm(span=20).mean().iloc[-1]) else "Risk OFF 🔴"
     except Exception: pass
     
     df['E10'] = df['Close'].ewm(span=10).mean()
@@ -385,7 +407,7 @@ def get_batch_live_prices(tickers):
         for attempt in range(3):
             df = yf.download(tickers, period="1d", progress=False)
             if not df.empty: break
-            time.sleep(2 ** attempt)
+            time.sleep(1)
         prices = {}
         if len(tickers) == 1:
             if not df.empty:
@@ -444,19 +466,43 @@ def run_ai_screener(tickers):
             
             results.append({"หุ้น": t, "ราคาล่าสุด": f"${close:.2f}", "EMA50": f"${ema50:.2f}", "RSI": f"{rsi_val:.1f}", "คำแนะนำ AI": action})
         except Exception: pass
-        time.sleep(random.uniform(1.5, 3.0)) # ระบบสุ่มเวลาพักหลบการโดนบล็อก (Random Delay)
+        time.sleep(random.uniform(1.5, 3.0))
     return pd.DataFrame(results)
 
 @st.cache_data(ttl=3600)
 def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
     try:
-        hist = yf.Ticker(ticker_symbol).history(period="1y")
-        if hist.empty: return None, 0, 0, 0, 0
-        closes = hist['Close']
+        session = requests.Session()
+        session.headers.update(get_random_headers())
+        df = pd.DataFrame()
+        
+        # อัปเกรดระบบพิทบูล: ใช้ yf.download เป็นตัวหลัก ทนทานต่อการบล็อกได้ดีกว่า
+        try:
+            temp_df = yf.download(ticker_symbol, period="1y", interval="1d", progress=False)
+            if not temp_df.empty:
+                if isinstance(temp_df.columns, pd.MultiIndex):
+                    temp_df.columns = temp_df.columns.get_level_values(0)
+                if 'Close' in temp_df.columns:
+                    df = temp_df.dropna(subset=['Close'])
+        except Exception: pass
+        
+        # แผนสำรอง
+        if df.empty:
+            try:
+                s = yf.Ticker(ticker_symbol, session=session)
+                temp_df = s.history(period="1y")
+                if not temp_df.empty and 'Close' in temp_df.columns:
+                    df = temp_df.dropna(subset=['Close'])
+            except Exception: pass
+            
+        if df.empty or 'Close' not in df.columns: 
+            return None, 0, 0, 0, 0
+            
+        closes = df['Close']
         daily_returns = closes.pct_change().dropna()
-        mu = daily_returns.mean()
-        sigma = daily_returns.std()
-        last_price = closes.iloc[-1]
+        mu = float(daily_returns.mean())
+        sigma = float(daily_returns.std())
+        last_price = float(closes.iloc[-1])
         
         simulation_df = pd.DataFrame()
         for x in range(simulations):
@@ -468,9 +514,9 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
                 count += 1
             simulation_df[x] = price_series
             
-        expected_price = simulation_df.iloc[-1].mean()
-        upper_bound = simulation_df.iloc[-1].quantile(0.95)
-        lower_bound = simulation_df.iloc[-1].quantile(0.05)
+        expected_price = float(simulation_df.iloc[-1].mean())
+        upper_bound = float(simulation_df.iloc[-1].quantile(0.95))
+        lower_bound = float(simulation_df.iloc[-1].quantile(0.05))
         return simulation_df, expected_price, upper_bound, lower_bound, last_price
     except Exception: return None, 0, 0, 0, 0
 
@@ -633,6 +679,7 @@ with tabs[0]:
                 <div class="pro-row"><span>แนวรับถัดไป</span> <span>${levels['s3']:.2f}</span></div></div>
                 """, unsafe_allow_html=True)
             
+            # การแก้ไขส่วนของ String Literal ไม่ให้เกิดบั๊ก SyntaxError แน่นอน
             if is_uptrend and is_bullish_macd:
                 p_main = "ย่อ = ซื้อเพิ่ม / ถือรันเทรนด์"
                 summary = "🟢 'เกมลุย'"
@@ -709,7 +756,7 @@ with tabs[1]:
                     m_col, m_sig, m_desc = "#FFD600", "⚖️ NEUTRAL / DIVERGENCE (สัญญาณขัดแย้ง: รอเลือกทาง)", "สัญญาณจาก 3 มิติยังขัดแย้งกัน แนะนำให้ **เทรดอย่างระมัดระวังในกรอบแคบๆ** หรือรอดูความชัดเจนจนกว่าแนวโน้มและโมเมนตัมจะไปในทิศทางเดียวกัน"
 
                 st.markdown(f'<div style="background-color: #1E1E1E; border-left: 8px solid {m_col}; padding: 20px; border-radius: 8px; margin: 15px 0;"><h4 style="color: {m_col}; margin-top: 0;">{m_sig}</h4><p style="color: #E0E0E0; margin-bottom: 0; font-size: 1.05em;">{m_desc}</p></div>', unsafe_allow_html=True)
-            else: st.warning("⚠️ ไม่สามารถดึงข้อมูลพิทบูลมาสรุปผลได้ในขณะนี้")
+            else: st.warning("⚠️ ไม่สามารถดึงข้อมูลพิทบูลมาสรุปผลได้ในขณะนี้ (อาจเป็นเพราะ Yahoo จำกัดการดึงข้อมูล)")
         st.markdown("---")
 
         zoom_text = "60 วันทำการล่าสุด (~3 เดือน)" if tf_option == "1D (รายวัน)" else "60 สัปดาห์ล่าสุด (~1 ปี 2 เดือน)" if tf_option == "1W (รายสัปดาห์)" else "60 เดือนล่าสุด (5 ปี)"
