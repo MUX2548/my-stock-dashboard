@@ -324,7 +324,6 @@ def load_pro_data(ticker_symbol, tf):
 
     market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 0.0, "vix_ts": 0.0, "smart_money": "N/A"}
     
-    # ดึงข้อมูล Macro แบบมีแผนสำรอง
     try:
         spy = pd.DataFrame()
         try:
@@ -476,7 +475,6 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
         session.headers.update(get_random_headers())
         df = pd.DataFrame()
         
-        # อัปเกรดระบบพิทบูล: ใช้ yf.download เป็นตัวหลัก ทนทานต่อการบล็อกได้ดีกว่า
         try:
             temp_df = yf.download(ticker_symbol, period="1y", interval="1d", progress=False)
             if not temp_df.empty:
@@ -486,7 +484,6 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
                     df = temp_df.dropna(subset=['Close'])
         except Exception: pass
         
-        # แผนสำรอง
         if df.empty:
             try:
                 s = yf.Ticker(ticker_symbol, session=session)
@@ -646,7 +643,10 @@ with tabs[0]:
             fig.add_trace(go.Scatter(x=df.index, y=df['E200'], line=dict(color='#E0E0E0', width=1, dash='dot'), name="EMA 200"), row=1, col=1)
             actual_cost = holdings[ticker]["total_cost"] / holdings[ticker]["shares"] if st.session_state["logged_in"] and holdings.get(ticker, {}).get("shares", 0) > 0.001 else b_p
             if actual_cost > 0: fig.add_hline(y=actual_cost, line_dash="dash", line_color="cyan", annotation_text="ต้นทุนเฉลี่ย", row=1, col=1)
-            fig.add_trace(go.Bar(x=df.index, y=df['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df['Hist']], name="MACD"), row=2, col=1)
+            
+            # 💡 แก้ไขบั๊กกราฟ MACD เป็นเงาดำ: เพิ่ม marker_line_width=0 
+            fig.add_trace(go.Bar(x=df.index, y=df['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df['Hist']], marker_line_width=0, name="MACD"), row=2, col=1)
+            
             fig.update_layout(template="plotly_dark", height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
             
@@ -679,7 +679,6 @@ with tabs[0]:
                 <div class="pro-row"><span>แนวรับถัดไป</span> <span>${levels['s3']:.2f}</span></div></div>
                 """, unsafe_allow_html=True)
             
-            # การแก้ไขส่วนของ String Literal ไม่ให้เกิดบั๊ก SyntaxError แน่นอน
             if is_uptrend and is_bullish_macd:
                 p_main = "ย่อ = ซื้อเพิ่ม / ถือรันเทรนด์"
                 summary = "🟢 'เกมลุย'"
@@ -789,7 +788,9 @@ with tabs[1]:
             else: f_sum = "🔴 **เปลี่ยนเป็นขาลง (Downtrend):** ราคาหลุดสัดส่วนฟิโบนาชชีทั้งหมดไปแล้ว แสดงถึงการพักตัวล้มเหลว และได้เปลี่ยนเทรนด์เป็นขาลงเต็มตัวเรียบร้อยแล้ว แนะนำให้หลีกเลี่ยง"
             st.info(f_sum)
 
-        fig_zoom.add_trace(go.Bar(x=df_zoom.index, y=df_zoom['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df_zoom['Hist']], name="MACD Hist"), row=2, col=1)
+        # 💡 แก้ไขบั๊กกราฟซูม MACD เป็นเงาดำ: เพิ่ม marker_line_width=0 
+        fig_zoom.add_trace(go.Bar(x=df_zoom.index, y=df_zoom['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df_zoom['Hist']], marker_line_width=0, name="MACD Hist"), row=2, col=1)
+        
         fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['MACD'], line=dict(color='#2962FF', width=1.5), name="MACD Line"), row=2, col=1)
         fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['Sig'], line=dict(color='#FFD600', width=1.5), name="Signal Line"), row=2, col=1)
         fig_zoom.add_trace(go.Scatter(x=df_zoom.index, y=df_zoom['RSI'], line=dict(color='#FF9800', width=1.5), name="RSI"), row=3, col=1)
