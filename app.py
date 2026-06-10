@@ -293,10 +293,12 @@ def load_pro_data(ticker_symbol, tf):
     if df.index.tz is not None:
         df.index = df.index.tz_localize(None)
     
+    # 🌟 [อัปเดตใหม่] เพิ่ม "quote_type" เพื่อแยกแยะกองทุน ETF
     fund = {
         "ps": "N/A", "pe": "N/A", "roe": "N/A", "rev_growth": "N/A", "dividend": "ไม่มีข้อมูล",
         "earnings_date": "รอประกาศ", "business_desc_th": "ข้อมูลถูกจำกัดจาก Yahoo ชั่วคราว (ระบบกราฟยังทำงานปกติค่ะ)",
-        "industry": "N/A", "sector": "N/A", "location": "N/A", "website": "#", "pe_val": 0, "roe_val": 0
+        "industry": "N/A", "sector": "N/A", "location": "N/A", "website": "#", "pe_val": 0, "roe_val": 0,
+        "quote_type": "EQUITY" 
     }
     
     try:
@@ -304,7 +306,10 @@ def load_pro_data(ticker_symbol, tf):
         info = s.info
         if 'longBusinessSummary' in info:
             fund["business_desc_th"] = translate_to_thai(info.get('longBusinessSummary', 'N/A'))
-        div_y = info.get('dividendYield', 0)
+            
+        # 🌟 [อัปเดตใหม่] ดักจับเงินปันผลแบบหลายชั้น ครอบคลุมทั้งหุ้นและกองทุน
+        div_y = info.get('dividendYield', info.get('trailingAnnualDividendYield', info.get('yield', 0)))
+        
         earnings_date = "N/A"
         if 'earningsTimestamp' in info and info['earningsTimestamp']:
             earnings_date = datetime.fromtimestamp(info['earningsTimestamp'], tz=timezone.utc).strftime("%d/%m/%Y")
@@ -318,7 +323,8 @@ def load_pro_data(ticker_symbol, tf):
             "earnings_date": earnings_date if earnings_date != "N/A" else "รอประกาศ",
             "industry": info.get('industry', 'N/A'), "sector": info.get('sector', 'N/A'),
             "location": info.get('country', 'N/A'), "website": info.get('website', '#'),
-            "pe_val": float(info.get('trailingPE', 0) or 0), "roe_val": float(info.get('returnOnEquity', 0) or 0)
+            "pe_val": float(info.get('trailingPE', 0) or 0), "roe_val": float(info.get('returnOnEquity', 0) or 0),
+            "quote_type": info.get('quoteType', 'EQUITY') # 🌟 บันทึกประเภทสินทรัพย์
         })
     except Exception: pass 
 
@@ -662,10 +668,17 @@ with tabs[0]:
             f3.metric("ROE", fund.get('roe','N/A'))
             st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
             f4, f5, f6 = st.columns(3)
+            
             f4.metric("การเติบโตรายได้", fund.get('rev_growth','N/A'))
             f5.metric("💰 เงินปันผล", fund.get('dividend','ไม่มี'), "ต่อปี", delta_color="normal" if fund.get('dividend') != "ไม่มีปันผล" else "off")
             f6.metric("📅 ประกาศงบ (Earnings)", fund.get('earnings_date', 'รอประกาศ'))
-            if isinstance(pe_v, (int, float)) and (pe_v <= 0) or (isinstance(fund.get('roe_val'), (int, float)) and fund.get('roe_val', 0) < 0): 
+            
+            # 🌟 [อัปเดตใหม่] ลอจิกแยก ETF ออกจากการเตือนหุ้นปั่น/งบเน่า
+            is_etf = fund.get('quote_type', 'EQUITY') == 'ETF'
+            
+            if is_etf:
+                st.info("ℹ️ สินทรัพย์นี้เป็นกองทุนประเภท ETF จะไม่มีการประเมินค่า P/E หรือ ROE เหมือนหุ้นบริษัททั่วไป")
+            elif isinstance(pe_v, (int, float)) and (pe_v <= 0) or (isinstance(fund.get('roe_val'), (int, float)) and fund.get('roe_val', 0) < 0): 
                 st.error("⚠️ หุ้นเก็งกำไรความเสี่ยงสูง (ขาดทุน หรือ ROE ติดลบ) ระบบจะปรับลดงบเข้าซื้ออัตโนมัติ")
         
         with c_r:
@@ -988,7 +1001,7 @@ if st.session_state["logged_in"]:
         c1, c2, c3 = st.columns(3)
         with c1: selected_year = st.selectbox("📅 เลือกปีภาษีที่ต้องการประเมิน", ["2567 (2024)", "2568 (2025)", "2569 (2026)", "2570 (2027)"]).split("(")[1][:4]
         with c2: is_resident = st.radio("ระยะเวลาพำนักในประเทศไทยปีนี้", ["เกิน 180 วัน (เข้าเกณฑ์เสียภาษี)", "ไม่ถึง 180 วัน (ได้รับยกเว้น)"])
-        with c3: other_income = st.number_input("รายได้พึงประเมินอื่นๆ ในไทย (บาท/ปี)", min_value=0.0, value=500000.0)
+        with c3: other_income = st.number_input("รายได้พึงประเมินอื่นๆในไทย (บาท/ปี)", min_value=0.0, value=500000.0)
 
         t_yr = tax_v[tax_v['Date'].str.endswith(selected_year)]
         net_tax_gain_yr = t_yr["Taxable_Gain_THB"].sum()
