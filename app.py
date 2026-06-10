@@ -4,7 +4,6 @@ import os
 import math
 import sqlite3
 import urllib.parse
-import random
 import requests
 import streamlit as st
 import gspread
@@ -24,9 +23,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 5.20", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.25", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 5.20", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.25", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -226,27 +225,23 @@ def translate_to_thai(text):
         return "".join([s[0] for s in res.json()[0]])
     except: return short_text + "..."
 
-def get_random_headers():
-    user_agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15"
-    ]
-    return {"User-Agent": random.choice(user_agents)}
-
+# 💡 อัปเกรด V5.25: นำระบบ Session ปลอมออก ใช้ yfinance ออริจินัลเพื่อความเสถียร 100%
 @st.cache_data(ttl=900)
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
     p, i = stgs[tf]["p"], stgs[tf]["i"]
-    session = requests.Session()
-    session.headers.update(get_random_headers())
     
     df = pd.DataFrame()
     for attempt in range(3):
         try:
-            s = yf.Ticker(ticker_symbol, session=session)
+            s = yf.Ticker(ticker_symbol)
             df = s.history(period=p, interval=i)
-            if df.empty: df = yf.download(ticker_symbol, period=p, interval=i, progress=False)
+            if df.empty: 
+                df = yf.download(ticker_symbol, period=p, interval=i, progress=False)
             if not df.empty:
+                # แก้ปัญหา MultiIndex จาก yf.download
+                if isinstance(df.columns, pd.MultiIndex):
+                    df = df.xs(ticker_symbol, level=1, axis=1)
                 df = df.dropna(subset=['Close'])
                 if not df.empty: break
         except: pass
@@ -256,7 +251,7 @@ def load_pro_data(ticker_symbol, tf):
     
     fund = {
         "ps": "N/A", "pe": "N/A", "roe": "N/A", "rev_growth": "N/A", "dividend": "ไม่มีข้อมูล",
-        "earnings_date": "รอประกาศ", "business_desc_th": "ข้อมูลถูกจำกัดจาก Yahoo ชั่วคราว (ระบบกราฟยังทำงานปกติค่ะ)",
+        "earnings_date": "รอประกาศ", "business_desc_th": "ข้อมูลถูกจำกัดจากเซิร์ฟเวอร์ชั่วคราว (แต่ระบบกราฟยังทำงานปกติค่ะ)",
         "industry": "N/A", "sector": "N/A", "location": "N/A", "website": "#", "pe_val": 0, "roe_val": 0
     }
     
@@ -284,22 +279,27 @@ def load_pro_data(ticker_symbol, tf):
 
     market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 0.0, "vix_ts": 0.0, "smart_money": "N/A"}
     try:
-        spy = yf.Ticker("^GSPC", session=session).history(period=p, interval=i)
+        spy = yf.Ticker("^GSPC").history(period=p, interval=i)
         if not spy.empty:
+            if isinstance(spy.columns, pd.MultiIndex): spy = spy.xs("^GSPC", level=1, axis=1)
             df['RS'] = (df['Close'].pct_change(10) - spy['Close'].pct_change(10)) * 100
             spy_p = spy['Close'].iloc[-1]
             market_signal["spy_price"] = float(spy_p)
             market_signal["spy_trend"] = "ขึ้น 📈" if spy_p > spy['Close'].ewm(span=50).mean().iloc[-1] else "ลง 📉"
     except: df['RS'] = 0
     try:
-        vix = yf.Ticker("^VIX", session=session).history(period="1mo")
-        if not vix.empty: market_signal["vix"] = float(vix['Close'].iloc[-1])
-        vix3m = yf.Ticker("^VIX3M", session=session).history(period="1mo")
-        if not vix3m.empty and market_signal["vix"] > 0: market_signal["vix_ts"] = float(market_signal["vix"] / vix3m['Close'].iloc[-1])
+        vix = yf.Ticker("^VIX").history(period="1mo")
+        if not vix.empty: 
+            if isinstance(vix.columns, pd.MultiIndex): vix = vix.xs("^VIX", level=1, axis=1)
+            market_signal["vix"] = float(vix['Close'].iloc[-1])
+        vix3m = yf.Ticker("^VIX3M").history(period="1mo")
+        if not vix3m.empty and market_signal["vix"] > 0: 
+            if isinstance(vix3m.columns, pd.MultiIndex): vix3m = vix3m.xs("^VIX3M", level=1, axis=1)
+            market_signal["vix_ts"] = float(market_signal["vix"] / vix3m['Close'].iloc[-1])
     except: pass
     try:
-        hyg = yf.Ticker("HYG", session=session).history(period="6mo")['Close']
-        ief = yf.Ticker("IEF", session=session).history(period="6mo")['Close']
+        hyg = yf.Ticker("HYG").history(period="6mo")['Close']
+        ief = yf.Ticker("IEF").history(period="6mo")['Close']
         if not hyg.empty and not ief.empty:
             market_signal["smart_money"] = "Risk ON 🟢" if (hyg/ief).iloc[-1] > (hyg/ief).ewm(span=20).mean().iloc[-1] else "Risk OFF 🔴"
     except: pass
@@ -348,7 +348,6 @@ def get_live_fx():
     try: return yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
     except: return 35.00
 
-# 💡 อัปเกรด V5.20: รับค่า tf_option เข้ามาเพื่อสแกนให้ตรงกับมิติเวลาที่ผู้ใช้เลือก
 @st.cache_data(ttl=1800)
 def run_ai_screener(tickers, tf_option):
     if not tickers: return pd.DataFrame()
@@ -356,11 +355,10 @@ def run_ai_screener(tickers, tf_option):
     p, i = stgs.get(tf_option, {"p": "6mo", "i": "1d"})["p"], stgs.get(tf_option, {"p": "6mo", "i": "1d"})["i"]
     
     results = []
-    session = requests.Session()
-    session.headers.update(get_random_headers())
     for t in tickers:
         try:
-            hist = yf.Ticker(t, session=session).history(period=p, interval=i)
+            s = yf.Ticker(t)
+            hist = s.history(period=p, interval=i)
             if hist.empty: 
                 hist = yf.download(t, period=p, interval=i, progress=False)
             if hist.empty or 'Close' not in hist.columns: continue
@@ -389,14 +387,14 @@ def run_ai_screener(tickers, tf_option):
             
             results.append({"หุ้น": t, "ราคาล่าสุด": f"${close:.2f}", "EMA50": f"${ema50:.2f}", "RSI": f"{rsi_val:.1f}", "คำแนะนำ AI": action})
         except Exception as e: pass
-        time.sleep(1.5) 
+        time.sleep(1) 
     return pd.DataFrame(results)
 
 @st.cache_data(ttl=3600)
 def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
     try:
-        # Monte Carlo ต้องใช้ฐานรายวัน (Daily) เสมอเพื่อคำนวณความผันผวนให้แม่นยำ
-        hist = yf.Ticker(ticker_symbol).history(period="1y", interval="1d")
+        s = yf.Ticker(ticker_symbol)
+        hist = s.history(period="1y", interval="1d")
         if hist.empty: return None, 0, 0, 0, 0
         closes = hist['Close']
         daily_returns = closes.pct_change().dropna()
@@ -425,7 +423,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 5.20")
+    else: st.title("🛡️ Strategic Hub 5.25")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -438,8 +436,6 @@ with st.sidebar:
     ticker = st.session_state.current_ticker
     
     tf_option = st.radio("เลือกความละเอียด:", ["1D (รายวัน)", "1W (รายสัปดาห์)", "1M (รายเดือน)"], index=0)
-    
-    # 💡 อัปเกรด V5.20: แปลงความละเอียดเป็นคำศัพท์เพื่อนำไปแสดงผลแบบไดนามิก
     tf_unit = "วัน" if "1D" in tf_option else "สัปดาห์" if "1W" in tf_option else "เดือน"
     
     st.markdown("---")
@@ -605,7 +601,7 @@ with tabs[0]:
                 st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
                 ra = t_cap * (r_pct / 100.0)
                 if last_p > sl: st.success(f"🧮 **เข้าซื้อได้สูงสุด:** {ra/(last_p-sl):.0f} หุ้น")
-    else: st.warning("❌ ไม่พบข้อมูลราคาตลาด กรุณาตรวจสอบชื่อหุ้น หรือลองเปลี่ยน Timeframe เป็น 1D")
+    else: st.error("❌ ไม่พบข้อมูลราคาตลาด กรุณาลองเปลี่ยน Timeframe หรือกด Manage App มุมขวาล่างแล้วกด Reboot App ค่ะ")
 
 # ==========================================
 # หน้า 2: โซนเข้าซื้อเทคนิคอล
@@ -744,7 +740,7 @@ with tabs[2]:
                 st.rerun()
 
     if len(st.session_state.radar_tickers) == 0:
-        st.warning("⚠️ คุณยังไม่ได้เลือกหุ้นในเรดาร์เลยค่ะ กรุณากดเลือกที่ช่องด้านบนก่อนนะคะ (แนะนำเลือกสัก 3 ตัว)")
+        st.warning("⚠️ คุณยังไม่ได้เลือกหุ้นในเรดาร์เลยค่ะ กรุณากดเลือกที่ช่องด้านบนก่อนนะคะ")
     else:
         if st.button(f"🚀 สแกนและอัปเดตกราฟ (อิงข้อมูล {tf_option})", type="primary", use_container_width=True):
             with st.spinner("⏳ AI กำลังวิ่งดึงกราฟ... (รอประมาณ 1-2 วินาทีต่อ 1 หุ้น เพื่อหลบการแบนจาก Yahoo)"):
