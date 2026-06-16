@@ -946,39 +946,93 @@ if st.session_state["logged_in"]:
 # ==========================================
 # หน้า 6: พิทบูลพยากรณ์
 # ==========================================
-    with tabs[5]:
-        st.markdown(f"## 🔮 พิทบูลพยากรณ์ (AI Monte Carlo Simulation) : {ticker}")
-        st.info(f"⚠️ **หมายเหตุทางสถิติ:** เพื่อความแม่นยำสูงสุด ระบบจำลองมอนติคาร์โลจะใช้ฐานข้อมูลความผันผวนแบบ **1D (รายวัน)** เสมอ โดยดึงข้อมูล 1 ปีเต็มในอดีต มาสุ่มสร้างเส้นทางจำลอง 100 รูปแบบในอนาคต")
-        sim_days = st.slider("เลือกจำนวนวันพยากรณ์ล่วงหน้า (วันทำการ):", 5, 90, 30)
-        
-        if st.button("🎲 เริ่มการประมวลผลสุ่มจำลองมอนติคาร์โล", type="primary", use_container_width=True):
-            with st.spinner("พิทบูลกำลังเคี้ยวข้อมูลและคำนวณความน่าจะเป็น 100 เส้นทาง..."):
-                sim_df, exp_p, up_b, low_b, last_price = run_monte_carlo(ticker, days_to_predict=sim_days)
-                if sim_df is not None:
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("📉 กรณีเลวร้ายที่สุด (Lower 5%)", f"${low_b:.2f}")
-                    c2.metric("🎯 ราคาคาดหวังตามสถิติ (Expected)", f"${exp_p:.2f}")
-                    c3.metric("📈 กรณีมองโลกแง่ดีที่สุด (Upper 95%)", f"${up_b:.2f}")
+with tab_mc:
+    st.markdown(f"## 🔮 พิทบูลพยากรณ์ (AI Monte Carlo Simulation) : {ticker}")
+    st.info("⚠️ **หมายเหตุทางสถิติ:** ระบบจำลองมอนติคาร์โลจะใช้ฐานข้อมูลความผันผวนย้อนหลัง 1 ปี (แบบรายวัน) มาทำความสะอาดข้อมูลเพื่อป้องกัน Error ก่อนทำการสุ่มสร้างเส้นทางล่วงหน้า 100 รูปแบบในอนาคตเพื่อหาความน่าจะเป็นสูงสุดครับ")
+    
+    days_to_sim = st.slider("เลือกจำนวนวันพยากรณ์ล่วงหน้า (วันทำการ):", 1, 30, 16)
+    
+    if st.button("🎲 เริ่มการประมวลผลสุ่มจำลองมอนติคาร์โล", type="primary", use_container_width=True):
+        with st.spinner("กำลังทำความสะอาดข้อมูลและรันแบบจำลอง 100 รูปแบบ..."):
+            try:
+                # 1. ดึงข้อมูล 1 ปีย้อนหลัง
+                df_mc = yf.Ticker(ticker).history(period="1y")
+                
+                # 2. ทำความสะอาดข้อมูล (Data Cleansing) ป้องกัน NaN บั๊ก
+                if df_mc.empty or len(df_mc) < 10:
+                    st.error("⚠️ ข้อมูลย้อนหลังของหุ้นตัวนี้ไม่เพียงพอสำหรับการทำ Monte Carlo Simulation")
+                else:
+                    df_mc = df_mc.dropna(subset=['Close']) # ลบวันหยุดหรือวันที่ไม่มีราคา
+                    last_price = df_mc['Close'].iloc[-1]
                     
-                    fig_sim = go.Figure()
-                    for col in sim_df.columns:
-                        fig_sim.add_trace(go.Scatter(x=sim_df.index, y=sim_df[col], mode='lines', line=dict(width=1, color='rgba(130, 177, 255, 0.1)'), showlegend=False))
-                    fig_sim.add_trace(go.Scatter(x=[0, sim_days-1], y=[last_price, exp_p], mode='lines+markers', name='Expected Path', line=dict(color='#00E676', width=3, dash='dash')))
-                    fig_sim.add_hline(y=up_b, line_dash="dot", line_color="#FFD600", annotation_text="Upper Bound")
-                    fig_sim.add_hline(y=low_b, line_dash="dot", line_color="#FF5252", annotation_text="Lower Bound")
-                    fig_sim.update_layout(title=f"โครงข่ายวิเคราะห์ทิศทางราคาอนาคตของ {ticker}", template="plotly_dark", height=400, xaxis_title="วันในอนาคต", yaxis_title="ราคา (USD)")
-                    st.plotly_chart(fig_sim, use_container_width=True)
+                    # หาค่าผลตอบแทนรายวันและลบค่า Error หรือ Outliers ทิ้ง
+                    daily_returns = df_mc['Close'].pct_change().dropna()
+                    daily_returns = daily_returns[daily_returns > -0.99] # กันข้อมูลราคาติดลบผิดปกติ
                     
-                    st.markdown("---")
-                    st.markdown("#### 🐶 สรุปคำทำนายพิทบูล (Pitbull Analysis)")
-                    upside = ((exp_p - last_price) / last_price) * 100
-                    if exp_p > last_price:
-                        p_msg = f"🟢 **แนวโน้มเชิงบวก (Bullish):** ในอีก {sim_days} วันทำการข้างหน้า พิทบูลมองว่าราคามีโอกาสปรับตัวขึ้นไปที่ **${exp_p:.2f}** (บวก {upside:+.2f}%) หากตลาดเป็นใจอาจทะลุไปถึงกรอบบนที่ **${up_b:.2f}** แนะนำให้ **ถือรันเทรนด์ (Hold)** หรือ **หาจังหวะย่อซื้อ** โดยใช้เส้นกรอบล่าง (${low_b:.2f}) เป็นจุดตัดขาดทุน (Stop Loss)"
-                        st.success(p_msg)
+                    mu = daily_returns.mean()
+                    sigma = daily_returns.std()
+                    
+                    if np.isnan(mu) or np.isnan(sigma) or sigma == 0:
+                        st.error("⚠️ ความผันผวนของหุ้นตัวนี้ผิดปกติทางคณิตศาสตร์ ไม่สามารถคำนวณแบบจำลองได้")
                     else:
-                        p_msg = f"🔴 **แนวโน้มอ่อนแอ (Bearish/Sideway):** ในอีก {sim_days} วันทำการข้างหน้า ราคามีเกณฑ์แกว่งตัวออกข้างหรือปรับฐานลงไปที่ **${exp_p:.2f}** (ติดลบ {upside:+.2f}%) ระวังความเสี่ยงหากราคาหลุดลึกไปถึง **${low_b:.2f}** แนะนำให้ **ชะลอการลงทุน (Wait & See)** หรือลดสัดส่วนพอร์ต"
-                        st.warning(p_msg)
-                else: st.error("❌ ดึงข้อมูลประมวลผลจำลองไม่สำเร็จ")
+                        # 3. เริ่มสมการ Monte Carlo
+                        num_trials = 100
+                        drift = mu - (0.5 * sigma**2)
+                        
+                        # สร้างเมทริกซ์การสุ่ม
+                        Z = np.random.normal(0, 1, (days_to_sim, num_trials))
+                        price_paths = np.zeros((days_to_sim, num_trials))
+                        price_paths[0] = last_price
+                        
+                        # คำนวณเส้นทางราคาทั้ง 100 เส้น
+                        for t in range(1, days_to_sim):
+                            price_paths[t] = price_paths[t-1] * np.exp(drift + sigma * Z[t])
+                            
+                        # 4. คำนวณผลลัพธ์
+                        final_prices = price_paths[-1]
+                        lower_bound = np.percentile(final_prices, 5) # กรณีแย่สุด 5%
+                        expected_price = np.mean(final_prices)       # ค่าคาดหวังเฉลี่ย
+                        upper_bound = np.percentile(final_prices, 95) # กรณีดีสุด 95%
+                        
+                        # แสดง Metrics
+                        mc_c1, mc_c2, mc_c3 = st.columns(3)
+                        mc_c1.metric("📉 กรณีเลวร้ายที่สุด (Lower 5%)", f"${lower_bound:,.2f}")
+                        mc_c2.metric("🎯 ราคาคาดหวังตามสถิติ (Expected)", f"${expected_price:,.2f}")
+                        mc_c3.metric("📈 กรณีมองโลกแง่ดีที่สุด (Upper 95%)", f"${upper_bound:,.2f}")
+                        
+                        # วาดกราฟโครงข่ายพยากรณ์
+                        fig_mc = go.Figure()
+                        
+                        # พล็อตเส้นทางจำลอง 100 เส้นเป็นสีจางๆ
+                        for i in range(num_trials):
+                            fig_mc.add_trace(go.Scatter(x=np.arange(days_to_sim), y=price_paths[:, i], mode='lines', line=dict(color='rgba(255, 255, 255, 0.05)'), showlegend=False, hoverinfo='skip'))
+                        
+                        # พล็อตเส้นทางคาดหวัง (ค่าเฉลี่ย)
+                        expected_path = np.mean(price_paths, axis=1)
+                        fig_mc.add_trace(go.Scatter(x=np.arange(days_to_sim), y=expected_path, mode='lines', line=dict(color='#00E676', width=3, dash='dash'), name='Expected Path'))
+                        
+                        # ใส่เส้นระดับ (Upper / Lower / Current)
+                        fig_mc.add_hline(y=lower_bound, line_dash="dot", line_color="#FF5252", annotation_text="Lower Bound (5%)")
+                        fig_mc.add_hline(y=upper_bound, line_dash="dot", line_color="#2962FF", annotation_text="Upper Bound (95%)")
+                        fig_mc.add_hline(y=last_price, line_dash="solid", line_color="#FFD600", annotation_text=f"Current Price (${last_price:.2f})")
+                        
+                        fig_mc.update_layout(title=f"โครงข่ายวิเคราะห์ทิศทางราคาอนาคตของ {ticker}", template="plotly_dark", height=500, xaxis_title="วันในอนาคต", yaxis_title="ราคา (USD)")
+                        st.plotly_chart(fig_mc, use_container_width=True)
+                        
+                        # ==========================================
+                        # บทวิเคราะห์พิทบูล (Pitbull Analysis)
+                        # ==========================================
+                        pct_change_exp = ((expected_price - last_price) / last_price) * 100
+                        st.markdown("### 🐶 สรุปคำทำนายพิทบูล (Pitbull Analysis)")
+                        
+                        if pct_change_exp > 5:
+                            st.success(f"🟢 **แนวโน้มแข็งแกร่ง (Bullish):** ในอีก {days_to_sim} วันทำการข้างหน้า สถิติชี้ว่าราคาคาดหวังจะพุ่งไปที่ **${expected_price:,.2f} (+{pct_change_exp:,.2f}%)** หากราคาไม่หลุด Lower Bound แนะนำให้ถือรันเทรนด์เพื่อทำกำไรครับ")
+                        elif pct_change_exp < -5:
+                            st.error(f"🔴 **แนวโน้มอ่อนแอ (Bearish):** ในอีก {days_to_sim} วันทำการข้างหน้า สถิติชี้ว่าราคาคาดหวังจะร่วงลงไปที่ **${expected_price:,.2f} ({pct_change_exp:,.2f}%)** แนะนำให้ระมัดระวัง ลดพอร์ต และเตรียมแผนหนีที่เส้น Lower Bound ครับ")
+                        else:
+                            st.warning(f"🟡 **แกว่งตัวในกรอบ (Sideway):** ในอีก {days_to_sim} วันทำการข้างหน้า สถิติชี้ว่าราคาคาดหวังจะทรงตัวแถว **${expected_price:,.2f} ({pct_change_exp:,.2f}%)** แนะนำให้ตั้งรับที่กรอบ Lower 5% และขายทำกำไรที่กรอบ Upper 95% ครับ")
+            except Exception as e:
+                st.error("⚠️ ไม่สามารถดึงข้อมูลหุ้นเพื่อทำการจำลองได้ โปรดตรวจสอบชื่อหุ้นหรือการเชื่อมต่ออินเทอร์เน็ต")
 
 # ==========================================
 # หน้า 7: แผนการเทรด
