@@ -121,7 +121,7 @@ def log_visitor():
 visitor_count = log_visitor()
 
 # ==========================================
-# 3. 📊 ลอจิกการบัญชี
+# 3. 📊 ลอจิกการบัญชี (New Professional Standard)
 # ==========================================
 def calculate_stats(df_input):
     df = clean_df_types(df_input)
@@ -181,9 +181,9 @@ def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8-sig')
 
 # ==========================================
-# 4. 🌐 ดึงข้อมูลการเงิน (เพิ่มระบบป้องกันการโดนบล็อก / Anti-Ban)
+# 4. 🌐 ดึงข้อมูลการเงิน
 # ==========================================
-@st.cache_data(ttl=300) # ขยายเวลาแคชเป็น 5 นาที เพื่อลดภาระเซิร์ฟเวอร์ Yahoo
+@st.cache_data(ttl=60)
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
     p, i = stgs[tf]["p"], stgs[tf]["i"]
@@ -195,7 +195,6 @@ def load_pro_data(ticker_symbol, tf):
         if df.empty: return pd.DataFrame(), {}, None, None
         
         market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 0.0, "vix_ts": 0.0, "smart_money": "N/A"}
-        
         try:
             spy = yf.Ticker("^GSPC").history(period=p, interval=i)
             if not spy.empty:
@@ -207,22 +206,16 @@ def load_pro_data(ticker_symbol, tf):
             else: df['RS'] = 0
         except: df['RS'] = 0
 
-        time.sleep(0.5) # หน่วงเวลาเล็กน้อยกันเซิร์ฟเวอร์บล็อก
-
         try:
             vix = yf.Ticker("^VIX").history(period="1mo")
             if not vix.empty: market_signal["vix"] = float(vix['Close'].iloc[-1])
         except: pass
-
-        time.sleep(0.5) # หน่วงเวลาเล็กน้อยกันเซิร์ฟเวอร์บล็อก
 
         try:
             vix3m = yf.Ticker("^VIX3M").history(period="1mo")
             if not vix3m.empty and market_signal["vix"] > 0:
                 market_signal["vix_ts"] = float(market_signal["vix"] / vix3m['Close'].iloc[-1])
         except: pass
-
-        time.sleep(0.5) # หน่วงเวลาเล็กน้อยกันเซิร์ฟเวอร์บล็อก
 
         try:
             hyg = yf.Ticker("HYG").history(period="6mo")['Close']
@@ -272,7 +265,7 @@ def load_pro_data(ticker_symbol, tf):
         return df, fund, mat, market_signal
     except: return pd.DataFrame(), {}, None, None
 
-@st.cache_data(ttl=300) # ขยายเวลาแคชเป็น 5 นาที
+@st.cache_data(ttl=60)
 def get_batch_live_prices(tickers):
     if not tickers: return {}
     try:
@@ -289,7 +282,7 @@ def get_batch_live_prices(tickers):
         return prices
     except: return {}
 
-@st.cache_data(ttl=300) # ขยายเวลาแคชเป็น 5 นาที
+@st.cache_data(ttl=60)
 def get_live_fx():
     try: return yf.Ticker("USDTHB=X").history(period="1d")['Close'].iloc[-1]
     except: return 35.00
@@ -325,7 +318,7 @@ if st.session_state["logged_in"]:
     sorted_df, cb, l_stat, r_bals, holdings = calculate_stats(st.session_state.trade_ledger)
     st.session_state.trade_ledger = sorted_df
 
-with st.spinner(f"⏳ กำลังประมวลผลข้อมูล AI Advanced Radar... (อาจใช้เวลา 5-10 วินาที)"):
+with st.spinner(f"⏳ กำลังประมวลผลข้อมูล AI Advanced Radar..."):
     df, fund, matrix, market_signal = load_pro_data(ticker, tf_option)
 
 tabs = ["📊 วิเคราะห์กราฟ (Analysis)", "💼 บัญชี (Cloud Sync)", "🧾 ภาษีสรรพากร"] if st.session_state["logged_in"] else ["📊 วิเคราะห์กราฟ (Analysis)"]
@@ -526,7 +519,7 @@ with tab_list[0]:
             st.write(f"**ต้าน:** {df['High'].tail(20).max():.2f}")
             st.write(f"**รับ:** {df['E50'].iloc[-1]:.2f}")
     else:
-        st.warning(f"⚠️ ระบบอาจถูกจำกัดการเชื่อมต่อชั่วคราว โปรดรอ 2-3 นาที แล้วกดปุ่ม 'ดึงข้อมูลเรียลไทม์เดี๋ยวนี้' อีกครั้งค่ะ")
+        st.warning(f"⚠️ ไม่สามารถดึงข้อมูลกราฟของหุ้น **'{ticker}'** ได้ในขณะนี้ค่ะ")
 
 # ==========================================
 # หน้า 2: บัญชีและพอร์ตโฟลิโอ
