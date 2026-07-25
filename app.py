@@ -24,9 +24,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 5.30", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.35", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 5.30", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.35", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -271,7 +271,6 @@ def load_pro_data(ticker_symbol, tf):
         ps_ratio = info.get('priceToSalesTrailing12Months', 0)
         last_price = df['Close'].iloc[-1]
         
-        # Valuation Logic
         fair_p_str = "N/A (บริษัทขาดทุน)"
         val_status = "ประเมินไม่ได้"
         
@@ -282,10 +281,10 @@ def load_pro_data(ticker_symbol, tf):
             elif last_price < graham_num * 0.8: val_status = "🟢 ถูกกว่ามูลค่าจริง (Undervalued)"
             else: val_status = "🟡 ราคาเหมาะสม (Fair Value)"
         else:
-            if ps_ratio is not None:
+            if ps_ratio is not None and ps_ratio > 0:
                 if ps_ratio > 20: val_status = "🔴 แพงระดับฟองสบู่ (Extreme Bubble)"
                 elif ps_ratio > 10: val_status = "🟠 ค่อนข้างแพง (Overvalued Growth)"
-                elif ps_ratio > 0 and ps_ratio < 3: val_status = "🟢 ราคาถูก (Discount)"
+                elif ps_ratio < 3: val_status = "🟢 ราคาถูก (Discount)"
                 else: val_status = "🟡 กลางๆ (Neutral)"
 
         fund.update({
@@ -415,40 +414,60 @@ def run_ai_screener(tickers, tf_option):
         time.sleep(1) 
     return pd.DataFrame(results)
 
+# 💡 V5.35: ป้องกันค่า NaN ใน Monte Carlo อย่างเด็ดขาด
 @st.cache_data(ttl=3600)
 def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
     try:
         s = yf.Ticker(ticker_symbol)
         hist = s.history(period="1y", interval="1d")
-        if hist.empty: return None, 0, 0, 0, 0
-        closes = hist['Close']
+        if hist.empty: 
+            hist = yf.download(ticker_symbol, period="1y", interval="1d", progress=False)
+        if hist.empty or 'Close' not in hist.columns: return None, 0, 0, 0, 0
+        
+        if isinstance(hist.columns, pd.MultiIndex):
+            closes = hist['Close'][ticker_symbol]
+        else:
+            closes = hist['Close']
+            
+        closes = closes.dropna()
+        if len(closes) < 30: return None, 0, 0, 0, 0
+        
         daily_returns = closes.pct_change().dropna()
-        mu = daily_returns.mean()
-        sigma = daily_returns.std()
-        last_price = closes.iloc[-1]
+        mu = float(daily_returns.mean())
+        sigma = float(daily_returns.std())
+        last_price = float(closes.iloc[-1])
+        
+        if math.isnan(mu) or math.isnan(sigma) or math.isnan(last_price) or sigma == 0:
+            return None, 0, 0, 0, 0
         
         simulation_df = pd.DataFrame()
         for x in range(simulations):
             count, price, price_series = 0, last_price, []
             for y in range(days_to_predict):
-                if count == 251: break
+                if count >= days_to_predict: break
                 price = price * (1 + np.random.normal(mu, sigma))
+                if math.isnan(price): price = last_price
                 price_series.append(price)
                 count += 1
             simulation_df[x] = price_series
             
-        expected_price = simulation_df.iloc[-1].mean()
-        upper_bound = simulation_df.iloc[-1].quantile(0.95)
-        lower_bound = simulation_df.iloc[-1].quantile(0.05)
+        expected_price = float(simulation_df.iloc[-1].mean())
+        upper_bound = float(simulation_df.iloc[-1].quantile(0.95))
+        lower_bound = float(simulation_df.iloc[-1].quantile(0.05))
+        
+        if math.isnan(expected_price) or math.isnan(upper_bound) or math.isnan(lower_bound):
+            return None, 0, 0, 0, 0
+            
         return simulation_df, expected_price, upper_bound, lower_bound, last_price
-    except: return None, 0, 0, 0, 0
+    except Exception as e: 
+        return None, 0, 0, 0, 0
 
 # ==========================================
 # 🎛️ 5. UI Layout: แถบเมนูด้านซ้าย (Sidebar)
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 5.30")
+    else: st.title("🛡️ Strategic Hub 5.35")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -576,7 +595,7 @@ with tabs[0]:
             fig.update_layout(template="plotly_dark", height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
             
-            # 💡 V5.30: กล่องประเมินมูลค่า (Valuation Engine)
+            # Valuation Box
             st.markdown(f'<div class="val-box"><h4>⚖️ ประเมินมูลค่าที่แท้จริง (Fair Value Assessment)</h4><p style="font-size: 0.9em; color: #B0BEC5;">ระบบคำนวณจากปัจจัยพื้นฐาน (อิงสถานะงบการเงินล่าสุด)</p><ul><li><b>มูลค่าที่คำนวณได้:</b> <span style="font-size: 1.2em; color: white;">{fund["fair_price"]}</span></li><li><b>สถานะความถูกแพง:</b> <span style="font-size: 1.2em;">{fund["valuation_status"]}</span></li></ul></div>', unsafe_allow_html=True)
             
             st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
@@ -982,7 +1001,7 @@ if st.session_state["logged_in"]:
         if st.button("🎲 เริ่มการประมวลผลสุ่มจำลองมอนติคาร์โล", type="primary", use_container_width=True):
             with st.spinner("พิทบูลกำลังเคี้ยวข้อมูลและคำนวณความน่าจะเป็น 100 เส้นทาง..."):
                 sim_df, exp_p, up_b, low_b, last_price = run_monte_carlo(ticker, days_to_predict=sim_days)
-                if sim_df is not None:
+                if sim_df is not None and not math.isnan(exp_p) and exp_p > 0:
                     c1, c2, c3 = st.columns(3)
                     c1.metric("📉 กรณีเลวร้ายที่สุด (Lower 5%)", f"${low_b:.2f}")
                     c2.metric("🎯 ราคาคาดหวังตามสถิติ (Expected)", f"${exp_p:.2f}")
@@ -1006,7 +1025,8 @@ if st.session_state["logged_in"]:
                     else:
                         p_msg = f"🔴 **แนวโน้มอ่อนแอ (Bearish/Sideway):** ในอีก {sim_days} วันทำการข้างหน้า ราคามีเกณฑ์แกว่งตัวออกข้างหรือปรับฐานลงไปที่ **${exp_p:.2f}** (ติดลบ {upside:+.2f}%) ระวังความเสี่ยงหากราคาหลุดลึกไปถึง **${low_b:.2f}** แนะนำให้ **ชะลอการลงทุน (Wait & See)** หรือลดสัดส่วนพอร์ต"
                         st.warning(p_msg)
-                else: st.error("❌ ดึงข้อมูลประมวลผลจำลองไม่สำเร็จ")
+                else: 
+                    st.error("⚠️ ไม่สามารถประมวลผลจำลองมอนติคาร์โลได้ เนื่องจากข้อมูลดิบของหุ้นตัวนี้ไม่สมบูรณ์ กรุณาลองใหม่อีกครั้ง")
 
 # ==========================================
 # หน้า 7: แผนการเทรด
@@ -1072,7 +1092,7 @@ if st.session_state["logged_in"]:
             display_df = st.session_state.trading_plans.copy()
             if not display_df.empty:
                 display_df.insert(0, "Select_Delete", False)
-                ed_plans = st.data_editor(display_df, num_rows="dynamic", use_container_width=True,
+                ed_plans = st.data_editor(display_df, use_container_width=True,
                     column_config={
                         "Select_Delete": st.column_config.CheckboxColumn("🗑️ เลือกเพื่อลบ", default=False),
                         "Date": "วันที่บันทึก", "Ticker": "ชื่อหุ้น", "Entry": st.column_config.NumberColumn("ราคาเข้าซื้อ ($)", format="%.2f"),
@@ -1121,7 +1141,7 @@ if st.session_state["logged_in"]:
                     
                     c_bt1, c_bt2, c_bt3 = st.columns(3)
                     c_bt1.metric("🎯 อัตราการชนะ (Win Rate)", f"{win_rate:.2f}%")
-                    c_bt2.metric("📈 ผลตอบแทนสะสมโมเดล (3 ปี)", f"{total_ret:+.2f}%", delta=f"{total_ret:+.2f}%")
+                    c_bt2.metric("📈 ผลตอบแทนสะสมโมเดល (3 ปี)", f"{total_ret:+.2f}%", delta=f"{total_ret:+.2f}%")
                     c_bt3.metric("📋 จำนวนไม้ที่สแกนเจอตามกฎ", f"{len(trades_df)} ไม้")
                     
                     st.markdown("### 📋 ตารางบันทึกรายงานผลคำสั่งซื้อขายในอดีต")
@@ -1141,4 +1161,3 @@ if st.session_state["logged_in"]:
                     }), use_container_width=True)
                 else: 
                     st.error("⚠️ ไม่พบจังหวะสัญญาณที่เข้าเกณฑ์กฎ 3 ประสานในช่วง 3 ปีที่ผ่านมาสำหรับหุ้นตัวนี้ค่ะ")
-
