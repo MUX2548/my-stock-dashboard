@@ -4,6 +4,7 @@ import os
 import math
 import sqlite3
 import urllib.parse
+import random
 import requests
 import streamlit as st
 import gspread
@@ -23,9 +24,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 5.25", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.30", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 5.25", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.30", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -40,6 +41,7 @@ st.markdown("""
     .pro-title { font-weight: bold; font-size: 1.1em; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px; }
     .pro-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.95em; }
     .c-red { color: #FF5252; } .c-green { color: #00E676; } .c-yellow { color: #FFD600; } .c-gray { color: #B0BEC5; }
+    .val-box { background-color: #0d1b2a; border-left: 5px solid #00B4D8; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -119,9 +121,6 @@ def save_df_to_sheet(worksheet_name, df):
         return True
     except: return False
 
-# ==========================================
-# 🧪 3. ส่วนระบบจำลองกลยุทธ์ (Backtest Engine)
-# ==========================================
 def init_backtest_db():
     conn = sqlite3.connect("backtest_history.db")
     cursor = conn.cursor()
@@ -175,9 +174,6 @@ def log_visitor():
     except: return "N/A"
 visitor_count = log_visitor()
 
-# ==========================================
-# 📊 4. ลอจิกบัญชี & ฟังก์ชันคำนวณตลาด
-# ==========================================
 def calculate_stats(df_input):
     df = clean_df_types(df_input)
     if not df.empty and "Date" in df.columns:
@@ -225,7 +221,14 @@ def translate_to_thai(text):
         return "".join([s[0] for s in res.json()[0]])
     except: return short_text + "..."
 
-# 💡 อัปเกรด V5.25: นำระบบ Session ปลอมออก ใช้ yfinance ออริจินัลเพื่อความเสถียร 100%
+def get_random_headers():
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0"
+    ]
+    return {"User-Agent": random.choice(user_agents), "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8", "Accept-Language": "en-US,en;q=0.5"}
+
 @st.cache_data(ttl=900)
 def load_pro_data(ticker_symbol, tf):
     stgs = {"1D (รายวัน)": {"p": "6mo", "i": "1d"}, "1W (รายสัปดาห์)": {"p": "2y", "i": "1wk"}, "1M (รายเดือน)": {"p": "5y", "i": "1mo"}}
@@ -239,7 +242,6 @@ def load_pro_data(ticker_symbol, tf):
             if df.empty: 
                 df = yf.download(ticker_symbol, period=p, interval=i, progress=False)
             if not df.empty:
-                # แก้ปัญหา MultiIndex จาก yf.download
                 if isinstance(df.columns, pd.MultiIndex):
                     df = df.xs(ticker_symbol, level=1, axis=1)
                 df = df.dropna(subset=['Close'])
@@ -251,21 +253,43 @@ def load_pro_data(ticker_symbol, tf):
     
     fund = {
         "ps": "N/A", "pe": "N/A", "roe": "N/A", "rev_growth": "N/A", "dividend": "ไม่มีข้อมูล",
-        "earnings_date": "รอประกาศ", "business_desc_th": "ข้อมูลถูกจำกัดจากเซิร์ฟเวอร์ชั่วคราว (แต่ระบบกราฟยังทำงานปกติค่ะ)",
-        "industry": "N/A", "sector": "N/A", "location": "N/A", "website": "#", "pe_val": 0, "roe_val": 0
+        "earnings_date": "รอประกาศ", "business_desc_th": "ข้อมูลถูกจำกัดชั่วคราว",
+        "industry": "N/A", "sector": "N/A", "location": "N/A", "website": "#", "pe_val": 0, "roe_val": 0,
+        "fair_price": "N/A", "valuation_status": "ไม่มีข้อมูล", "eps": 0, "bv": 0
     }
     
     try:
         info = s.info
-        if 'longBusinessSummary' in info:
-            fund["business_desc_th"] = translate_to_thai(info.get('longBusinessSummary', 'N/A'))
+        if 'longBusinessSummary' in info: fund["business_desc_th"] = translate_to_thai(info.get('longBusinessSummary', 'N/A'))
         div_y = info.get('dividendYield', 0)
         earnings_date = "N/A"
         if 'earningsTimestamp' in info and info['earningsTimestamp']:
             earnings_date = datetime.fromtimestamp(info['earningsTimestamp'], tz=timezone.utc).strftime("%d/%m/%Y")
             
+        eps = info.get('trailingEps', 0)
+        bv = info.get('bookValue', 0)
+        ps_ratio = info.get('priceToSalesTrailing12Months', 0)
+        last_price = df['Close'].iloc[-1]
+        
+        # Valuation Logic
+        fair_p_str = "N/A (บริษัทขาดทุน)"
+        val_status = "ประเมินไม่ได้"
+        
+        if eps is not None and bv is not None and eps > 0 and bv > 0:
+            graham_num = math.sqrt(22.5 * eps * bv)
+            fair_p_str = f"${graham_num:.2f}"
+            if last_price > graham_num * 1.3: val_status = "🔴 แพงเกินจริง (Overvalued)"
+            elif last_price < graham_num * 0.8: val_status = "🟢 ถูกกว่ามูลค่าจริง (Undervalued)"
+            else: val_status = "🟡 ราคาเหมาะสม (Fair Value)"
+        else:
+            if ps_ratio is not None:
+                if ps_ratio > 20: val_status = "🔴 แพงระดับฟองสบู่ (Extreme Bubble)"
+                elif ps_ratio > 10: val_status = "🟠 ค่อนข้างแพง (Overvalued Growth)"
+                elif ps_ratio > 0 and ps_ratio < 3: val_status = "🟢 ราคาถูก (Discount)"
+                else: val_status = "🟡 กลางๆ (Neutral)"
+
         fund.update({
-            "ps": f"{float(info.get('priceToSalesTrailing12Months', 0) or 0):.2f}", 
+            "ps": f"{float(ps_ratio or 0):.2f}", 
             "pe": f"{float(info.get('trailingPE', 0) or 0):.2f}", 
             "roe": f"{float(info.get('returnOnEquity', 0) or 0)*100:.2f}%",
             "rev_growth": f"{float(info.get('revenueGrowth', 0) or 0)*100:.2f}%",
@@ -273,7 +297,8 @@ def load_pro_data(ticker_symbol, tf):
             "earnings_date": earnings_date if earnings_date != "N/A" else "รอประกาศ",
             "industry": info.get('industry', 'N/A'), "sector": info.get('sector', 'N/A'),
             "location": info.get('country', 'N/A'), "website": info.get('website', '#'),
-            "pe_val": float(info.get('trailingPE', 0) or 0), "roe_val": float(info.get('returnOnEquity', 0) or 0)
+            "pe_val": float(info.get('trailingPE', 0) or 0), "roe_val": float(info.get('returnOnEquity', 0) or 0),
+            "fair_price": fair_p_str, "valuation_status": val_status, "eps": eps, "bv": bv
         })
     except: pass 
 
@@ -423,7 +448,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 5.25")
+    else: st.title("🛡️ Strategic Hub 5.30")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -550,6 +575,9 @@ with tabs[0]:
             fig.add_trace(go.Bar(x=df.index, y=df['Hist'], marker_color=['#00E676' if v >= 0 else '#FF5252' for v in df['Hist']], name="MACD"), row=2, col=1)
             fig.update_layout(template="plotly_dark", height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
+            
+            # 💡 V5.30: กล่องประเมินมูลค่า (Valuation Engine)
+            st.markdown(f'<div class="val-box"><h4>⚖️ ประเมินมูลค่าที่แท้จริง (Fair Value Assessment)</h4><p style="font-size: 0.9em; color: #B0BEC5;">ระบบคำนวณจากปัจจัยพื้นฐาน (อิงสถานะงบการเงินล่าสุด)</p><ul><li><b>มูลค่าที่คำนวณได้:</b> <span style="font-size: 1.2em; color: white;">{fund["fair_price"]}</span></li><li><b>สถานะความถูกแพง:</b> <span style="font-size: 1.2em;">{fund["valuation_status"]}</span></li></ul></div>', unsafe_allow_html=True)
             
             st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
             pe_v = fund.get('pe_val', 0)
@@ -1113,3 +1141,4 @@ if st.session_state["logged_in"]:
                     }), use_container_width=True)
                 else: 
                     st.error("⚠️ ไม่พบจังหวะสัญญาณที่เข้าเกณฑ์กฎ 3 ประสานในช่วง 3 ปีที่ผ่านมาสำหรับหุ้นตัวนี้ค่ะ")
+
