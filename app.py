@@ -24,9 +24,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 6.00", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.15", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 6.00", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.15", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -255,7 +255,6 @@ def load_pro_data(ticker_symbol, tf):
         info = s.info
     except: pass
 
-    # 🚀 HOTFIX V5.55: อัปเดตราคาแบบ Real-Time และจัดการ "วันที่" ให้ตรงกับความจริง
     try:
         real_time_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
         if real_time_price and pd.notna(real_time_price) and real_time_price > 0:
@@ -294,7 +293,6 @@ def load_pro_data(ticker_symbol, tf):
     df['Sig'] = df['MACD'].ewm(span=9).mean()
     df['Hist'] = df['MACD'] - df['Sig']
     
-    # คำนวณ ATR เพื่อใช้ในระบบ V6.00 Position Sizing
     df['TR'] = np.maximum(df['High'] - df['Low'], np.maximum(abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))))
     df['ATR'] = df['TR'].rolling(window=14).mean()
     atr_value = df['ATR'].iloc[-1] if not pd.isna(df['ATR'].iloc[-1]) else (df['High'].tail(14).max() - df['Low'].tail(14).min()) / 14
@@ -405,7 +403,6 @@ def get_batch_live_prices(tickers):
 @st.cache_data(ttl=3600)
 def get_market_benchmark():
     try:
-        # ระบบสำรองข้อมูล: ถ้าดึง ^GSPC ไม่ได้ ให้ดึง SPY แทน
         for ticker in ["^GSPC", "SPY"]:
             spy = yf.Ticker(ticker).history(period="1y")
             if not spy.empty and len(spy) > 10:
@@ -524,7 +521,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 6.00")
+    else: st.title("🛡️ Strategic Hub 6.15")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -871,7 +868,7 @@ with tabs[2]:
                 else: st.warning("⚠️ ไม่พบข้อมูล กรุณากดปุ่ม 'ดึงข้อมูลเรียลไทม์เดี๋ยวนี้' ที่เมนูด้านซ้ายเพื่อล้างความจำ แล้วลองใหม่อีกครั้งค่ะ")
 
 # ==========================================
-# หน้า 4: บัญชีลงทุน (V6.00 Institutional Analytics)
+# หน้า 4: บัญชีลงทุน (V6.15 The Discipline Engine)
 # ==========================================
 if st.session_state["logged_in"]:
     with tabs[3]:
@@ -885,114 +882,11 @@ if st.session_state["logged_in"]:
         st.markdown("---")
         h1, h2 = st.columns([8, 2])
         h1.subheader("📝 สมุดบัญชีเงินสด (Cloud Ledger)")
-        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v6")
+        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v615")
         
         with st.expander("📤 นำเข้าข้อมูลจากไฟล์ Excel / CSV", expanded=False):
             template_df = pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
-            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v6")
-            uploaded_file = st.file_uploader("ลากไฟล์มาวาง หรือ กดเพื่อเลือกไฟล์", type=['csv', 'xlsx'])
-            if uploaded_file is not None:
-                c_imp1, c_imp2 = st.columns(2)
-                with c_imp1:
-                    if st.button("➕ เพิ่มข้อมูลต่อท้าย (Append)", use_container_width=True):
-                        try:
-                            df_imported = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-                            if 'Date' in df_imported.columns: df_imported['Date'] = pd.to_datetime(df_imported['Date'], errors='coerce').dt.strftime("%d/%m/%Y").replace("NaT", "")
-                            req_cols = ["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"]
-                            for col in req_cols:
-                                if col not in df_imported.columns: df_imported[col] = ""
-                            st.session_state.trade_ledger = pd.concat([st.session_state.trade_ledger, clean_df_types(df_imported[req_cols])], ignore_index=True)
-                            st.success("✅ นำข้อมูลใหม่ไปต่อท้ายตารางเรียบร้อย!"); time.sleep(2); st.rerun()
-                        except: st.error("❌ อ่านไฟล์ไม่สำเร็จ")
-                with c_imp2:
-                    if st.button("🔄 แทนที่ทั้งหมด (Overwrite)", type="primary", use_container_width=True):
-                        try:
-                            df_imported = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-                            if 'Date' in df_imported.columns: df_imported['Date'] = pd.to_datetime(df_imported['Date'], errors='coerce').dt.strftime("%d/%m/%Y").replace("NaT", "")
-                            req_cols = ["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"]
-                            for col in req_cols:
-                                if col not in df_imported.columns: df_imported[col] = ""
-                            st.session_state.trade_ledger = clean_df_types(df_imported[req_cols])
-                            st.success("✅ แทนที่ตารางด้วยข้อมูลจากไฟล์ใหม่เรียบร้อย!"); time.sleep(2); st.rerun()
-                        except: st.error("❌ อ่านไฟล์ไม่สำเร็จ")
-        
-        ed_l = st.data_editor(st.session_state.trade_ledger, num_rows="dynamic", use_container_width=True,
-            column_config={
-                "Date": "วันที่", "Action": st.column_config.SelectboxColumn("ประเภท", options=["นำเงินออกนอกประเทศ (Outward)", "นำเงินเข้าประเทศไทย (Inward)", "ซื้อหุ้น (Buy)", "ขายหุ้น (Sell)", "รับเงินปันผล (Dividend)"]),
-                "Ticker": "ชื่อหุ้น", "Price": st.column_config.NumberColumn("ราคา ($)", format="%.4f"), "Shares": st.column_config.NumberColumn("จำนวนหุ้น", format="%.4f"),
-                "Amount_USD": st.column_config.NumberColumn("จำนวนเงิน ($)", format="%.2f"), "Running_Balance": st.column_config.NumberColumn("เงินสดคงเหลือ ($)", disabled=True, format="%.2f"), 
-                "FX_Rate": st.column_config.NumberColumn("เรทเงิน", format="%.4f"), "WHT_USD": st.column_config.NumberColumn("ภาษี ($)", format="%.2f"), "Ref_Doc": "หมายเหตุ"
-            })
-        if not ed_l.equals(st.session_state.trade_ledger):
-            st.session_state.trade_ledger = calculate_stats(clean_df_types(ed_l))[0]
-            st.rerun()
-            
-        if st.button("💾 บันทึกข้อมูลบัญชีขึ้น Cloud", type="primary", use_container_width=True):
-            if save_df_to_sheet("Ledger", st.session_state.trade_ledger): st.success("บันทึกสำเร็จ!")
-
-        st.markdown("---")
-        st.subheader("📊 ตารางสรุปพอร์ตโฟลิโอปัจจุบัน (Smart Risk Matrix)")
-        live_fx = get_live_fx()
-        st.info(f"💱 **เรทอัตราแลกเปลี่ยน USD/THB ประจำวัน:** ฿{live_fx:.4f}")
-        
-        port_summary, total_invested = [], 0.0
-        for t, data in holdings.items():
-            if data["shares"] > 0.001:
-                port_summary.append({"Ticker": t, "Cost_Price": data["total_cost"] / data["shares"], "Shares": data["shares"], "Total_Cost": data["total_cost"]})
-                total_invested += data["total_cost"]
-                
-        if len(port_summary) > 0:
-            current_port_df = pd.DataFrame(port_summary)
-            results, total_v = [], 0.0
-            
-            # เก็บข้อมูล Sector Risk Exposure
-            sector_exposure = {}
-            
-            with st.spinner("⏳ กำลังดึงราคาล่าสุด คำนวณจุดหนี และวิเคราะห์ความเสี่ยงระดับสถาบัน..."):
-                batch_prices = get_batch_live_prices(current_port_df["Ticker"].tolist())
-                for _, row in current_port_df.iterrows():
-                    t, avg_cost, sh, t_cost = row["Ticker"], row["Cost_Price"], row["Shares"], row["Total_Cost"]
-                    curr_p = batch_prices.get(t, avg_cost)
-                    val = curr_p * sh
-                    profit_usd = val - t_cost
-                    
-                    # 💡 อัลกอริทึมจัดการความเสี่ยง (Risk Management)
-                    sl_price = avg_cost * 0.92  # กฎตัดขาดทุน -8% จากต้นทุน
-                    target_entry = avg_cost * 0.85 # กฎซื้อถัวเมื่อลงลึก -15%
-                    
-                    sl_status = f"🚨 CUT ({sl_price:.2f})" if curr_p <= sl_price else f"🛡️ {sl_price:.2f}"
-                    entry_status = f"🟢 BUY ({target_entry:.2f})" if curr_p <= target_entry else f"⏳ WAIT ({target_entry:.2f})"
-                    
-                    results.append({
-                        "หุ้น": t, 
-                        "จำนวนหุ้น": sh, 
-                        "ต้นทุนเฉลี่ย": avg_cost, 
-                        "ราคาปัจจุบัน": curr_p, 
-                        "กำไร/ขาดทุน ($)": profit_usd, 
-                        "กำไร/ขาดทุน (฿)": profit_usd * live_fx, 
-                        "% เปลี่ยนแปลง": (profit_usd / t_cost) * 100 if t_cost > 0 else 0, 
-                        "มูลค่ารวม": val,
-                        "จุดหนีตาย (SL)": sl_status,
-# ==========================================
-# หน้า 4: บัญชีลงทุน (V6.10 The Discipline Engine)
-# ==========================================
-if st.session_state["logged_in"]:
-    with tabs[3]:
-        st.subheader("💼 แดชบอร์ดกระแสเงินสด")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("📤 โอนออก (ลงทุน)", f"${l_stat['outward']:,.2f}")
-        col2.metric("📥 โอนกลับ (ถอน)", f"${l_stat['inward']:,.2f}")
-        col3.metric("📈 ต้นทุนสุทธิในพอร์ต", f"${l_stat['bought'] - l_stat['sold']:,.2f}")
-        col4.metric("💰 เงินสดคงเหลือ", f"${cb:,.2f}")
-        
-        st.markdown("---")
-        h1, h2 = st.columns([8, 2])
-        h1.subheader("📝 สมุดบัญชีเงินสด (Cloud Ledger)")
-        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v6")
-        
-        with st.expander("📤 นำเข้าข้อมูลจากไฟล์ Excel / CSV", expanded=False):
-            template_df = pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
-            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v6")
+            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v615")
             uploaded_file = st.file_uploader("ลากไฟล์มาวาง หรือ กดเพื่อเลือกไฟล์", type=['csv', 'xlsx'])
             if uploaded_file is not None:
                 c_imp1, c_imp2 = st.columns(2)
@@ -1073,6 +967,7 @@ if st.session_state["logged_in"]:
                     sl_status = f"🚨 CUT ({sl_price:.2f})" if curr_p <= sl_price else f"🛡️ Safe ({sl_price:.2f})"
                     entry_status = f"🟢 ถัวได้ ({target_entry:.2f})" if curr_p <= target_entry else f"⏳ ห้ามถัว ({target_entry:.2f})"
                     
+                    # สำคัญ: ห้ามขาดวงเล็บปิด }) ของ append ตัวนี้เด็ดขาด
                     results.append({
                         "หุ้น": t, 
                         "จำนวนหุ้น": sh, 
@@ -1086,6 +981,7 @@ if st.session_state["logged_in"]:
                         "จุดวินัย (SL -10%)": sl_status,
                         "จุดถัว (DCA -20%)": entry_status
                     })
+                    
                     total_v += val
                     
                     try:
@@ -1154,7 +1050,7 @@ if st.session_state["logged_in"]:
                 "จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}", 
                 "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", 
                 "มูลค่ารวม": "${:,.2f}"}), use_container_width=True)
-            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v6")
+            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v615")
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
 # ==========================================
@@ -1185,7 +1081,7 @@ if st.session_state["logged_in"]:
             running_bals.append(capital_pool)
 
         tax_v['Taxable_Gain_THB'], tax_v['Balance_THB'] = taxable_gains_thb, running_bals
-        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v6")
+        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v615")
         
         ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed", column_order=["Date", "Action", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "Taxable_Gain_THB"])
         if not ed_t[["FX_Rate", "WHT_USD"]].equals(tax_v[["FX_Rate", "WHT_USD"]]):
