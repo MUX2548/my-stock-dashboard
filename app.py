@@ -24,9 +24,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 6.15", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.20", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 6.15", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.20", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -353,15 +353,19 @@ def load_pro_data(ticker_symbol, tf):
         })
     except: pass 
 
+    # 🚀 HOTFIX V6.20: เปลี่ยนไปพึ่งพา SPY ETF เพื่อความเสถียรของสัญญาณตลาดโลก
     market_signal = {"spy_trend": "N/A", "spy_price": 0.0, "vix": 0.0, "vix_ts": 0.0, "smart_money": "N/A"}
     try:
-        spy = yf.Ticker("^GSPC").history(period=p, interval=i)
-        if not spy.empty:
-            if isinstance(spy.columns, pd.MultiIndex): spy = spy.xs("^GSPC", level=1, axis=1)
-            df['RS'] = (df['Close'].pct_change(10) - spy['Close'].pct_change(10)) * 100
-            spy_p = spy['Close'].iloc[-1]
-            market_signal["spy_price"] = float(spy_p)
-            market_signal["spy_trend"] = "ขึ้น 📈" if spy_p > spy['Close'].ewm(span=50).mean().iloc[-1] else "ลง 📉"
+        spy = yf.Ticker("SPY").history(period=p, interval=i)
+        if not spy.empty and 'Close' in spy.columns:
+            if isinstance(spy.columns, pd.MultiIndex): spy = spy.xs("SPY", level=1, axis=1)
+            spy_clean = spy['Close'].dropna()
+            if len(spy_clean) > 10:
+                df['RS'] = (df['Close'].pct_change(10) - spy_clean.pct_change(10)) * 100
+                spy_p = float(spy_clean.iloc[-1])
+                if not math.isnan(spy_p) and spy_p > 0:
+                    market_signal["spy_price"] = spy_p
+                    market_signal["spy_trend"] = "ขึ้น 📈" if spy_p > spy_clean.ewm(span=50).mean().iloc[-1] else "ลง 📉"
     except: df['RS'] = 0
     try:
         vix = yf.Ticker("^VIX").history(period="1mo")
@@ -400,16 +404,19 @@ def get_batch_live_prices(tickers):
         return prices
     except: return {}
 
+# 🚀 HOTFIX V6.20: แก้ไขบั๊ก nan% โดยใช้ SPY หรือ VOO เป็นตัวแทนตลาด และกัน NaN
 @st.cache_data(ttl=3600)
 def get_market_benchmark():
     try:
-        for ticker in ["^GSPC", "SPY"]:
+        for ticker in ["SPY", "VOO", "^GSPC"]: 
             spy = yf.Ticker(ticker).history(period="1y")
-            if not spy.empty and len(spy) > 10:
-                start_p = float(spy['Close'].iloc[0])
-                end_p = float(spy['Close'].iloc[-1])
-                if start_p > 0:
-                    return ((end_p - start_p) / start_p) * 100
+            if not spy.empty and 'Close' in spy.columns:
+                spy_clean = spy['Close'].dropna()
+                if len(spy_clean) > 10:
+                    start_p = float(spy_clean.iloc[0])
+                    end_p = float(spy_clean.iloc[-1])
+                    if start_p > 0 and not math.isnan(start_p) and not math.isnan(end_p):
+                        return ((end_p - start_p) / start_p) * 100
         return 0.0
     except: return 0.0
 
@@ -521,7 +528,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 6.15")
+    else: st.title("🛡️ Strategic Hub 6.20")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -868,7 +875,7 @@ with tabs[2]:
                 else: st.warning("⚠️ ไม่พบข้อมูล กรุณากดปุ่ม 'ดึงข้อมูลเรียลไทม์เดี๋ยวนี้' ที่เมนูด้านซ้ายเพื่อล้างความจำ แล้วลองใหม่อีกครั้งค่ะ")
 
 # ==========================================
-# หน้า 4: บัญชีลงทุน (V6.15 The Discipline Engine)
+# หน้า 4: บัญชีลงทุน (V6.20 Institutional Analytics)
 # ==========================================
 if st.session_state["logged_in"]:
     with tabs[3]:
@@ -882,11 +889,11 @@ if st.session_state["logged_in"]:
         st.markdown("---")
         h1, h2 = st.columns([8, 2])
         h1.subheader("📝 สมุดบัญชีเงินสด (Cloud Ledger)")
-        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v615")
+        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v620")
         
         with st.expander("📤 นำเข้าข้อมูลจากไฟล์ Excel / CSV", expanded=False):
             template_df = pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
-            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v615")
+            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v620")
             uploaded_file = st.file_uploader("ลากไฟล์มาวาง หรือ กดเพื่อเลือกไฟล์", type=['csv', 'xlsx'])
             if uploaded_file is not None:
                 c_imp1, c_imp2 = st.columns(2)
@@ -961,13 +968,12 @@ if st.session_state["logged_in"]:
                             warning_list.append(f"**{t}**: ติดลบ {drawdown_pct:.2f}% (ต้องทำกำไรคืนถึง **+{recovery_needed:.2f}%** แค่เพื่อเท่าทุน!)")
 
                     # 💡 กฎเหล็ก 2: จุดตัดขาดทุนและจุดถัวที่เหมาะสม
-                    sl_price = avg_cost * 0.90  # ยอมขาดทุนได้สูงสุด 10% ของเงินต้นต่อไม้
-                    target_entry = avg_cost * 0.80 # ห้ามถัวจนกว่าจะลงลึกถึง 20%
+                    sl_price = avg_cost * 0.90  
+                    target_entry = avg_cost * 0.80 
                     
                     sl_status = f"🚨 CUT ({sl_price:.2f})" if curr_p <= sl_price else f"🛡️ Safe ({sl_price:.2f})"
                     entry_status = f"🟢 ถัวได้ ({target_entry:.2f})" if curr_p <= target_entry else f"⏳ ห้ามถัว ({target_entry:.2f})"
                     
-                    # สำคัญ: ห้ามขาดวงเล็บปิด }) ของ append ตัวนี้เด็ดขาด
                     results.append({
                         "หุ้น": t, 
                         "จำนวนหุ้น": sh, 
@@ -1004,7 +1010,9 @@ if st.session_state["logged_in"]:
             with i_col1:
                 st.markdown("**1. วัดผลตอบแทนเทียบตลาด (Alpha / Beta)**")
                 spy_ret = get_market_benchmark()
+                if math.isnan(spy_ret): spy_ret = 0.0 # 🛡️ ป้องกันบั๊ก nan% ซ้ำซ้อน
                 alpha_diff = port_pct_ret - spy_ret
+                
                 st.metric("S&P 500 (1Y Return)", f"{spy_ret:.2f}%")
                 if alpha_diff >= 0:
                     st.success(f"🌟 **Alpha ของคุณ: +{alpha_diff:.2f}%** (คุณกำลังเอาชนะตลาดโลกได้!)")
@@ -1018,7 +1026,6 @@ if st.session_state["logged_in"]:
                 fig_sec.update_layout(template="plotly_dark", height=250, margin=dict(t=10, b=10, l=0, r=0))
                 st.plotly_chart(fig_sec, use_container_width=True)
 
-            # 🚨 ระบบกระชากสติ (Reality Check Warning)
             if warning_list:
                 st.markdown("---")
                 st.error("#### ⚠️ คำเตือนจากระบบวินัยการลงทุน (Sunk Cost Reality Check)")
@@ -1050,7 +1057,7 @@ if st.session_state["logged_in"]:
                 "จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}", 
                 "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", 
                 "มูลค่ารวม": "${:,.2f}"}), use_container_width=True)
-            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v615")
+            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v620")
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
 # ==========================================
@@ -1081,7 +1088,7 @@ if st.session_state["logged_in"]:
             running_bals.append(capital_pool)
 
         tax_v['Taxable_Gain_THB'], tax_v['Balance_THB'] = taxable_gains_thb, running_bals
-        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v615")
+        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v620")
         
         ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed", column_order=["Date", "Action", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "Taxable_Gain_THB"])
         if not ed_t[["FX_Rate", "WHT_USD"]].equals(tax_v[["FX_Rate", "WHT_USD"]]):
@@ -1174,7 +1181,7 @@ if st.session_state["logged_in"]:
                     st.error("⚠️ ไม่สามารถประมวลผลจำลองมอนติคาร์โลได้ เนื่องจากข้อมูลดิบของหุ้นตัวนี้ไม่สมบูรณ์ กรุณาลองใหม่อีกครั้ง")
 
 # ==========================================
-# หน้า 7: แผนการเทรด (V6.00 Advanced Position Sizing)
+# หน้า 7: แผนการเทรด
 # ==========================================
     with tabs[6]:
         st.markdown(f"## 📝 แผนการเทรด (Trading Plan) : {ticker}")
