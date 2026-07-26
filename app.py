@@ -1157,7 +1157,6 @@ if st.session_state["logged_in"]:
             st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v6")
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
-
 # ==========================================
 # หน้า 5: ระบบภาษี
 # ==========================================
