@@ -24,9 +24,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 5.40", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.45", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 5.40", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.45", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -262,10 +262,9 @@ def load_pro_data(ticker_symbol, tf):
         info = s.info
         if 'longBusinessSummary' in info: fund["business_desc_th"] = translate_to_thai(info.get('longBusinessSummary', 'N/A'))
         
-        # 🛠️ Fix 1: Data Sanitizer ป้องกันตัวเลขปันผลหลอกตาจาก API
         div_y = info.get('dividendYield', 0)
         if div_y and float(div_y) > 1.0: 
-            div_y = float(div_y) / 100.0 # แก้ไขกรณี API ส่งเป็นจำนวนเต็มแทนจุดทศนิยม
+            div_y = float(div_y) / 100.0 
             
         earnings_date = "N/A"
         if 'earningsTimestamp' in info and info['earningsTimestamp']:
@@ -279,7 +278,6 @@ def load_pro_data(ticker_symbol, tf):
         fair_p_str = "N/A (บริษัทขาดทุน)"
         val_status = "ประเมินไม่ได้"
         
-        # 💎 Fix 2: อัปเกรด Valuation Engine ให้โชว์ Margin of Safety ชัดเจน
         if eps is not None and bv is not None and eps > 0 and bv > 0:
             graham_num = math.sqrt(22.5 * eps * bv)
             fair_p_str = f"${graham_num:.2f}"
@@ -476,7 +474,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 5.40")
+    else: st.title("🛡️ Strategic Hub 5.45")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -653,10 +651,9 @@ with tabs[0]:
                 pl = ((last_p - actual_cost) / actual_cost) * 100
                 st.write(f"**P/L ของคุณ:** {pl:.2f}%")
             
-            # 🛠️ V5.40: Smart Stop Loss Logic Protection
             sl = sup_val * 0.99 if b_p == 0 and actual_cost == 0 else (actual_cost * 0.92 if actual_cost > 0 else b_p * 0.92)
             if b_p == 0 and actual_cost == 0 and sl >= last_p:
-                sl = last_p * 0.95 # หากราคาทะลุ EMA50 ไปแล้ว ให้ใช้ 5% ต่ำกว่าราคาปัจจุบันเป็นจุดหนีแทน
+                sl = last_p * 0.95 
                 
             if last_p < sl and (actual_cost > 0 or b_p > 0):
                 st.error(f"🚨 **ทะลุจุด Stop Loss ไปแล้วที่ ${sl:.2f}!** แนะนำให้พิจารณา Cut Loss อย่างเคร่งครัด")
@@ -690,18 +687,23 @@ with tabs[1]:
         action_desc = ""
         action_color = ""
         
+        # 💡 V5.45 Fix: แก้ไขตรรกะความขัดแย้งของ MACD กับสถานะ Buy the Dip
         if last_close > ema200:
-            if last_close < ema25 and last_close >= (ema50 * 0.98) and rsi < 50:
-                action_signal = "🟢 ย่อตัวลงมาในโซนซื้อ (Buy the Dip)"
-                action_desc = f"ราคาย่อตัวลงมาพักฐานใกล้แนวรับสำคัญ (EMA 50 {tf_unit}) และความร้อนแรงลดลงแล้ว เป็นจังหวะดีในการแบ่งไม้สะสม"
-                action_color = "#00E676"
-            elif not is_bullish_macd or rsi >= 70:
+            if not is_bullish_macd: # หาก MACD หัวทิ่ม (โมเมนตัมพัง) ห้ามสั่ง Buy เด็ดขาด
                 action_signal = "⚠️ PULLBACK WARNING (ระวังการพักฐาน)"
-                action_desc = "ระยะยาวเป็นขาขึ้น แต่ระยะสั้นโมเมนตัมหักหัวลงพักฐาน หรือเข้าเขตซื้อมากเกินไป ห้ามไล่ซื้อเด็ดขาด"
+                action_desc = "ระยะยาวเป็นขาขึ้น แต่ระยะสั้นโมเมนตัมหักหัวลงพักฐาน (MACD อ่อนแรง) ห้ามไล่ซื้อหรือรับมีดเด็ดขาด ให้รอดูสัญญาณกลับตัว"
+                action_color = "#FF9800"
+            elif last_close < ema25 and last_close >= (ema50 * 0.98) and rsi < 50 and is_bullish_macd:
+                action_signal = "🟢 ย่อตัวลงมาในโซนซื้อ (Buy the Dip)"
+                action_desc = f"ราคาย่อตัวลงมาพักฐานใกล้แนวรับสำคัญ (EMA 50 {tf_unit}) และโมเมนตัมเริ่มฟื้นตัว เป็นจังหวะดีในการแบ่งไม้สะสม"
+                action_color = "#00E676"
+            elif rsi >= 70:
+                action_signal = "🔥 OVERBOUGHT (ระวังแรงขาย)"
+                action_desc = "เข้าเขตซื้อมากเกินไป ไม่ควรไล่ราคา"
                 action_color = "#FF9800"
             else:
                 action_signal = "⏳ รอจังหวะชัดเจน (Wait & See)"
-                action_desc = "กราฟกำลังสร้างฐานสะสมพลัง หรือสัญญาณยังขัดแย้งกัน แนะนำให้ทับมือรอดูไปก่อน"
+                action_desc = "กราฟกำลังสร้างฐานสะสมพลัง แนะนำให้ทับมือรอดูไปก่อน"
                 action_color = "#B0BEC5"
         else:
             if rsi < 30 and macd > sig:
