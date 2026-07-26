@@ -405,11 +405,15 @@ def get_batch_live_prices(tickers):
 @st.cache_data(ttl=3600)
 def get_market_benchmark():
     try:
-        spy = yf.Ticker("^GSPC").history(period="1y")
-        if spy.empty: return 0.0
-        start_p = spy['Close'].iloc[0]
-        end_p = spy['Close'].iloc[-1]
-        return ((end_p - start_p) / start_p) * 100
+        # ระบบสำรองข้อมูล: ถ้าดึง ^GSPC ไม่ได้ ให้ดึง SPY แทน
+        for ticker in ["^GSPC", "SPY"]:
+            spy = yf.Ticker(ticker).history(period="1y")
+            if not spy.empty and len(spy) > 10:
+                start_p = float(spy['Close'].iloc[0])
+                end_p = float(spy['Close'].iloc[-1])
+                if start_p > 0:
+                    return ((end_p - start_p) / start_p) * 100
+        return 0.0
     except: return 0.0
 
 @st.cache_data(ttl=60)
