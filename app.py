@@ -262,14 +262,35 @@ def load_pro_data(ticker_symbol, tf):
         info = s.info
     except: pass
 
-    # 🚀 HOTFIX V5.50: อัปเดตราคาแบบ Real-Time จาก Ticker.info (แก้ปัญหาดีเลย์ 1 วัน)
+        # 🚀 HOTFIX V5.55: อัปเดตราคาแบบ Real-Time และจัดการ "วันที่" ให้ตรงกับความจริง
     try:
         real_time_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
+        # เช็กว่าเราได้ราคา Real-Time มา และมันต่างจากกราฟเดิม
         if real_time_price and pd.notna(real_time_price) and real_time_price > 0:
             if abs(df['Close'].iloc[-1] - real_time_price) > 0.01:
-                # ปรับกราฟแท่งสุดท้ายให้ตรงกับราคาตลาดเป๊ะๆ
-                df.iloc[-1, df.columns.get_loc('Close')] = real_time_price
+                
+                # พยายามดึงเวลาตลาดล่าสุดจาก API (ถ้ามี) ถ้าไม่มีให้ใช้วันนี้
+                market_time = info.get('regularMarketTime')
+                if market_time:
+                    latest_date = datetime.fromtimestamp(market_time, tz=timezone.utc).astimezone(tz_th).date()
+                else:
+                    latest_date = datetime.now(tz_th).date()
+                
+                last_df_date = df.index[-1].date() if hasattr(df.index[-1], 'date') else df.index[-1]
+                
+                # ถ้าราคาใหม่เป็นของวันใหม่ ให้สร้างแท่งเทียนใหม่ต่อท้าย
+                if latest_date > last_df_date:
+                    new_row = pd.DataFrame({
+                        'Open': [real_time_price], 'High': [real_time_price], 
+                        'Low': [real_time_price], 'Close': [real_time_price], 
+                        'Volume': [0]
+                    }, index=[pd.to_datetime(latest_date)])
+                    df = pd.concat([df, new_row])
+                else:
+                    # ถ้ายังเป็นวันเดียวกัน แค่ปรับราคาให้เป็นวินาทีล่าสุด
+                    df.iloc[-1, df.columns.get_loc('Close')] = real_time_price
     except: pass
+
 
     last_price = df['Close'].iloc[-1] # นำราคาอัปเดตล่าสุดไปใช้ต่อ
 
