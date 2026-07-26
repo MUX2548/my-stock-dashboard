@@ -24,9 +24,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 6.40", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.50", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 6.40", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.50", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -56,6 +56,8 @@ if "current_ticker" not in st.session_state: st.session_state.current_ticker = "
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
 if "radar_tickers" not in st.session_state:
     st.session_state.radar_tickers = ["ASTS", "RKLB", "TSLA"]
+if "sandbox_tickers" not in st.session_state:
+    st.session_state.sandbox_tickers = ["NVDA", "JPM", "LLY", "LMT", "WMT"]
 
 @st.cache_resource(ttl=3600)
 def init_connection():
@@ -259,7 +261,6 @@ def load_pro_data(ticker_symbol, tf):
         real_time_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
         if real_time_price and pd.notna(real_time_price) and real_time_price > 0:
             if abs(df['Close'].iloc[-1] - real_time_price) > 0.01:
-                
                 market_time = info.get('regularMarketTime')
                 if market_time:
                     latest_date = datetime.fromtimestamp(market_time, tz=timezone.utc).astimezone(tz_th).date()
@@ -527,7 +528,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 6.40")
+    else: st.title("🛡️ Strategic Hub 6.50")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -888,11 +889,11 @@ if st.session_state["logged_in"]:
         st.markdown("---")
         h1, h2 = st.columns([8, 2])
         h1.subheader("📝 สมุดบัญชีเงินสด (Cloud Ledger)")
-        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v630")
+        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v650")
         
         with st.expander("📤 นำเข้าข้อมูลจากไฟล์ Excel / CSV", expanded=False):
             template_df = pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
-            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v630")
+            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v650")
             uploaded_file = st.file_uploader("ลากไฟล์มาวาง หรือ กดเพื่อเลือกไฟล์", type=['csv', 'xlsx'])
             if uploaded_file is not None:
                 c_imp1, c_imp2 = st.columns(2)
@@ -1007,7 +1008,6 @@ if st.session_state["logged_in"]:
             with i_col1:
                 st.markdown("**1. วัดผลตอบแทนเทียบตลาด (Alpha / Beta)**")
                 spy_ret = get_market_benchmark()
-                if math.isnan(spy_ret): spy_ret = 0.0
                 alpha_diff = port_pct_ret - spy_ret
                 
                 st.metric("S&P 500 (1Y Return)", f"{spy_ret:.2f}%")
@@ -1073,7 +1073,7 @@ if st.session_state["logged_in"]:
                 "จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}", 
                 "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", 
                 "มูลค่ารวม": "${:,.2f}"}), use_container_width=True)
-            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v630")
+            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v650")
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
 # ==========================================
@@ -1104,7 +1104,7 @@ if st.session_state["logged_in"]:
             running_bals.append(capital_pool)
 
         tax_v['Taxable_Gain_THB'], tax_v['Balance_THB'] = taxable_gains_thb, running_bals
-        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v630")
+        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v650")
         
         ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed", column_order=["Date", "Action", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "Taxable_Gain_THB"])
         if not ed_t[["FX_Rate", "WHT_USD"]].equals(tax_v[["FX_Rate", "WHT_USD"]]):
@@ -1339,62 +1339,79 @@ if st.session_state["logged_in"]:
                     st.error("⚠️ ไม่พบจังหวะสัญญาณที่เข้าเกณฑ์กฎ 3 ประสานในช่วง 3 ปีที่ผ่านมาสำหรับหุ้นตัวนี้ค่ะ")
 
 # ==========================================
-# หน้า 9: จัดพอร์ตจำลอง (Sandbox)
+# หน้า 9: จัดพอร์ตจำลอง (Custom Stock Sandbox V6.50)
 # ==========================================
     with tabs[8]:
         st.markdown("## 🎛️ ระบบจำลองและจัดพอร์ตด้วยตัวเอง (AI Portfolio Sandbox)")
-        st.markdown("พื้นที่ทดลองสำหรับนักลงทุน เพื่อออกแบบพอร์ตฟอลิโอใหม่ และรับคำวิเคราะห์จาก **AI Portfolio Manager** ก่อนลงสนามจริง")
+        st.markdown("พื้นที่ทดลองสำหรับนักลงทุน เพื่อออกแบบพอร์ตโฟลิโอใหม่ และรับคำวิเคราะห์จาก **AI Portfolio Manager** ก่อนลงสนามจริง")
         
-        default_sandbox_pool = ["NVDA", "MSFT", "AAPL", "JPM", "BRK-B", "LLY", "UNH", "GE", "LMT", "AMZN", "WMT"]
-        available_tickers = sorted(list(set(st.session_state.radar_tickers + default_sandbox_pool)))
+        default_sandbox_pool = ["NVDA", "MSFT", "AAPL", "JPM", "BRK-B", "LLY", "UNH", "GE", "LMT", "AMZN", "WMT", "TSM", "AMD", "META", "GOOGL"]
+        all_sandbox_options = sorted(list(set(st.session_state.sandbox_tickers + default_sandbox_pool + st.session_state.radar_tickers)))
         
-        selected_sim = st.multiselect("📌 1. เลือกหุ้นเข้าพอร์ตจำลอง (แนะนำ 3-5 ตัวเพื่อกระจายความเสี่ยง):", options=available_tickers, default=["NVDA", "JPM", "LLY", "LMT", "WMT"])
-        
+        c_box1, c_box2 = st.columns([7, 3])
+        with c_box1:
+            selected_sim = st.multiselect("📌 1. เลือกหุ้นเข้าพอร์ตจำลอง:", options=all_sandbox_options, default=st.session_state.sandbox_tickers[:5])
+        with c_box2:
+            custom_ticker_add = st.text_input("➕ พิมพ์เพิ่มหุ้นใหม่ที่คุณค้นหาเอง:", placeholder="เช่น META, TSM").upper().strip()
+            if st.button("เพิ่มเข้าตัวเลือกจำลอง", use_container_width=True):
+                if custom_ticker_add and custom_ticker_add not in st.session_state.sandbox_tickers:
+                    st.session_state.sandbox_tickers.append(custom_ticker_add)
+                    st.success(f"✅ เพิ่ม {custom_ticker_add} เข้าไปในรายการแล้วค่ะ!")
+                    time.sleep(0.5)
+                    st.rerun()
+
         if len(selected_sim) > 0:
             st.markdown("#### ⚖️ 2. กำหนดสัดส่วนน้ำหนักเงินลงทุน (%)")
-            cols = st.columns(len(selected_sim))
+            cols = st.columns(min(len(selected_sim), 5))
             sim_weights = {}
             total_weight = 0
             
             for i, t in enumerate(selected_sim):
-                with cols[i]:
-                    w = st.number_input(f"{t} (%)", min_value=0, max_value=100, value=int(100/len(selected_sim)))
+                with cols[i % 5]:
+                    w = st.number_input(f"{t} (%)", min_value=0, max_value=100, value=int(100/len(selected_sim)), key=f"w_sim_{t}")
                     sim_weights[t] = w
                     total_weight += w
             
             if total_weight != 100:
-                st.warning(f"⚠️ คำเตือน: สัดส่วนรวมของคุณคือ {total_weight}% (ควรปรับให้พอดี 100%)")
+                st.warning(f"⚠️ คำเตือน: สัดส่วนรวมของคุณคือ **{total_weight}%** (แนะนำปรับให้พอดี 100% เพื่อความแม่นยำ)")
             
-            if st.button("📊 วิเคราะห์ความเสี่ยงพอร์ตจำลอง (AI Audit)", type="primary", use_container_width=True):
-                with st.spinner("🧠 AI กำลังดึงข้อมูลย้อนหลัง 1 ปี และประเมินความเสี่ยง..."):
+            if st.button("📊 เริ่มวิเคราะห์ความเสี่ยงพอร์ตจำลอง (AI Audit)", type="primary", use_container_width=True):
+                with st.spinner("🧠 AI กำลังวิ่งดึงงบการเงินและประวัติราคาย้อนหลังของหุ้นทุกตัว..."):
                     try:
-                        hist_data = yf.download(selected_sim, period="1y", interval="1d", progress=False)['Close']
-                        if len(selected_sim) == 1:
-                            hist_data = pd.DataFrame(hist_data, columns=selected_sim)
+                        hist_data = yf.download(selected_sim, period="1y", interval="1d", progress=False)
                         
+                        if 'Close' in hist_data:
+                            closes = hist_data['Close']
+                        else:
+                            closes = hist_data
+                            
                         sim_returns = {}
                         sim_sectors = {}
                         
                         for t in selected_sim:
-                            if t in hist_data.columns:
-                                start_p = hist_data[t].dropna().iloc[0]
-                                end_p = hist_data[t].dropna().iloc[-1]
-                                sim_returns[t] = ((end_p - start_p) / start_p) * 100
-                            else:
-                                sim_returns[t] = 0
+                            try:
+                                if isinstance(closes, pd.DataFrame) and t in closes.columns:
+                                    s_series = closes[t].dropna()
+                                else:
+                                    s_series = closes.dropna()
+                                    
+                                if len(s_series) > 10:
+                                    start_p = float(s_series.iloc[0])
+                                    end_p = float(s_series.iloc[-1])
+                                    sim_returns[t] = ((end_p - start_p) / start_p) * 100
+                                else: sim_returns[t] = 0.0
+                            except: sim_returns[t] = 0.0
                                 
                             try:
-                                sec = yf.Ticker(t).info.get('sector', 'Unknown')
-                                sim_sectors[t] = sec
+                                sec = yf.Ticker(t).info.get('sector', 'Unknown/Other')
+                                sim_sectors[t] = sec if sec else 'Unknown/Other'
                             except:
-                                sim_sectors[t] = 'Unknown'
+                                sim_sectors[t] = 'Unknown/Other'
                         
-                        # คำนวณผลตอบแทนรวม
                         total_sim_return = sum([sim_returns[t] * (sim_weights[t]/100) for t in selected_sim])
                         spy_ret = get_market_benchmark()
                         if math.isnan(spy_ret): spy_ret = 0.0
                         
-                        # คำนวณ Sector Exposure
                         sector_weights = {}
                         for t in selected_sim:
                             sec = sim_sectors[t]
@@ -1404,40 +1421,42 @@ if st.session_state["logged_in"]:
                         c_sim1, c_sim2 = st.columns(2)
                         with c_sim1:
                             st.markdown("### 📈 ผลลัพธ์ของพอร์ตจำลอง")
-                            st.metric("ผลตอบแทนพอร์ต (1Y Return)", f"{total_sim_return:.2f}%", f"{total_sim_return - spy_ret:+.2f}% vs S&P500")
+                            st.metric("ผลตอบแทนพอร์ตจำลอง (1Y Return)", f"{total_sim_return:.2f}%", f"{total_sim_return - spy_ret:+.2f}% vs S&P 500")
                             
                             sim_df_show = pd.DataFrame({
                                 "หุ้น": list(sim_returns.keys()),
-                                "สัดส่วน (%)": [sim_weights[t] for t in selected_sim],
-                                "ผลตอบแทนรายตัว (1Y)": [f"{sim_returns[t]:.2f}%" for t in selected_sim],
+                                "สัดส่วน (%)": [f"{sim_weights[t]}%" for t in selected_sim],
+                                "ผลตอบแทนย้อนหลัง (1Y)": [f"{sim_returns[t]:+.2f}%" for t in selected_sim],
                                 "กลุ่มอุตสาหกรรม": [sim_sectors[t] for t in selected_sim]
                             })
-                            st.dataframe(sim_df_show, hide_index=True)
+                            st.dataframe(sim_df_show, hide_index=True, use_container_width=True)
                             
                         with c_sim2:
-                            st.markdown("### 🌐 สัดส่วนกลุ่มอุตสาหกรรม")
+                            st.markdown("### 🌐 สัดส่วนกลุ่มอุตสาหกรรม (Sector Balance)")
                             sec_df = pd.DataFrame(list(sector_weights.items()), columns=['Sector', 'Weight'])
                             fig_sim_sec = go.Figure(data=[go.Pie(labels=sec_df['Sector'], values=sec_df['Weight'], hole=.5)])
-                            fig_sim_sec.update_layout(template="plotly_dark", height=250, margin=dict(t=10, b=10, l=0, r=0))
+                            fig_sim_sec.update_layout(template="plotly_dark", height=280, margin=dict(t=10, b=10, l=0, r=0))
                             st.plotly_chart(fig_sim_sec, use_container_width=True)
 
-                        st.markdown("### 🤖 บทวิเคราะห์จาก AI Portfolio Manager")
-                        max_w_stock = max(sim_weights, key=sim_weights.get)
+                        st.markdown("---")
+                        st.markdown("### 🤖 บทวิเคราะห์และประเมินระดับมืออาชีพ (AI Portfolio Manager)")
                         max_w_sector = max(sector_weights, key=sector_weights.get)
                         
-                        if sector_weights[max_w_sector] >= 40:
-                            st.error(f"🚨 **ความเสี่ยงกระจุกตัวขั้นวิกฤต:** พอร์ตจำลองนี้หนักไปที่กลุ่ม **{max_w_sector} ({sector_weights[max_w_sector]:.1f}%)** มากเกินไป หากเกิดวิกฤตในอุตสาหกรรมนี้ พอร์ตจะเสียหายหนัก แนะนำให้กระจายไปกลุ่ม Defensive (เช่น Healthcare หรือ Consumer) เพิ่มเติม")
-                        elif sector_weights[max_w_sector] >= 25:
-                            st.warning(f"⚠️ **ความเสี่ยงกระจุกตัวระดับกลาง:** กลุ่ม **{max_w_sector}** มีสัดส่วน {sector_weights[max_w_sector]:.1f}% ถือว่าพอรับได้ แต่ต้องติดตามข่าวสารกลุ่มนี้อย่างใกล้ชิด")
+                        if sector_weights[max_w_sector] >= 45:
+                            st.error(f"🚨 **เสี่ยงกระจุกตัวสูง:** พอร์ตนี้เทน้ำหนักไปที่กลุ่ม **{max_w_sector} ({sector_weights[max_w_sector]:.1f}%)** มากเกินไป หากกลุ่มนี้ปรับฐาน พอร์ตจะลบหนัก แนะนำให้กระจายไปกลุ่ม Defensive เพิ่ม")
+                        elif sector_weights[max_w_sector] >= 30:
+                            st.warning(f"⚠️ **การกระจายความเสี่ยงปานกลาง:** กลุ่ม **{max_w_sector} ({sector_weights[max_w_sector]:.1f}%)** มีสัดส่วนนำพอร์ต ถือว่ายอมรับได้สำหรับสายเน้นเติบโต (Growth)")
                         else:
-                            st.success(f"✅ **การกระจายความเสี่ยงยอดเยี่ยม:** คุณจัดสมดุล Sector ได้อย่างมืออาชีพ ไม่มีกลุ่มไหนผูกขาดความเสี่ยงเกินไป")
+                            st.success(f"🟢 **กระจายความเสี่ยงยอดเยี่ยม:** พอร์ตมีความสมดุล ไม่มีอุตสาหกรรมไหนครองสัดส่วนเกิน 30% ถือเป็นโครงสร้างพอร์ตระดับสถาบัน")
                             
-                        if total_sim_return > spy_ret:
-                            st.success(f"🏆 **ศักยภาพการทำกำไร (Performance):** โมเดลนี้สร้าง Alpha ได้ดีเยี่ยมและสามารถชนะตลาดโลก (S&P 500) ได้อย่างสวยงาม เป็นโครงสร้างพอร์ตที่คู่ควรแก่การลงทุนจริง")
+                        if total_sim_return > (spy_ret + 5):
+                            st.success(f"🌟 **Alpha แข็งแกร่งมาก:** พอร์ตจำลองนี้ทำผลงานชนะตลาด S&P 500 ถึง **{total_sim_return - spy_ret:+.2f}%** หุ้นที่คุณเลือกมามีศักยภาพสูงอย่างยิ่ง")
+                        elif total_sim_return >= spy_ret:
+                            st.info(f"🟡 **เกาะติดตลาด:** พอร์ตจำลองนี้ทำผลงานเกาะกลุ่มเดียวกับตลาด S&P 500 ({total_sim_return - spy_ret:+.2f}%) ให้ความผันผวนที่ไม่สูงจนเกินไป")
                         else:
-                            st.error(f"📉 **ศักยภาพการทำกำไร (Performance):** โมเดลนี้แพ้ตลาดโลก (S&P 500) แนะนำให้คัดหุ้นที่ฉุดผลตอบแทนออก (Laggards) แล้วแทนที่ด้วยหุ้นกลุ่มผู้นำ (Leaders) แทน")
+                            st.error(f"📉 **ผลตอบแทนต่ำกว่าตลาด:** พอร์ตจำลองนี้แพ้ตลาด S&P 500 อยู่ **{total_sim_return - spy_ret:.2f}%** แนะนำให้ตัดหุ้นที่ผลงานติดลบหนักออก แล้วแทนที่ด้วยหุ้นชั้นนำกลุ่มอื่น")
                             
                     except Exception as e:
-                        st.error("เกิดข้อผิดพลาดในการดึงข้อมูลจำลอง กรุณาลองเลือกหุ้นตัวอื่น หรือกดปุ่มดึงข้อมูลเรียลไทม์ใหม่ครับ")
+                        st.error("เกิดข้อผิดพลาดชั่วคราวในการดึงข้อมูลหุ้นจำลอง กรุณากดปุ่ม 'ดึงข้อมูลเรียลไทม์เดี๋ยวนี้' ที่เมนูซ้ายมือเพื่อล้างความจำ แล้วลองอีกครั้งค่ะ")
         else:
-            st.info("👈 กรุณาเลือกหุ้นจากช่องด้านบนอย่างน้อย 1 ตัวเพื่อเริ่มต้นจัดพอร์ตจำลองครับ")
+            st.info("👈 กรุณาเลือกหุ้น หรือพิมพ์เพิ่มชื่อหุ้นที่คุณค้นหาเองในช่องขวามือ เพื่อเริ่มต้นจำลองพอร์ตได้เลยครับ")
