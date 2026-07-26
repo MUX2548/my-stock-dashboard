@@ -24,9 +24,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 5.45", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.50", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 5.45", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.50", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -224,10 +224,9 @@ def translate_to_thai(text):
 def get_random_headers():
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0"
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15"
     ]
-    return {"User-Agent": random.choice(user_agents), "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8", "Accept-Language": "en-US,en;q=0.5"}
+    return {"User-Agent": random.choice(user_agents)}
 
 @st.cache_data(ttl=900)
 def load_pro_data(ticker_symbol, tf):
@@ -235,9 +234,9 @@ def load_pro_data(ticker_symbol, tf):
     p, i = stgs[tf]["p"], stgs[tf]["i"]
     
     df = pd.DataFrame()
+    s = yf.Ticker(ticker_symbol)
     for attempt in range(3):
         try:
-            s = yf.Ticker(ticker_symbol)
             df = s.history(period=p, interval=i)
             if df.empty: 
                 df = yf.download(ticker_symbol, period=p, interval=i, progress=False)
@@ -258,8 +257,42 @@ def load_pro_data(ticker_symbol, tf):
         "fair_price": "N/A", "valuation_status": "ไม่มีข้อมูล", "eps": 0, "bv": 0
     }
     
+    info = {}
     try:
         info = s.info
+    except: pass
+
+    # 🚀 HOTFIX V5.50: อัปเดตราคาแบบ Real-Time จาก Ticker.info (แก้ปัญหาดีเลย์ 1 วัน)
+    try:
+        real_time_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
+        if real_time_price and pd.notna(real_time_price) and real_time_price > 0:
+            if abs(df['Close'].iloc[-1] - real_time_price) > 0.01:
+                # ปรับกราฟแท่งสุดท้ายให้ตรงกับราคาตลาดเป๊ะๆ
+                df.iloc[-1, df.columns.get_loc('Close')] = real_time_price
+    except: pass
+
+    last_price = df['Close'].iloc[-1] # นำราคาอัปเดตล่าสุดไปใช้ต่อ
+
+    # 🛠️ คำนวณอินดิเคเตอร์เทคนิคคอลใหม่ "หลังจาก" อัปเดตราคา Real-Time แล้ว
+    df['E10'] = df['Close'].ewm(span=10).mean()
+    df['E25'] = df['Close'].ewm(span=25).mean()
+    df['E50'] = df['Close'].ewm(span=50).mean()
+    df['E200'] = df['Close'].ewm(span=200).mean()
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14).mean()
+    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14).mean()
+    df['RSI'] = 100 - (100 / (1 + gain/loss))
+    df['MACD'] = df['Close'].ewm(span=12).mean() - df['Close'].ewm(span=26).mean()
+    df['Sig'] = df['MACD'].ewm(span=9).mean()
+    df['Hist'] = df['MACD'] - df['Sig']
+    
+    v = df['Close'].pct_change().tail(14).std()
+    tr = "ขึ้น 📈" if last_price > df['E50'].iloc[-1] else "ลง 📉"
+    mat = {"l": last_price * (1 - v*0.5), "u": last_price * (1 + v*1.0), "tr": tr}
+    atr = df['High'].tail(14).max() - df['Low'].tail(14).min()
+    levels = {"r1": last_price + (atr * 0.5), "r2": last_price + (atr * 1.0), "r3": last_price + (atr * 1.5), "r4": last_price + (atr * 2.0), "s1": last_price - (atr * 0.5), "s2": last_price - (atr * 1.0), "s3": last_price - (atr * 1.5)}
+
+    try:
         if 'longBusinessSummary' in info: fund["business_desc_th"] = translate_to_thai(info.get('longBusinessSummary', 'N/A'))
         
         div_y = info.get('dividendYield', 0)
@@ -273,7 +306,6 @@ def load_pro_data(ticker_symbol, tf):
         eps = info.get('trailingEps', 0)
         bv = info.get('bookValue', 0)
         ps_ratio = info.get('priceToSalesTrailing12Months', 0)
-        last_price = df['Close'].iloc[-1]
         
         fair_p_str = "N/A (บริษัทขาดทุน)"
         val_status = "ประเมินไม่ได้"
@@ -335,25 +367,6 @@ def load_pro_data(ticker_symbol, tf):
         if not hyg.empty and not ief.empty:
             market_signal["smart_money"] = "Risk ON 🟢" if (hyg/ief).iloc[-1] > (hyg/ief).ewm(span=20).mean().iloc[-1] else "Risk OFF 🔴"
     except: pass
-    
-    df['E10'] = df['Close'].ewm(span=10).mean()
-    df['E25'] = df['Close'].ewm(span=25).mean()
-    df['E50'] = df['Close'].ewm(span=50).mean()
-    df['E200'] = df['Close'].ewm(span=200).mean()
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14).mean()
-    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14).mean()
-    df['RSI'] = 100 - (100 / (1 + gain/loss))
-    df['MACD'] = df['Close'].ewm(span=12).mean() - df['Close'].ewm(span=26).mean()
-    df['Sig'] = df['MACD'].ewm(span=9).mean()
-    df['Hist'] = df['MACD'] - df['Sig']
-    
-    last = df['Close'].iloc[-1]
-    v = df['Close'].pct_change().tail(14).std()
-    tr = "ขึ้น 📈" if last > df['E50'].iloc[-1] else "ลง 📉"
-    mat = {"l": last * (1 - v*0.5), "u": last * (1 + v*1.0), "tr": tr}
-    atr = df['High'].tail(14).max() - df['Low'].tail(14).min()
-    levels = {"r1": last + (atr * 0.5), "r2": last + (atr * 1.0), "r3": last + (atr * 1.5), "r4": last + (atr * 2.0), "s1": last - (atr * 0.5), "s2": last - (atr * 1.0), "s3": last - (atr * 1.5)}
     
     return df, fund, mat, market_signal, levels
 
@@ -474,7 +487,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 5.45")
+    else: st.title("🛡️ Strategic Hub 5.50")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -687,9 +700,8 @@ with tabs[1]:
         action_desc = ""
         action_color = ""
         
-        # 💡 V5.45 Fix: แก้ไขตรรกะความขัดแย้งของ MACD กับสถานะ Buy the Dip
         if last_close > ema200:
-            if not is_bullish_macd: # หาก MACD หัวทิ่ม (โมเมนตัมพัง) ห้ามสั่ง Buy เด็ดขาด
+            if not is_bullish_macd:
                 action_signal = "⚠️ PULLBACK WARNING (ระวังการพักฐาน)"
                 action_desc = "ระยะยาวเป็นขาขึ้น แต่ระยะสั้นโมเมนตัมหักหัวลงพักฐาน (MACD อ่อนแรง) ห้ามไล่ซื้อหรือรับมีดเด็ดขาด ให้รอดูสัญญาณกลับตัว"
                 action_color = "#FF9800"
