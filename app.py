@@ -24,9 +24,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 5.35", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.40", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 5.35", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 5.40", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -261,7 +261,12 @@ def load_pro_data(ticker_symbol, tf):
     try:
         info = s.info
         if 'longBusinessSummary' in info: fund["business_desc_th"] = translate_to_thai(info.get('longBusinessSummary', 'N/A'))
+        
+        # 🛠️ Fix 1: Data Sanitizer ป้องกันตัวเลขปันผลหลอกตาจาก API
         div_y = info.get('dividendYield', 0)
+        if div_y and float(div_y) > 1.0: 
+            div_y = float(div_y) / 100.0 # แก้ไขกรณี API ส่งเป็นจำนวนเต็มแทนจุดทศนิยม
+            
         earnings_date = "N/A"
         if 'earningsTimestamp' in info and info['earningsTimestamp']:
             earnings_date = datetime.fromtimestamp(info['earningsTimestamp'], tz=timezone.utc).strftime("%d/%m/%Y")
@@ -274,12 +279,17 @@ def load_pro_data(ticker_symbol, tf):
         fair_p_str = "N/A (บริษัทขาดทุน)"
         val_status = "ประเมินไม่ได้"
         
+        # 💎 Fix 2: อัปเกรด Valuation Engine ให้โชว์ Margin of Safety ชัดเจน
         if eps is not None and bv is not None and eps > 0 and bv > 0:
             graham_num = math.sqrt(22.5 * eps * bv)
             fair_p_str = f"${graham_num:.2f}"
-            if last_price > graham_num * 1.3: val_status = "🔴 แพงเกินจริง (Overvalued)"
-            elif last_price < graham_num * 0.8: val_status = "🟢 ถูกกว่ามูลค่าจริง (Undervalued)"
-            else: val_status = "🟡 ราคาเหมาะสม (Fair Value)"
+            margin = ((graham_num - last_price) / graham_num) * 100 if graham_num > 0 else 0
+            if last_price > graham_num * 1.3: 
+                val_status = f"🔴 แพงเกินจริง (Premium {-margin:.1f}%)"
+            elif last_price < graham_num * 0.8: 
+                val_status = f"🟢 ถูกกว่ามูลค่าจริง (Discount {margin:.1f}%)"
+            else: 
+                val_status = f"🟡 ราคาเหมาะสม (Margin {margin:+.1f}%)"
         else:
             if ps_ratio is not None and ps_ratio > 0:
                 if ps_ratio > 20: val_status = "🔴 แพงระดับฟองสบู่ (Extreme Bubble)"
@@ -414,7 +424,6 @@ def run_ai_screener(tickers, tf_option):
         time.sleep(1) 
     return pd.DataFrame(results)
 
-# 💡 V5.35: ป้องกันค่า NaN ใน Monte Carlo อย่างเด็ดขาด
 @st.cache_data(ttl=3600)
 def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
     try:
@@ -467,7 +476,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 5.35")
+    else: st.title("🛡️ Strategic Hub 5.40")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -595,7 +604,6 @@ with tabs[0]:
             fig.update_layout(template="plotly_dark", height=600, margin=dict(l=0,r=0,t=0,b=0), showlegend=False, xaxis_rangeslider_visible=False)
             st.plotly_chart(fig, use_container_width=True)
             
-            # Valuation Box
             st.markdown(f'<div class="val-box"><h4>⚖️ ประเมินมูลค่าที่แท้จริง (Fair Value Assessment)</h4><p style="font-size: 0.9em; color: #B0BEC5;">ระบบคำนวณจากปัจจัยพื้นฐาน (อิงสถานะงบการเงินล่าสุด)</p><ul><li><b>มูลค่าที่คำนวณได้:</b> <span style="font-size: 1.2em; color: white;">{fund["fair_price"]}</span></li><li><b>สถานะความถูกแพง:</b> <span style="font-size: 1.2em;">{fund["valuation_status"]}</span></li></ul></div>', unsafe_allow_html=True)
             
             st.subheader("📊 ข้อมูลพื้นฐาน (Fundamental)")
@@ -644,10 +652,19 @@ with tabs[0]:
             if actual_cost > 0:
                 pl = ((last_p - actual_cost) / actual_cost) * 100
                 st.write(f"**P/L ของคุณ:** {pl:.2f}%")
-                sl = sup_val * 0.99 if b_p == 0 else actual_cost * 0.92
+            
+            # 🛠️ V5.40: Smart Stop Loss Logic Protection
+            sl = sup_val * 0.99 if b_p == 0 and actual_cost == 0 else (actual_cost * 0.92 if actual_cost > 0 else b_p * 0.92)
+            if b_p == 0 and actual_cost == 0 and sl >= last_p:
+                sl = last_p * 0.95 # หากราคาทะลุ EMA50 ไปแล้ว ให้ใช้ 5% ต่ำกว่าราคาปัจจุบันเป็นจุดหนีแทน
+                
+            if last_p < sl and (actual_cost > 0 or b_p > 0):
+                st.error(f"🚨 **ทะลุจุด Stop Loss ไปแล้วที่ ${sl:.2f}!** แนะนำให้พิจารณา Cut Loss อย่างเคร่งครัด")
+            else:
                 st.error(f"🛡️ **จุดหนี (Stop Loss): ${sl:.2f}**")
                 ra = t_cap * (r_pct / 100.0)
-                if last_p > sl: st.success(f"🧮 **เข้าซื้อได้สูงสุด:** {ra/(last_p-sl):.0f} หุ้น")
+                if last_p > sl: 
+                    st.success(f"🧮 **เข้าซื้อได้สูงสุด:** {math.floor(ra/(last_p-sl))} หุ้น")
     else: st.error("❌ ไม่พบข้อมูลราคาตลาด กรุณาลองเปลี่ยน Timeframe หรือกด Manage App มุมขวาล่างแล้วกด Reboot App ค่ะ")
 
 # ==========================================
@@ -1035,6 +1052,7 @@ if st.session_state["logged_in"]:
         st.markdown(f"## 📝 แผนการเทรด (Trading Plan) : {ticker}")
         curr_p = df['Close'].iloc[-1] if not df.empty else 10.0
         ema_50_val = df['E50'].iloc[-1] if not df.empty else 9.0
+        default_sl = ema_50_val if ema_50_val < curr_p else curr_p * 0.95
             
         c_plan1, c_plan2 = st.columns(2)
         with c_plan1:
@@ -1047,7 +1065,7 @@ if st.session_state["logged_in"]:
         with c_plan2:
             st.markdown("#### 2️⃣ ตั้งค่าราคาจุดปฏิบัติการ")
             plan_entry = st.number_input("🎯 ระบุราคาใจสั่งให้เข้าซื้อ ($)", value=float(curr_p))
-            plan_sl = st.number_input("🛑 ระบุจุดตั้งตัดขาดทุน Stop Loss ($)", value=float(ema_50_val if ema_50_val < curr_p else curr_p * 0.9))
+            plan_sl = st.number_input("🛑 ระบุจุดตั้งตัดขาดทุน Stop Loss ($)", value=float(default_sl))
             plan_tp = st.number_input("🏆 ระบุจุดตั้งเป้าทำกำไร Take Profit ($)", value=float(plan_entry + ((plan_entry - plan_sl) * 2) if plan_entry > plan_sl else curr_p * 1.1))
 
         st.markdown("---")
@@ -1092,7 +1110,7 @@ if st.session_state["logged_in"]:
             display_df = st.session_state.trading_plans.copy()
             if not display_df.empty:
                 display_df.insert(0, "Select_Delete", False)
-                ed_plans = st.data_editor(display_df, use_container_width=True,
+                ed_plans = st.data_editor(display_df, num_rows="dynamic", use_container_width=True,
                     column_config={
                         "Select_Delete": st.column_config.CheckboxColumn("🗑️ เลือกเพื่อลบ", default=False),
                         "Date": "วันที่บันทึก", "Ticker": "ชื่อหุ้น", "Entry": st.column_config.NumberColumn("ราคาเข้าซื้อ ($)", format="%.2f"),
@@ -1141,7 +1159,7 @@ if st.session_state["logged_in"]:
                     
                     c_bt1, c_bt2, c_bt3 = st.columns(3)
                     c_bt1.metric("🎯 อัตราการชนะ (Win Rate)", f"{win_rate:.2f}%")
-                    c_bt2.metric("📈 ผลตอบแทนสะสมโมเดល (3 ปี)", f"{total_ret:+.2f}%", delta=f"{total_ret:+.2f}%")
+                    c_bt2.metric("📈 ผลตอบแทนสะสมโมเดล (3 ปี)", f"{total_ret:+.2f}%", delta=f"{total_ret:+.2f}%")
                     c_bt3.metric("📋 จำนวนไม้ที่สแกนเจอตามกฎ", f"{len(trades_df)} ไม้")
                     
                     st.markdown("### 📋 ตารางบันทึกรายงานผลคำสั่งซื้อขายในอดีต")
