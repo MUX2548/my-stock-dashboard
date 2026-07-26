@@ -434,6 +434,16 @@ def run_ai_screener(tickers, tf_option):
             close_series = close_series.dropna()
             if len(close_series) < 50: continue
 
+            # 🚀 HOTFIX V5.60: บังคับอัปเดตราคา Real-Time ให้ระบบเรดาร์สแกน
+            info = {}
+            try: info = s.info
+            except: pass
+            
+            real_time_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
+            if real_time_price and pd.notna(real_time_price) and real_time_price > 0:
+                if abs(close_series.iloc[-1] - real_time_price) > 0.01:
+                    close_series.iloc[-1] = real_time_price # เขียนราคาสดๆ ทับลงไปในแท่งสุดท้าย
+
             close = float(close_series.iloc[-1])
             ema50 = float(close_series.ewm(span=50).mean().iloc[-1])
             delta = close_series.diff()
