@@ -24,9 +24,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 5.60", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.00", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 5.60", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.00", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -255,11 +255,12 @@ def load_pro_data(ticker_symbol, tf):
         info = s.info
     except: pass
 
-    # 🚀 HOTFIX: Real-Time Price & Date Correction
+    # 🚀 HOTFIX V5.55: อัปเดตราคาแบบ Real-Time และจัดการ "วันที่" ให้ตรงกับความจริง
     try:
         real_time_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
         if real_time_price and pd.notna(real_time_price) and real_time_price > 0:
             if abs(df['Close'].iloc[-1] - real_time_price) > 0.01:
+                
                 market_time = info.get('regularMarketTime')
                 if market_time:
                     latest_date = datetime.fromtimestamp(market_time, tz=timezone.utc).astimezone(tz_th).date()
@@ -293,11 +294,17 @@ def load_pro_data(ticker_symbol, tf):
     df['Sig'] = df['MACD'].ewm(span=9).mean()
     df['Hist'] = df['MACD'] - df['Sig']
     
+    # คำนวณ ATR เพื่อใช้ในระบบ V6.00 Position Sizing
+    df['TR'] = np.maximum(df['High'] - df['Low'], np.maximum(abs(df['High'] - df['Close'].shift(1)), abs(df['Low'] - df['Close'].shift(1))))
+    df['ATR'] = df['TR'].rolling(window=14).mean()
+    atr_value = df['ATR'].iloc[-1] if not pd.isna(df['ATR'].iloc[-1]) else (df['High'].tail(14).max() - df['Low'].tail(14).min()) / 14
+
     v = df['Close'].pct_change().tail(14).std()
     tr = "ขึ้น 📈" if last_price > df['E50'].iloc[-1] else "ลง 📉"
-    mat = {"l": last_price * (1 - v*0.5), "u": last_price * (1 + v*1.0), "tr": tr}
-    atr = df['High'].tail(14).max() - df['Low'].tail(14).min()
-    levels = {"r1": last_price + (atr * 0.5), "r2": last_price + (atr * 1.0), "r3": last_price + (atr * 1.5), "r4": last_price + (atr * 2.0), "s1": last_price - (atr * 0.5), "s2": last_price - (atr * 1.0), "s3": last_price - (atr * 1.5)}
+    mat = {"l": last_price * (1 - v*0.5), "u": last_price * (1 + v*1.0), "tr": tr, "atr": atr_value}
+    
+    atr_v = atr_value * 2
+    levels = {"r1": last_price + (atr_v * 0.5), "r2": last_price + (atr_v * 1.0), "r3": last_price + (atr_v * 1.5), "r4": last_price + (atr_v * 2.0), "s1": last_price - (atr_v * 0.5), "s2": last_price - (atr_v * 1.0), "s3": last_price - (atr_v * 1.5)}
 
     try:
         if 'longBusinessSummary' in info: fund["business_desc_th"] = translate_to_thai(info.get('longBusinessSummary', 'N/A'))
@@ -394,6 +401,16 @@ def get_batch_live_prices(tickers):
                 if t in df['Close'].columns and pd.notna(df['Close'][t].iloc[-1]): prices[t] = float(df['Close'][t].iloc[-1])
         return prices
     except: return {}
+
+@st.cache_data(ttl=3600)
+def get_market_benchmark():
+    try:
+        spy = yf.Ticker("^GSPC").history(period="1y")
+        if spy.empty: return 0.0
+        start_p = spy['Close'].iloc[0]
+        end_p = spy['Close'].iloc[-1]
+        return ((end_p - start_p) / start_p) * 100
+    except: return 0.0
 
 @st.cache_data(ttl=60)
 def get_live_fx():
@@ -503,7 +520,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 5.60")
+    else: st.title("🛡️ Strategic Hub 6.00")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -850,7 +867,7 @@ with tabs[2]:
                 else: st.warning("⚠️ ไม่พบข้อมูล กรุณากดปุ่ม 'ดึงข้อมูลเรียลไทม์เดี๋ยวนี้' ที่เมนูด้านซ้ายเพื่อล้างความจำ แล้วลองใหม่อีกครั้งค่ะ")
 
 # ==========================================
-# หน้า 4: บัญชีลงทุน
+# หน้า 4: บัญชีลงทุน (V6.00 Institutional Analytics)
 # ==========================================
 if st.session_state["logged_in"]:
     with tabs[3]:
@@ -864,11 +881,11 @@ if st.session_state["logged_in"]:
         st.markdown("---")
         h1, h2 = st.columns([8, 2])
         h1.subheader("📝 สมุดบัญชีเงินสด (Cloud Ledger)")
-        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger")
+        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v6")
         
         with st.expander("📤 นำเข้าข้อมูลจากไฟล์ Excel / CSV", expanded=False):
             template_df = pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
-            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template")
+            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v6")
             uploaded_file = st.file_uploader("ลากไฟล์มาวาง หรือ กดเพื่อเลือกไฟล์", type=['csv', 'xlsx'])
             if uploaded_file is not None:
                 c_imp1, c_imp2 = st.columns(2)
@@ -923,7 +940,11 @@ if st.session_state["logged_in"]:
         if len(port_summary) > 0:
             current_port_df = pd.DataFrame(port_summary)
             results, total_v = [], 0.0
-            with st.spinner("⏳ อัปเดตราคาล่าสุด และคำนวณจุด Stop Loss..."):
+            
+            # เก็บข้อมูล Sector Risk Exposure
+            sector_exposure = {}
+            
+            with st.spinner("⏳ กำลังดึงราคาล่าสุด คำนวณจุดหนี และวิเคราะห์ความเสี่ยงระดับสถาบัน..."):
                 batch_prices = get_batch_live_prices(current_port_df["Ticker"].tolist())
                 for _, row in current_port_df.iterrows():
                     t, avg_cost, sh, t_cost = row["Ticker"], row["Cost_Price"], row["Shares"], row["Total_Cost"]
@@ -951,18 +972,54 @@ if st.session_state["logged_in"]:
                         "จุดย่อซื้อ (Entry)": entry_status
                     })
                     total_v += val
+                    
+                    # 🌐 Sector Risk
+                    try:
+                        t_sec = yf.Ticker(t).info.get('sector', 'Unknown')
+                    except: t_sec = 'Unknown'
+                    sector_exposure[t_sec] = sector_exposure.get(t_sec, 0) + val
+            
+            port_pct_ret = ((total_v - total_invested) / total_invested * 100) if total_invested > 0 else 0
             
             p1, p2, p3, p4 = st.columns(4)
             p1.metric("มูลค่าหุ้นรวม ($)", f"${total_v:,.2f}")
             p2.metric("ต้นทุนทั้งหมด ($)", f"${total_invested:,.2f}")
-            p3.metric("กำไร/ขาดทุนรวม ($)", f"${total_v - total_invested:,.2f}", f"{((total_v - total_invested) / total_invested * 100 if total_invested > 0 else 0):.2f}%")
+            p3.metric("กำไร/ขาดทุนรวม ($)", f"${total_v - total_invested:,.2f}", f"{port_pct_ret:.2f}%")
             p4.metric("กำไร/ขาดทุนรวม (฿)", f"฿{(total_v - total_invested) * live_fx:,.2f}")
             
+            st.markdown("---")
+            st.markdown("### 🏛️ การวิเคราะห์พอร์ตระดับสถาบัน (Institutional Analytics)")
+            i_col1, i_col2 = st.columns(2)
+            
+            with i_col1:
+                # 📊 Alpha/Beta Benchmark
+                st.markdown("**1. วัดผลตอบแทนเทียบตลาด (Alpha / Beta)**")
+                spy_ret = get_market_benchmark()
+                alpha_diff = port_pct_ret - spy_ret
+                st.metric("S&P 500 (1Y Return)", f"{spy_ret:.2f}%")
+                if alpha_diff >= 0:
+                    st.success(f"🌟 **Alpha ของคุณ: +{alpha_diff:.2f}%** (คุณกำลังเอาชนะตลาดโลกได้!)")
+                else:
+                    st.warning(f"📉 **Alpha ของคุณ: {alpha_diff:.2f}%** (ผลตอบแทนตามหลังตลาดหลัก แนะนำให้คัดกรองหุ้นใหม่)")
+                    
+            with i_col2:
+                # 🌐 Sector Exposure
+                st.markdown("**2. ความเสี่ยงกระจุกตัว (Sector Exposure)**")
+                sec_df = pd.DataFrame(list(sector_exposure.items()), columns=['Sector', 'Value'])
+                fig_sec = go.Figure(data=[go.Pie(labels=sec_df['Sector'], values=sec_df['Value'], hole=.5)])
+                fig_sec.update_layout(template="plotly_dark", height=250, margin=dict(t=10, b=10, l=0, r=0))
+                st.plotly_chart(fig_sec, use_container_width=True)
+                
+                for s_name, s_val in sector_exposure.items():
+                    if (s_val / total_v) > 0.4:
+                        st.error(f"🚨 **ความเสี่ยงกระจุกตัว:** พอร์ตของคุณหนักไปที่ {s_name} (>{(s_val/total_v)*100:.1f}%) ระวังความเสี่ยงอุตสาหกรรมล้มทับ")
+
+            st.markdown("---")
             res_df = pd.DataFrame(results)
             chart_col1, chart_col2 = st.columns(2)
             with chart_col1:
                 fig_pie = go.Figure(data=[go.Pie(labels=res_df['หุ้น'], values=res_df['มูลค่ารวม'], hole=.4)])
-                fig_pie.update_layout(title="สัดส่วนพอร์ต", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
+                fig_pie.update_layout(title="สัดส่วนหุ้นในพอร์ต (Stock Allocation)", template="plotly_dark", height=350, margin=dict(t=50, b=0, l=0, r=0))
                 st.plotly_chart(fig_pie, use_container_width=True)
             with chart_col2:
                 fig_bar = go.Figure(data=[go.Bar(x=res_df['หุ้น'], y=res_df['กำไร/ขาดทุน ($)'], marker_color=['#00E676' if val >= 0 else '#FF5252' for val in res_df['กำไร/ขาดทุน ($)']])])
@@ -980,7 +1037,7 @@ if st.session_state["logged_in"]:
                 "จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}", 
                 "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", 
                 "มูลค่ารวม": "${:,.2f}"}), use_container_width=True)
-            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port")
+            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v6")
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
 # ==========================================
@@ -1011,7 +1068,7 @@ if st.session_state["logged_in"]:
             running_bals.append(capital_pool)
 
         tax_v['Taxable_Gain_THB'], tax_v['Balance_THB'] = taxable_gains_thb, running_bals
-        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax")
+        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v6")
         
         ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed", column_order=["Date", "Action", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "Taxable_Gain_THB"])
         if not ed_t[["FX_Rate", "WHT_USD"]].equals(tax_v[["FX_Rate", "WHT_USD"]]):
@@ -1104,7 +1161,7 @@ if st.session_state["logged_in"]:
                     st.error("⚠️ ไม่สามารถประมวลผลจำลองมอนติคาร์โลได้ เนื่องจากข้อมูลดิบของหุ้นตัวนี้ไม่สมบูรณ์ กรุณาลองใหม่อีกครั้ง")
 
 # ==========================================
-# หน้า 7: แผนการเทรด
+# หน้า 7: แผนการเทรด (V6.00 Advanced Position Sizing)
 # ==========================================
     with tabs[6]:
         st.markdown(f"## 📝 แผนการเทรด (Trading Plan) : {ticker}")
@@ -1127,11 +1184,19 @@ if st.session_state["logged_in"]:
             plan_tp = st.number_input("🏆 ระบุจุดตั้งเป้าทำกำไร Take Profit ($)", value=float(plan_entry + ((plan_entry - plan_sl) * 2) if plan_entry > plan_sl else curr_p * 1.1))
 
         st.markdown("---")
+        st.markdown("#### 🧠 ระบบคำนวณไม้เทรดขั้นสูง (Advanced Position Sizing)")
+        if matrix and "atr" in matrix:
+            atr_v = matrix["atr"]
+            safe_sl = plan_entry - (atr_v * 2)
+            st.info(f"🔮 **ความผันผวน (ATR):** ${atr_v:.2f} / วัน | ระบบสถาบันแนะนำให้ตั้ง Stop Loss ที่ **${safe_sl:.2f}** (ห่างจากจุดเข้าซื้อ 2 เท่าของความแกว่งปกติ เพื่อหลบการสะบัดหลอกของตลาด)")
+        
         st.markdown("#### 📊 สรุปแผนการเทรด (Trade Summary)")
 
         if plan_entry > plan_sl:
             risk_per_share = plan_entry - plan_sl
             reward_per_share = plan_tp - plan_entry
+            
+            # Risk Parity Sizing (คุมความเสี่ยงให้เท่ากัน)
             max_shares = math.floor(risk_budget / risk_per_share) if risk_per_share > 0 else 0
             position_value = max_shares * plan_entry
             rr_ratio = reward_per_share / risk_per_share if risk_per_share > 0 else 0
@@ -1142,7 +1207,7 @@ if st.session_state["logged_in"]:
             else: rr_status, rr_color = "🔴 ไม่คุ้มเสี่ยง (Poor)", "inverse"
 
             c_sum1, c_sum2, c_sum3, c_sum4 = st.columns(4)
-            c_sum1.metric("🛒 โควตาหุ้นที่ควรซื้อ", f"{max_shares:,} หุ้น")
+            c_sum1.metric("🛒 โควตาหุ้นที่ควรซื้อ (Risk Parity)", f"{max_shares:,} หุ้น")
             c_sum2.metric("💳 รวมมูลค่าเงินที่ต้องใช้", f"${position_value:,.2f}")
             c_sum3.metric("⚖️ อัตราส่วน Risk/Reward", f"1 : {rr_ratio:.2f}", rr_status, delta_color=rr_color)
             c_sum4.metric("💰 คาดหวังกำไรสุทธิ", f"${expected_profit:,.2f}")
