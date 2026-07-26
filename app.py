@@ -24,9 +24,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 6.50", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.60", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 6.50", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.60", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -108,6 +108,19 @@ def load_plans_data():
     except: pass
     return pd.DataFrame(columns=req_cols)
 
+def load_sandbox_data():
+    req_cols = ["Date", "Portfolio_Name", "Tickers", "Weights", "Sim_Return", "Alpha", "Note"]
+    try:
+        ws = sh.worksheet("Sandbox_History")
+        records = ws.get_all_records()
+        if records:
+            df = pd.DataFrame(records)
+            for col in req_cols:
+                if col not in df.columns: df[col] = ""
+            return df[req_cols]
+    except: pass
+    return pd.DataFrame(columns=req_cols)
+
 def save_df_to_sheet(worksheet_name, df):
     global sh
     try: ws = sh.worksheet(worksheet_name)
@@ -166,6 +179,8 @@ def run_3_prasan_backtest(ticker_symbol, period_years=3, initial_capital=10000.0
 
 if "trade_ledger" not in st.session_state: st.session_state.trade_ledger = load_ledger_data()
 if "trading_plans" not in st.session_state: st.session_state.trading_plans = load_plans_data()
+if "sandbox_history" not in st.session_state: st.session_state.sandbox_history = load_sandbox_data()
+
 def log_visitor():
     try:
         ws = sh.worksheet("Visitor_Log")
@@ -528,7 +543,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 6.50")
+    else: st.title("🛡️ Strategic Hub 6.60")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -889,11 +904,11 @@ if st.session_state["logged_in"]:
         st.markdown("---")
         h1, h2 = st.columns([8, 2])
         h1.subheader("📝 สมุดบัญชีเงินสด (Cloud Ledger)")
-        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v650")
+        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v660")
         
         with st.expander("📤 นำเข้าข้อมูลจากไฟล์ Excel / CSV", expanded=False):
             template_df = pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
-            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v650")
+            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v660")
             uploaded_file = st.file_uploader("ลากไฟล์มาวาง หรือ กดเพื่อเลือกไฟล์", type=['csv', 'xlsx'])
             if uploaded_file is not None:
                 c_imp1, c_imp2 = st.columns(2)
@@ -1008,6 +1023,7 @@ if st.session_state["logged_in"]:
             with i_col1:
                 st.markdown("**1. วัดผลตอบแทนเทียบตลาด (Alpha / Beta)**")
                 spy_ret = get_market_benchmark()
+                if math.isnan(spy_ret): spy_ret = 0.0
                 alpha_diff = port_pct_ret - spy_ret
                 
                 st.metric("S&P 500 (1Y Return)", f"{spy_ret:.2f}%")
@@ -1073,7 +1089,7 @@ if st.session_state["logged_in"]:
                 "จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}", 
                 "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", 
                 "มูลค่ารวม": "${:,.2f}"}), use_container_width=True)
-            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v650")
+            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v660")
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
 # ==========================================
@@ -1104,7 +1120,7 @@ if st.session_state["logged_in"]:
             running_bals.append(capital_pool)
 
         tax_v['Taxable_Gain_THB'], tax_v['Balance_THB'] = taxable_gains_thb, running_bals
-        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v650")
+        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v660")
         
         ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed", column_order=["Date", "Action", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "Taxable_Gain_THB"])
         if not ed_t[["FX_Rate", "WHT_USD"]].equals(tax_v[["FX_Rate", "WHT_USD"]]):
@@ -1339,18 +1355,27 @@ if st.session_state["logged_in"]:
                     st.error("⚠️ ไม่พบจังหวะสัญญาณที่เข้าเกณฑ์กฎ 3 ประสานในช่วง 3 ปีที่ผ่านมาสำหรับหุ้นตัวนี้ค่ะ")
 
 # ==========================================
-# หน้า 9: จัดพอร์ตจำลอง (Custom Stock Sandbox V6.50)
+# หน้า 9: จัดพอร์ตจำลอง (V6.60 Sandbox Memory Engine)
 # ==========================================
     with tabs[8]:
         st.markdown("## 🎛️ ระบบจำลองและจัดพอร์ตด้วยตัวเอง (AI Portfolio Sandbox)")
         st.markdown("พื้นที่ทดลองสำหรับนักลงทุน เพื่อออกแบบพอร์ตโฟลิโอใหม่ และรับคำวิเคราะห์จาก **AI Portfolio Manager** ก่อนลงสนามจริง")
         
+        # 🧠 ระบบความจำอัจฉริยะ: ดึงหุ้นที่เคยค้นหาและจัดเก็บไว้ทั้งหมดมาทำตัวเลือก
+        history_tickers = []
+        if not st.session_state.sandbox_history.empty:
+            for t_str in st.session_state.sandbox_history["Tickers"].dropna():
+                history_tickers.extend([t.strip() for t in str(t_str).split(",") if t.strip()])
+        ledger_tickers = st.session_state.trade_ledger["Ticker"].dropna().unique().tolist() if not st.session_state.trade_ledger.empty else []
+        plan_tickers = st.session_state.trading_plans["Ticker"].dropna().unique().tolist() if not st.session_state.trading_plans.empty else []
+        
         default_sandbox_pool = ["NVDA", "MSFT", "AAPL", "JPM", "BRK-B", "LLY", "UNH", "GE", "LMT", "AMZN", "WMT", "TSM", "AMD", "META", "GOOGL"]
-        all_sandbox_options = sorted(list(set(st.session_state.sandbox_tickers + default_sandbox_pool + st.session_state.radar_tickers)))
+        all_sandbox_options = sorted(list(set(st.session_state.sandbox_tickers + default_sandbox_pool + st.session_state.radar_tickers + history_tickers + ledger_tickers + plan_tickers)))
+        all_sandbox_options = [x for x in all_sandbox_options if x] # กรองค่าว่าง
         
         c_box1, c_box2 = st.columns([7, 3])
         with c_box1:
-            selected_sim = st.multiselect("📌 1. เลือกหุ้นเข้าพอร์ตจำลอง:", options=all_sandbox_options, default=st.session_state.sandbox_tickers[:5])
+            selected_sim = st.multiselect("📌 1. เลือกหุ้นเข้าพอร์ตจำลอง:", options=all_sandbox_options, default=st.session_state.sandbox_tickers[:5] if st.session_state.sandbox_tickers else ["NVDA", "JPM", "LLY"])
         with c_box2:
             custom_ticker_add = st.text_input("➕ พิมพ์เพิ่มหุ้นใหม่ที่คุณค้นหาเอง:", placeholder="เช่น META, TSM").upper().strip()
             if st.button("เพิ่มเข้าตัวเลือกจำลอง", use_container_width=True):
@@ -1455,8 +1480,69 @@ if st.session_state["logged_in"]:
                             st.info(f"🟡 **เกาะติดตลาด:** พอร์ตจำลองนี้ทำผลงานเกาะกลุ่มเดียวกับตลาด S&P 500 ({total_sim_return - spy_ret:+.2f}%) ให้ความผันผวนที่ไม่สูงจนเกินไป")
                         else:
                             st.error(f"📉 **ผลตอบแทนต่ำกว่าตลาด:** พอร์ตจำลองนี้แพ้ตลาด S&P 500 อยู่ **{total_sim_return - spy_ret:.2f}%** แนะนำให้ตัดหุ้นที่ผลงานติดลบหนักออก แล้วแทนที่ด้วยหุ้นชั้นนำกลุ่มอื่น")
-                            
+
+                        # ☁️ V6.60: ระบบบันทึกพอร์ตจำลองขึ้นคลาวด์
+                        st.markdown("---")
+                        st.markdown("#### 💾 บันทึกโมเดลพอร์ตจำลองนี้ (Save Sandbox Model)")
+                        c_save_sim1, c_save_sim2 = st.columns([7, 3])
+                        with c_save_sim1: 
+                            sim_name = st.text_input("📝 ตั้งชื่อพอร์ตจำลอง (เช่น: พอร์ตเน้นปันผล, พอร์ตเกษียณเสี่ยงต่ำ)", placeholder="พิมพ์ชื่อพอร์ตที่นี่...")
+                        with c_save_sim2:
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            if st.button("💾 บันทึกประวัติพอร์ตนี้", type="primary", use_container_width=True):
+                                ticker_str = ",".join(selected_sim)
+                                weight_str = ",".join([str(sim_weights[t]) for t in selected_sim])
+                                new_sim = pd.DataFrame([{
+                                    "Date": current_date,
+                                    "Portfolio_Name": sim_name if sim_name else "Unnamed Portfolio",
+                                    "Tickers": ticker_str,
+                                    "Weights": weight_str,
+                                    "Sim_Return": f"{total_sim_return:.2f}%",
+                                    "Alpha": f"{total_sim_return - spy_ret:+.2f}%",
+                                    "Note": ""
+                                }])
+                                st.session_state.sandbox_history = pd.concat([st.session_state.sandbox_history, new_sim], ignore_index=True)
+                                save_df_to_sheet("Sandbox_History", st.session_state.sandbox_history)
+                                st.success("✅ บันทึกพอร์ตจำลองสำเร็จ! ดูประวัติได้ที่ตารางด้านล่างครับ")
+                                time.sleep(0.5)
+                                st.rerun()
+                                
                     except Exception as e:
                         st.error("เกิดข้อผิดพลาดชั่วคราวในการดึงข้อมูลหุ้นจำลอง กรุณากดปุ่ม 'ดึงข้อมูลเรียลไทม์เดี๋ยวนี้' ที่เมนูซ้ายมือเพื่อล้างความจำ แล้วลองอีกครั้งค่ะ")
         else:
             st.info("👈 กรุณาเลือกหุ้น หรือพิมพ์เพิ่มชื่อหุ้นที่คุณค้นหาเองในช่องขวามือ เพื่อเริ่มต้นจำลองพอร์ตได้เลยครับ")
+
+        # 📝 V6.60: ตารางประวัติที่แก้ไขได้ (Editable Sandbox Log)
+        st.markdown("---")
+        st.markdown("### 📚 ประวัติพอร์ตจำลองของฉัน (Saved Portfolios)")
+        display_sim_df = st.session_state.sandbox_history.copy()
+        if not display_sim_df.empty:
+            display_sim_df.insert(0, "Select_Delete", False)
+            ed_sim = st.data_editor(display_sim_df, num_rows="dynamic", use_container_width=True,
+                column_config={
+                    "Select_Delete": st.column_config.CheckboxColumn("🗑️ ลบทิ้ง", default=False),
+                    "Date": "วันที่ประเมิน",
+                    "Portfolio_Name": "ชื่อโมเดลพอร์ต",
+                    "Tickers": "รายชื่อหุ้น",
+                    "Weights": "สัดส่วน (%)",
+                    "Sim_Return": "ผลตอบแทนคาดหวัง",
+                    "Alpha": "ชนะตลาด (Alpha)",
+                    "Note": "จดบันทึกย่อ"
+                })
+            
+            if ed_sim["Select_Delete"].any():
+                st.warning("⚠️ คุณได้ติ๊กเลือกพอร์ตจำลองที่ต้องการลบแล้ว กดปุ่มยืนยันด้านล่างครับ")
+                if st.button("🗑️ ยืนยันการลบ", type="primary"):
+                    st.session_state.sandbox_history = ed_sim[~ed_sim["Select_Delete"]].drop(columns=["Select_Delete"])
+                    save_df_to_sheet("Sandbox_History", st.session_state.sandbox_history)
+                    st.success("✅ ลบประวัติสำเร็จ!")
+                    time.sleep(1)
+                    st.rerun()
+            else:
+                updated_sim_df = ed_sim.drop(columns=["Select_Delete"])
+                if not updated_sim_df.equals(st.session_state.sandbox_history):
+                    st.session_state.sandbox_history = updated_sim_df.copy()
+                    save_df_to_sheet("Sandbox_History", st.session_state.sandbox_history)
+                    st.rerun()
+        else:
+            st.info("ยังไม่มีประวัติการจัดพอร์ตจำลองครับ เมื่อวิเคราะห์เสร็จแล้วให้กดบันทึกเพื่อดูประวัติตรงนี้ได้เลย")
