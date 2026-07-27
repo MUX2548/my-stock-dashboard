@@ -24,9 +24,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 6.70", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.80", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 6.70", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.80", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -54,8 +54,10 @@ current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 # ==========================================
 if "current_ticker" not in st.session_state: st.session_state.current_ticker = "RKLB"
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
-if "radar_tickers" not in st.session_state: st.session_state.radar_tickers = ["ASTS", "RKLB", "TSLA"]
-if "sandbox_tickers" not in st.session_state: st.session_state.sandbox_tickers = ["NVDA", "JPM", "LLY", "LMT", "WMT"]
+if "radar_tickers" not in st.session_state:
+    st.session_state.radar_tickers = ["ASTS", "RKLB", "TSLA"]
+if "sandbox_tickers" not in st.session_state:
+    st.session_state.sandbox_tickers = ["NVDA", "JPM", "LLY", "LMT", "WMT"]
 
 @st.cache_resource(ttl=3600)
 def init_connection():
@@ -262,13 +264,17 @@ def load_pro_data(ticker_symbol, tf):
         "ps": "N/A", "pe": "N/A", "roe": "N/A", "rev_growth": "N/A", "dividend": "ไม่มีข้อมูล",
         "earnings_date": "รอประกาศ", "business_desc_th": "ข้อมูลถูกจำกัดชั่วคราว",
         "industry": "N/A", "sector": "N/A", "location": "N/A", "website": "#", "pe_val": 0, "roe_val": 0,
-        "fair_price": "N/A", "valuation_status": "ไม่มีข้อมูล", "eps": 0, "bv": 0
+        "fair_price": "N/A", "valuation_status": "ไม่มีข้อมูล", "eps": 0, "bv": 0,
+        "prev_close": 0.0 # 🚀 V6.80 นำตัวแปรราคาปิดเมื่อวานมารอไว้
     }
     
     info = {}
     try:
         info = s.info
     except: pass
+
+    # 🚀 V6.80: ดึงราคา Previous Close ที่แท้จริงจาก Yahoo Finance เพื่อหลีกเลี่ยงบั๊กกราฟซ้อน
+    prev_close_val = info.get('previousClose', 0.0)
 
     try:
         real_time_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
@@ -360,6 +366,7 @@ def load_pro_data(ticker_symbol, tf):
                 else: val_status = "🟡 กลางๆ (Neutral)"
 
         fund.update({
+            "prev_close": prev_close_val, # 🚀 นำค่ามาเก็บไว้ใช้แสดงผล
             "ps": f"{float(ps_ratio or 0):.2f}", 
             "pe": f"{float(info.get('trailingPE', 0) or 0):.2f}", 
             "roe": f"{float(info.get('returnOnEquity', 0) or 0)*100:.2f}%",
@@ -547,7 +554,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 6.70")
+    else: st.title("🛡️ Strategic Hub 6.80")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -613,10 +620,17 @@ with tabs[0]:
     if not df.empty:
         last_candle_date = df.index[-1].strftime("%d/%m/%Y")
         last_p = df['Close'].iloc[-1]
-        prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
+        
+        # 🚀 HOTFIX V6.80: ดึงราคาปิดวันก่อนหน้าจาก API โดยตรง เพื่อกันความผิดพลาดจากการซ้อนทับของกราฟ
+        prev_p = fund.get("prev_close", 0.0)
+        if prev_p == 0.0 or pd.isna(prev_p):
+            prev_p = df['Close'].iloc[-2] if len(df) > 1 else last_p
+            
         rsi_val = df['RSI'].iloc[-1]
         is_uptrend = last_p > df['E50'].iloc[-1]
         is_bullish_macd = df['MACD'].iloc[-1] > df['Sig'].iloc[-1]
+        
+        # คำนวณส่วนต่างเป็นสกุลเงินและเปอร์เซ็นต์
         daily_diff = last_p - prev_p
         daily_pct = (daily_diff / prev_p) * 100 if prev_p > 0 else 0.0
         
@@ -625,7 +639,10 @@ with tabs[0]:
         
         m_c1, m_c2 = st.columns(2)
         m_c1.metric("💵 ราคาตลาดล่าสุด (Real-Time)", f"${last_p:,.2f}")
-        m_c2.metric(f"📊 การเปลี่ยนแปลงจากราคาปิด{tf_unit}ก่อนหน้า", f"{'+' if daily_diff >= 0 else ''}{daily_diff:,.2f} USD", delta=f"{daily_pct:+.2f}%")
+        
+        # แสดงผลให้ครบตามโจทย์ (จำนวนดอลลาร์ และ % บวก/ลบ)
+        diff_sign = "+" if daily_diff >= 0 else ""
+        m_c2.metric(f"📊 การเปลี่ยนแปลง (Change)", f"{diff_sign}{daily_diff:,.2f} USD", delta=f"{daily_pct:+.2f}%")
         
         with st.expander("🏢 ข้อมูลธุรกิจ (Company Profile)", expanded=False):
             st.markdown(f"**🇹🇭 สรุปธุรกิจ:**")
@@ -908,11 +925,11 @@ if st.session_state["logged_in"]:
         st.markdown("---")
         h1, h2 = st.columns([8, 2])
         h1.subheader("📝 สมุดบัญชีเงินสด (Cloud Ledger)")
-        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v670")
+        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v680")
         
         with st.expander("📤 นำเข้าข้อมูลจากไฟล์ Excel / CSV", expanded=False):
             template_df = pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
-            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v670")
+            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v680")
             uploaded_file = st.file_uploader("ลากไฟล์มาวาง หรือ กดเพื่อเลือกไฟล์", type=['csv', 'xlsx'])
             if uploaded_file is not None:
                 c_imp1, c_imp2 = st.columns(2)
@@ -1093,7 +1110,7 @@ if st.session_state["logged_in"]:
                 "จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}", 
                 "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", 
                 "มูลค่ารวม": "${:,.2f}"}), use_container_width=True)
-            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v670")
+            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v680")
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
 # ==========================================
@@ -1124,7 +1141,7 @@ if st.session_state["logged_in"]:
             running_bals.append(capital_pool)
 
         tax_v['Taxable_Gain_THB'], tax_v['Balance_THB'] = taxable_gains_thb, running_bals
-        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v670")
+        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v680")
         
         ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed", column_order=["Date", "Action", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "Taxable_Gain_THB"])
         if not ed_t[["FX_Rate", "WHT_USD"]].equals(tax_v[["FX_Rate", "WHT_USD"]]):
