@@ -24,9 +24,9 @@ logo_path = "strategic_hub_logo.png"
 
 if os.path.exists(logo_path):
     browser_icon = Image.open(logo_path)
-    st.set_page_config(page_title="Strategic Hub 6.60", page_icon=browser_icon, layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.70", page_icon=browser_icon, layout="wide")
 else:
-    st.set_page_config(page_title="Strategic Hub 6.60", page_icon="📈", layout="wide")
+    st.set_page_config(page_title="Strategic Hub 6.70", page_icon="📈", layout="wide")
 
 st.markdown("""
     <style>
@@ -54,10 +54,8 @@ current_time = datetime.now(tz_th).strftime("%H:%M:%S")
 # ==========================================
 if "current_ticker" not in st.session_state: st.session_state.current_ticker = "RKLB"
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
-if "radar_tickers" not in st.session_state:
-    st.session_state.radar_tickers = ["ASTS", "RKLB", "TSLA"]
-if "sandbox_tickers" not in st.session_state:
-    st.session_state.sandbox_tickers = ["NVDA", "JPM", "LLY", "LMT", "WMT"]
+if "radar_tickers" not in st.session_state: st.session_state.radar_tickers = ["ASTS", "RKLB", "TSLA"]
+if "sandbox_tickers" not in st.session_state: st.session_state.sandbox_tickers = ["NVDA", "JPM", "LLY", "LMT", "WMT"]
 
 @st.cache_resource(ttl=3600)
 def init_connection():
@@ -285,12 +283,18 @@ def load_pro_data(ticker_symbol, tf):
                 last_df_date = df.index[-1].date() if hasattr(df.index[-1], 'date') else df.index[-1]
                 
                 if latest_date > last_df_date:
-                    new_row = pd.DataFrame({
-                        'Open': [real_time_price], 'High': [real_time_price], 
-                        'Low': [real_time_price], 'Close': [real_time_price], 
-                        'Volume': [0]
-                    }, index=[pd.to_datetime(latest_date)])
-                    df = pd.concat([df, new_row])
+                    try:
+                        new_idx = pd.to_datetime(latest_date)
+                        if df.index.tz is not None:
+                            new_idx = new_idx.tz_localize(df.index.tz)
+                        new_row = pd.DataFrame({
+                            'Open': [real_time_price], 'High': [real_time_price], 
+                            'Low': [real_time_price], 'Close': [real_time_price], 
+                            'Volume': [0]
+                        }, index=[new_idx])
+                        df = pd.concat([df, new_row])
+                    except:
+                        df.iloc[-1, df.columns.get_loc('Close')] = real_time_price
                 else:
                     df.iloc[-1, df.columns.get_loc('Close')] = real_time_price
     except: pass
@@ -543,7 +547,7 @@ def run_monte_carlo(ticker_symbol, days_to_predict=30, simulations=100):
 # ==========================================
 with st.sidebar:
     if os.path.exists(logo_path): st.image(logo_path, use_container_width=True)
-    else: st.title("🛡️ Strategic Hub 6.60")
+    else: st.title("🛡️ Strategic Hub 6.70")
     if st.button("🔄 ดึงข้อมูลเรียลไทม์เดี๋ยวนี้", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -904,11 +908,11 @@ if st.session_state["logged_in"]:
         st.markdown("---")
         h1, h2 = st.columns([8, 2])
         h1.subheader("📝 สมุดบัญชีเงินสด (Cloud Ledger)")
-        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v660")
+        h2.download_button("📥 โหลด (Excel)", convert_df_to_csv(st.session_state.trade_ledger), f"Ledger_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_ledger_v670")
         
         with st.expander("📤 นำเข้าข้อมูลจากไฟล์ Excel / CSV", expanded=False):
             template_df = pd.DataFrame(columns=["Date", "Action", "Ticker", "Price", "Shares", "Amount_USD", "Running_Balance", "FX_Rate", "WHT_USD", "Ref_Doc"])
-            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v660")
+            st.download_button("📝 โหลดไฟล์ Template ว่าง (Excel/CSV)", convert_df_to_csv(template_df), "Trade_Template.csv", "text/csv", key="dl_template_v670")
             uploaded_file = st.file_uploader("ลากไฟล์มาวาง หรือ กดเพื่อเลือกไฟล์", type=['csv', 'xlsx'])
             if uploaded_file is not None:
                 c_imp1, c_imp2 = st.columns(2)
@@ -1089,7 +1093,7 @@ if st.session_state["logged_in"]:
                 "จำนวนหุ้น": "{:,.4f}", "ต้นทุนเฉลี่ย": "${:,.4f}", "ราคาปัจจุบัน": "${:,.4f}", 
                 "กำไร/ขาดทุน ($)": "${:,.2f}", "กำไร/ขาดทุน (฿)": "฿{:,.2f}", "% เปลี่ยนแปลง": "{:,.2f}%", 
                 "มูลค่ารวม": "${:,.2f}"}), use_container_width=True)
-            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v660")
+            st.download_button("📥 โหลดพอร์ต (Excel)", convert_df_to_csv(res_df), f"Portfolio_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', key="dl_port_v670")
         else: st.info("ว่างเปล่า (ยังไม่มีหุ้นในพอร์ต)")
 
 # ==========================================
@@ -1120,7 +1124,7 @@ if st.session_state["logged_in"]:
             running_bals.append(capital_pool)
 
         tax_v['Taxable_Gain_THB'], tax_v['Balance_THB'] = taxable_gains_thb, running_bals
-        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v660")
+        t2.download_button("📥 โหลดภาษี (Excel)", convert_df_to_csv(tax_v), f"Tax_{datetime.now().strftime('%Y%m%d')}.csv", 'text/csv', use_container_width=True, key="dl_tax_v670")
         
         ed_t = st.data_editor(tax_v, use_container_width=True, num_rows="fixed", column_order=["Date", "Action", "Out_USD", "In_USD", "FX_Rate", "Out_THB", "In_THB", "Balance_THB", "Taxable_Gain_THB"])
         if not ed_t[["FX_Rate", "WHT_USD"]].equals(tax_v[["FX_Rate", "WHT_USD"]]):
@@ -1355,13 +1359,12 @@ if st.session_state["logged_in"]:
                     st.error("⚠️ ไม่พบจังหวะสัญญาณที่เข้าเกณฑ์กฎ 3 ประสานในช่วง 3 ปีที่ผ่านมาสำหรับหุ้นตัวนี้ค่ะ")
 
 # ==========================================
-# หน้า 9: จัดพอร์ตจำลอง (V6.60 Sandbox Memory Engine)
+# หน้า 9: จัดพอร์ตจำลอง (V6.70 The Stabilized Edition)
 # ==========================================
     with tabs[8]:
         st.markdown("## 🎛️ ระบบจำลองและจัดพอร์ตด้วยตัวเอง (AI Portfolio Sandbox)")
         st.markdown("พื้นที่ทดลองสำหรับนักลงทุน เพื่อออกแบบพอร์ตโฟลิโอใหม่ และรับคำวิเคราะห์จาก **AI Portfolio Manager** ก่อนลงสนามจริง")
         
-        # 🧠 ระบบความจำอัจฉริยะ: ดึงหุ้นที่เคยค้นหาและจัดเก็บไว้ทั้งหมดมาทำตัวเลือก
         history_tickers = []
         if not st.session_state.sandbox_history.empty:
             for t_str in st.session_state.sandbox_history["Tickers"].dropna():
@@ -1371,7 +1374,7 @@ if st.session_state["logged_in"]:
         
         default_sandbox_pool = ["NVDA", "MSFT", "AAPL", "JPM", "BRK-B", "LLY", "UNH", "GE", "LMT", "AMZN", "WMT", "TSM", "AMD", "META", "GOOGL"]
         all_sandbox_options = sorted(list(set(st.session_state.sandbox_tickers + default_sandbox_pool + st.session_state.radar_tickers + history_tickers + ledger_tickers + plan_tickers)))
-        all_sandbox_options = [x for x in all_sandbox_options if x] # กรองค่าว่าง
+        all_sandbox_options = [x for x in all_sandbox_options if x] 
         
         c_box1, c_box2 = st.columns([7, 3])
         with c_box1:
@@ -1481,7 +1484,6 @@ if st.session_state["logged_in"]:
                         else:
                             st.error(f"📉 **ผลตอบแทนต่ำกว่าตลาด:** พอร์ตจำลองนี้แพ้ตลาด S&P 500 อยู่ **{total_sim_return - spy_ret:.2f}%** แนะนำให้ตัดหุ้นที่ผลงานติดลบหนักออก แล้วแทนที่ด้วยหุ้นชั้นนำกลุ่มอื่น")
 
-                        # ☁️ V6.60: ระบบบันทึกพอร์ตจำลองขึ้นคลาวด์
                         st.markdown("---")
                         st.markdown("#### 💾 บันทึกโมเดลพอร์ตจำลองนี้ (Save Sandbox Model)")
                         c_save_sim1, c_save_sim2 = st.columns([7, 3])
@@ -1512,7 +1514,6 @@ if st.session_state["logged_in"]:
         else:
             st.info("👈 กรุณาเลือกหุ้น หรือพิมพ์เพิ่มชื่อหุ้นที่คุณค้นหาเองในช่องขวามือ เพื่อเริ่มต้นจำลองพอร์ตได้เลยครับ")
 
-        # 📝 V6.60: ตารางประวัติที่แก้ไขได้ (Editable Sandbox Log)
         st.markdown("---")
         st.markdown("### 📚 ประวัติพอร์ตจำลองของฉัน (Saved Portfolios)")
         display_sim_df = st.session_state.sandbox_history.copy()
