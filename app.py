@@ -814,6 +814,51 @@ with tabs[1]:
             st.markdown(f'<div class="pro-box" style="border-top: 4px solid #82B1FF;"><div style="font-size: 0.9em; color: #B0BEC5;">ภาพรวมกระแสน้ำ (Primary Trend)</div><div style="font-size: 1.4em; font-weight: bold; margin: 10px 0;">{trend_main}</div><div style="color: #E0E0E0; font-size: 0.95em;">{trend_desc}</div></div>', unsafe_allow_html=True)
         with c_t2:
             st.markdown(f'<div class="pro-box" style="border-top: 4px solid {action_color}; background-color: {action_color}11;"><div style="font-size: 0.9em; color: #B0BEC5;">สถานะจุดเข้า (Entry Action)</div><div style="font-size: 1.4em; font-weight: bold; color: {action_color}; margin: 10px 0;">{action_signal}</div><div style="color: #E0E0E0; font-size: 0.95em;">{action_desc}</div></div>', unsafe_allow_html=True)
+
+        # ==========================================
+        # 🚨 ระบบสแกนหาจุดกลับตัว RSI Failure Swing (NEW)
+        # ==========================================
+        st.markdown("### 🌀 เรดาร์สแกนจุดกลับตัว (RSI Failure Swing Detection)")
+        
+        rsi_df = df.tail(40).copy()
+        rsi_df['RSI_L1'] = rsi_df['RSI'].shift(1)
+        rsi_df['RSI_L2'] = rsi_df['RSI'].shift(2)
+        
+        rsi_df['Is_Peak'] = (rsi_df['RSI_L1'] > rsi_df['RSI']) & (rsi_df['RSI_L1'] > rsi_df['RSI_L2'])
+        rsi_df['Is_Trough'] = (rsi_df['RSI_L1'] < rsi_df['RSI']) & (rsi_df['RSI_L1'] < rsi_df['RSI_L2'])
+        
+        turns = []
+        for idx, row in rsi_df.iterrows():
+            if row['Is_Peak']: turns.append({'type': 'P', 'val': row['RSI_L1']})
+            elif row['Is_Trough']: turns.append({'type': 'T', 'val': row['RSI_L1']})
+            
+        fs_status = "⚪ ไร้สัญญาณกลับตัว (No Failure Swing)"
+        fs_color = "#B0BEC5"
+        fs_desc = "RSI ยังแกว่งตัวตามเทรนด์ปกติ หรือยังสร้างฐานไม่เสร็จ ยังไม่มีฝั่งไหนหมดแรงชัดเจน แนะนำให้เทรดตามเทรนด์เดิมไปก่อน"
+        current_rsi = rsi_df['RSI'].iloc[-1]
+
+        if len(turns) >= 3:
+            last_3 = turns[-3:]
+            if last_3[0]['type'] == 'T' and last_3[1]['type'] == 'P' and last_3[2]['type'] == 'T':
+                t1, p_fail, t2 = last_3[0]['val'], last_3[1]['val'], last_3[2]['val']
+                if t1 < 30 and t2 > t1 and current_rsi > p_fail:
+                    fs_status = "🟢 Bottom Failure Swing (สัญญาณซื้อกลับตัว!)"
+                    fs_color = "#00E676"
+                    fs_desc = "ภาพจำ: 'เหวสองบ่อ บ่อหลังตื้นกว่า แล้วน้ำพุพุ่งทะลุเพดาน' — คนเทขายจนหมดแม็กแล้วเกิดการยกตัว สัญญาณคอนเฟิร์มว่าแรงซื้อชนะ **หาจังหวะเข้าซื้อ (Buy) ได้เลย**"
+            elif last_3[0]['type'] == 'P' and last_3[1]['type'] == 'T' and last_3[2]['type'] == 'P':
+                p1, t_fail, p2 = last_3[0]['val'], last_3[1]['val'], last_3[2]['val']
+                if p1 > 70 and p2 < p1 and current_rsi < t_fail:
+                    fs_status = "🔴 Top Failure Swing (สัญญาณขายหนีตาย!)"
+                    fs_color = "#FF5252"
+                    fs_desc = "ภาพจำ: 'ภูเขาสองลูก ลูกหลังเตี้ยกว่า แล้วน้ำป่าซัดฐานพัง' — คนไล่ซื้อจนล้นตลาดแต่ดันทำ High ใหม่ไม่ได้ สัญญาณคอนเฟิร์มว่าแรงซื้อหมด **เตรียมขายทำกำไรหรือเผ่นหนี (Sell)**"
+
+        st.markdown(f'''
+        <div style="border-left: 5px solid {fs_color}; background-color: {fs_color}11; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <div style="font-size: 1.2em; font-weight: bold; color: {fs_color}; margin-bottom: 5px;">{fs_status}</div>
+            <div style="color: #E0E0E0; font-size: 0.95em;">💡 <b>อ่านเกมตลาด:</b> {fs_desc}</div>
+        </div>
+        ''', unsafe_allow_html=True)
+        # ==========================================
             
         st.markdown("---")
         st.markdown(f"### 👑 บทสรุปเอกฉันท์ (The Objective Consensus - อิงกราฟ {tf_option})")
